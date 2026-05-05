@@ -1157,7 +1157,7 @@ type RawViewerDiscovery = {
         login?: string
         projectsV2?: {
           pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }
-          nodes?: Array<{ id?: string; number?: number; title?: string; url?: string } | null>
+          nodes?: ({ id?: string; number?: number; title?: string; url?: string } | null)[]
         }
       } | null)[]
     }
