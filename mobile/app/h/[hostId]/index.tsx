@@ -44,14 +44,25 @@ import { PickerModal, type PickerOption } from '../../../src/components/PickerMo
 import { ActionSheetContent } from '../../../src/components/ActionSheetModal'
 import { ConfirmModal } from '../../../src/components/ConfirmModal'
 import { BottomDrawer } from '../../../src/components/BottomDrawer'
+import { ProtocolBlockScreen } from '../../../src/components/ProtocolBlockScreen'
 import { getCachedWorktrees } from '../../../src/cache/worktree-cache'
 import { colors, radii, spacing, typography } from '../../../src/theme/mobile-theme'
+import { evaluateCompat, type CompatVerdict } from '../../../src/transport/protocol-compat'
 import {
   loadPinnedIds,
   savePinnedIds,
   loadPreferences,
   savePreferences
 } from '../../../src/storage/preferences'
+
+// Why: locally-typed subset of the desktop's RuntimeStatus we read from
+// `status.get`. Only the version fields matter to mobile today; everything
+// else is opaque. Both fields are optional since pre-PR desktops won't
+// return them — the compat evaluator handles undefined gracefully.
+type DesktopStatus = {
+  protocolVersion?: number
+  minCompatibleMobileVersion?: number
+}
 
 type Worktree = {
   worktreeId: string
@@ -278,6 +289,7 @@ export default function HostScreen() {
   const [worktreesLoaded, setWorktreesLoaded] = useState(initialCache != null)
   const [hostName, setHostName] = useState('')
   const [error, setError] = useState('')
+  const [compatVerdict, setCompatVerdict] = useState<CompatVerdict>({ kind: 'ok' })
   const [lastKnownWorktrees, setLastKnownWorktrees] = useState<Worktree[]>(initialCache ?? [])
   const [search, setSearch] = useState('')
   const [showSearch, setShowSearch] = useState(false)
@@ -339,6 +351,10 @@ export default function HostScreen() {
   useEffect(() => {
     setHostName('')
     setError('')
+    setCompatVerdict({ kind: 'ok' })
+    // Why: re-seed from the current host's cache on every hostId change.
+    // The useState initializer only runs on first mount, so if Expo Router
+    // reuses this screen with a different hostId, we must reset here.
     const freshCache = hostId ? (getCachedWorktrees(hostId) as Worktree[] | null) : null
     if (freshCache) {
       setWorktrees(freshCache)
@@ -419,6 +435,47 @@ export default function HostScreen() {
       void fetchWorktrees()
     }
   }, [connState, fetchWorktrees])
+
+  // Why: read desktop's protocol version from status.get on every connect
+  // and re-evaluate compatibility. If the desktop declares this mobile
+  // build too old (or vice versa via the local minimum), the host detail
+  // screen swaps to a hard-block screen instead of the worktree list.
+  // Today's compat constants are wide-open so this never blocks; the wire
+  // format is in place to flip a switch in a future release.
+  useEffect(() => {
+    if (connState !== 'connected' || !client) return
+    let cancelled = false
+    const requestClient = client
+    void (async () => {
+      try {
+        const response = await requestClient.sendRequest('status.get')
+        if (cancelled || clientRef.current !== requestClient) return
+        if (!response.ok) return
+        const status = (response as RpcSuccess).result as DesktopStatus
+        const verdict = evaluateCompat({
+          desktopProtocolVersion: status.protocolVersion,
+          desktopMinCompatibleMobileVersion: status.minCompatibleMobileVersion
+        })
+        setCompatVerdict(verdict)
+        if (verdict.kind === 'blocked') {
+          // Why: deterministic breadcrumb so support can confirm a block
+          // actually fired (vs a render bug). No PII — just version ints.
+          console.warn('[protocol-compat] blocked', {
+            reason: verdict.reason,
+            desktopVersion: verdict.desktopVersion,
+            requiredMobileVersion: verdict.requiredMobileVersion,
+            requiredDesktopVersion: verdict.requiredDesktopVersion
+          })
+        }
+      } catch {
+        // Why: rare path — sendRequest can throw on transport tear-down.
+        // Treat as transient; verdict stays at previous value.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [connState, client])
 
   useEffect(() => {
     if (connState !== 'connected') return
@@ -635,6 +692,10 @@ export default function HostScreen() {
         <Text style={styles.errorText}>{error}</Text>
       </View>
     )
+  }
+
+  if (compatVerdict.kind === 'blocked') {
+    return <ProtocolBlockScreen verdict={compatVerdict} />
   }
 
   return (

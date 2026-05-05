@@ -209,6 +209,16 @@ describe('OrcaRuntimeService', () => {
     expect(runtime.getRuntimeId()).toBeTruthy()
   })
 
+  it('reports protocol version and minimum compatible mobile version on status', () => {
+    const runtime = createRuntime()
+
+    const status = runtime.getStatus()
+    expect(typeof status.protocolVersion).toBe('number')
+    expect(typeof status.minCompatibleMobileVersion).toBe('number')
+    expect(status.protocolVersion).toBeGreaterThanOrEqual(1)
+    expect(status.minCompatibleMobileVersion).toBeGreaterThanOrEqual(0)
+  })
+
   it('claims the first window as authoritative and ignores later windows', () => {
     const runtime = createRuntime()
 

@@ -10,6 +10,13 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx']
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      // Why: mobile/ owns its own bundle but pure-logic units (no React
+      // Native imports) can run under the root vitest harness so they
+      // get covered in CI alongside src/ tests.
+      'mobile/src/**/*.test.ts'
+    ]
   }
 })

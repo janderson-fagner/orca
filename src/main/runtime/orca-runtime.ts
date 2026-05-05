@@ -21,6 +21,10 @@ import type {
   WorktreeStartupLaunch
 } from '../../shared/types'
 import { isFolderRepo } from '../../shared/repo-kind'
+import {
+  DESKTOP_PROTOCOL_VERSION,
+  MIN_COMPATIBLE_MOBILE_VERSION
+} from '../../shared/protocol-version'
 import type {
   RuntimeGraphStatus,
   RuntimeRepoSearchRefs,
@@ -594,7 +598,9 @@ export class OrcaRuntimeService {
       graphStatus: this.graphStatus,
       authoritativeWindowId: this.authoritativeWindowId,
       liveTabCount: this.tabs.size,
-      liveLeafCount: this.leaves.size
+      liveLeafCount: this.leaves.size,
+      protocolVersion: DESKTOP_PROTOCOL_VERSION,
+      minCompatibleMobileVersion: MIN_COMPATIBLE_MOBILE_VERSION
     }
   }
 
