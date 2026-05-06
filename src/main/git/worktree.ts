@@ -1,4 +1,4 @@
-import { stat } from 'fs/promises'
+import { access, stat } from 'fs/promises'
 import { join, posix, win32 } from 'path'
 import type { GitWorktreeInfo } from '../../shared/types'
 import { gitExecFileAsync, translateWslOutputPaths } from './runner'
@@ -85,6 +85,22 @@ export function parseWorktreeList(output: string): GitWorktreeInfo[] {
  * List all worktrees for a git repo at the given path.
  */
 export async function listWorktrees(repoPath: string): Promise<GitWorktreeInfo[]> {
+  // Why: when the user moves or deletes a repo folder out from under Orca, the
+  // persisted Repo entry still references the now-missing path. Spawning git
+  // with a non-existent cwd fails with the misleading `spawn git ENOENT` (Node
+  // reports the *executable* in the error even when it's the cwd that's gone),
+  // and the polled worktree-list call would flood the console once per repo
+  // per 3-second poll. Pre-check the path with `access` so missing repos return [] silently
+  // and the "spawn failed" branch below stays scoped to real git errors.
+  try {
+    await access(repoPath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
+    // Other access errors (EACCES, EBUSY) are worth surfacing — fall through.
+  }
+
   try {
     // Why: do not pass `-z` here. `-z` requires Git ≥ 2.36; older Git rejects
     // it, listWorktrees returns [], and every create flow throws "Worktree
@@ -106,6 +122,13 @@ export async function listWorktrees(repoPath: string): Promise<GitWorktreeInfo[]
       })
     )
   } catch (err) {
+    // Why: ENOENT from spawn here means the cwd was removed between the access check
+    // above and the git invocation (or, on Windows, that git itself isn't on
+    // PATH — covered by the startup PATH hydration). Either way, no signal
+    // worth a stack trace per poll.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
     // Why: a silent catch turned issue #1453's underlying
     // "git: unknown switch -z" into the opaque "not found in listing" toast.
     // Surface the cause so future regressions show up immediately.

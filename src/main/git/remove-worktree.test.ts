@@ -7,12 +7,14 @@ const {
   gitExecFileAsyncMock,
   gitExecFileSyncMock,
   translateWslOutputPathsMock,
+  accessMock,
   statMock,
   resolveGitDirMock
 } = vi.hoisted(() => ({
   gitExecFileAsyncMock: vi.fn(),
   gitExecFileSyncMock: vi.fn(),
   translateWslOutputPathsMock: vi.fn((output: string) => output),
+  accessMock: vi.fn(),
   statMock: vi.fn(),
   resolveGitDirMock: vi.fn()
 }))
@@ -29,7 +31,7 @@ vi.mock('./status', () => ({
 
 vi.mock('fs/promises', async () => {
   const actual = await vi.importActual<typeof FsPromises>('fs/promises')
-  return { ...actual, stat: statMock }
+  return { ...actual, access: accessMock, stat: statMock }
 })
 
 import { addSparseWorktree, listWorktrees, removeWorktree } from './worktree'
@@ -77,6 +79,10 @@ describe('removeWorktree', () => {
     gitExecFileSyncMock.mockReset()
     translateWslOutputPathsMock.mockReset()
     translateWslOutputPathsMock.mockImplementation((output: string) => output)
+    accessMock.mockReset()
+    // Default: every repo path under test exists on disk. Tests that exercise
+    // the missing-cwd precheck override this.
+    accessMock.mockResolvedValue(undefined)
     statMock.mockReset()
     // Default: no worktree has a sparse-checkout config file. Tests that need
     // sparse detection override this.
@@ -298,6 +304,10 @@ describe('listWorktrees', () => {
     gitExecFileSyncMock.mockReset()
     translateWslOutputPathsMock.mockReset()
     translateWslOutputPathsMock.mockImplementation((output: string) => output)
+    accessMock.mockReset()
+    // Default: every repo path under test exists on disk. Tests that exercise
+    // the missing-cwd precheck override this.
+    accessMock.mockResolvedValue(undefined)
     statMock.mockReset()
     // Default: no worktree has a sparse-checkout config file. Tests that need
     // sparse detection override this.
@@ -394,6 +404,36 @@ describe('listWorktrees', () => {
     // on every poll.
     expect(getGitCalls()).toEqual(['git worktree list --porcelain'])
   })
+
+  it('returns [] without spawning git when the repo path is missing on disk', async () => {
+    accessMock.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await listWorktrees('/gone')).toEqual([])
+    expect(getGitCalls()).toEqual([])
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('returns [] silently when git fails with ENOENT (race after access)', async () => {
+    gitExecFileAsyncMock.mockRejectedValueOnce(
+      Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' })
+    )
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await listWorktrees('/repo')).toEqual([])
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('warns on non-ENOENT git failures so issue #1453-style regressions surface', async () => {
+    gitExecFileAsyncMock.mockRejectedValueOnce(new Error('git: unknown switch -z'))
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await listWorktrees('/repo')).toEqual([])
+    expect(warnSpy).toHaveBeenCalledWith('[git/worktree] listWorktrees failed:', expect.any(Error))
+    warnSpy.mockRestore()
+  })
 })
 
 describe('addSparseWorktree', () => {
@@ -402,6 +442,10 @@ describe('addSparseWorktree', () => {
     gitExecFileSyncMock.mockReset()
     translateWslOutputPathsMock.mockReset()
     translateWslOutputPathsMock.mockImplementation((output: string) => output)
+    accessMock.mockReset()
+    // Default: every repo path under test exists on disk. Tests that exercise
+    // the missing-cwd precheck override this.
+    accessMock.mockResolvedValue(undefined)
     statMock.mockReset()
     // Default: no worktree has a sparse-checkout config file. Tests that need
     // sparse detection override this.
