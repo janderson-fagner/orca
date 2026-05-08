@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Animated, AppState, type AppStateStatus } from 'react-native'
+import * as Clipboard from 'expo-clipboard'
 import {
   View,
   Text,
@@ -19,9 +21,16 @@ import type { RpcClient } from '../../../../src/transport/rpc-client'
 import { loadHosts } from '../../../../src/transport/host-store'
 import { useHostClient } from '../../../../src/transport/client-context'
 import type { ConnectionState, RpcSuccess } from '../../../../src/transport/types'
-import { triggerMediumImpact } from '../../../../src/platform/haptics'
+import {
+  triggerMediumImpact,
+  triggerSelection,
+  triggerSuccess,
+  triggerError,
+  triggerEdgeBump
+} from '../../../../src/platform/haptics'
 import {
   TerminalWebView,
+  type TerminalModes,
   type TerminalWebViewHandle
 } from '../../../../src/terminal/TerminalWebView'
 import { StatusDot } from '../../../../src/components/StatusDot'
@@ -49,15 +58,22 @@ type TerminalCreateResult = {
 
 type MobileDisplayMode = 'auto' | 'phone' | 'desktop'
 
-type AccessoryKey = { label: string; bytes: string; accessibilityLabel?: string }
+type AccessoryKey = {
+  label: string
+  bytes: string
+  accessibilityLabel?: string
+  repeatable?: boolean
+}
 
 const ACCESSORY_KEYS: AccessoryKey[] = [
   { label: 'Esc', bytes: '\x1b' },
   { label: 'Tab', bytes: '\t' },
-  { label: '↑', bytes: '\x1b[A' },
-  { label: '↓', bytes: '\x1b[B' },
-  { label: '←', bytes: '\x1b[D' },
-  { label: '→', bytes: '\x1b[C' },
+  { label: '⌫', bytes: '\x7f', accessibilityLabel: 'Backspace', repeatable: true },
+  { label: 'Del', bytes: '\x1b[3~', accessibilityLabel: 'Forward delete', repeatable: true },
+  { label: '↑', bytes: '\x1b[A', repeatable: true },
+  { label: '↓', bytes: '\x1b[B', repeatable: true },
+  { label: '←', bytes: '\x1b[D', repeatable: true },
+  { label: '→', bytes: '\x1b[C', repeatable: true },
   { label: 'Ctrl+C', bytes: '\x03', accessibilityLabel: 'Interrupt terminal' },
   { label: 'Ctrl+D', bytes: '\x04', accessibilityLabel: 'Send EOF' },
   { label: 'Ctrl+L', bytes: '\x0c', accessibilityLabel: 'Clear screen' },
@@ -82,12 +98,22 @@ function TerminalPaneView({
   handle,
   active,
   onRef,
-  onWebReady
+  onWebReady,
+  onSelectionMode,
+  onSelectionCopy,
+  onSelectionEvicted,
+  onModesChanged,
+  onHaptic
 }: {
   handle: string
   active: boolean
   onRef: (handle: string, ref: TerminalWebViewHandle | null) => void
   onWebReady: (handle: string) => void
+  onSelectionMode: (handle: string, active: boolean) => void
+  onSelectionCopy: (handle: string, text: string) => void
+  onSelectionEvicted: (handle: string) => void
+  onModesChanged: (handle: string, modes: TerminalModes) => void
+  onHaptic: (kind: 'selection' | 'success' | 'error' | 'edge-bump') => void
 }) {
   const setRef = useCallback(
     (ref: TerminalWebViewHandle | null) => {
@@ -105,6 +131,11 @@ function TerminalPaneView({
         ref={setRef}
         style={styles.terminalWebView}
         onWebReady={() => onWebReady(handle)}
+        onSelectionMode={(a) => onSelectionMode(handle, a)}
+        onSelectionCopy={(t) => onSelectionCopy(handle, t)}
+        onSelectionEvicted={() => onSelectionEvicted(handle)}
+        onModesChanged={(m) => onModesChanged(handle, m)}
+        onHaptic={onHaptic}
       />
     </View>
   )
@@ -146,6 +177,14 @@ export default function SessionScreen() {
   // Why: server-authoritative display mode per terminal. The runtime is the
   // single source of truth — this state is populated from subscribe responses.
   const [terminalModes, setTerminalModes] = useState<Map<string, MobileDisplayMode>>(new Map())
+  const [selectModeActive, setSelectModeActive] = useState(false)
+  const [canPaste, setCanPaste] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const toastOpacityRef = useRef(new Animated.Value(0))
+  // Why: WebView pushes terminal modes (bracketed-paste, alt-screen) on every
+  // change so paste reads a synchronous snapshot — no round-trip required.
+  const ptyModesRef = useRef<Map<string, TerminalModes>>(new Map())
+  const initialModesSeenRef = useRef<Set<string>>(new Set())
   const deviceTokenRef = useRef<string | null>(null)
   const clientRef = useRef<RpcClient | null>(null)
   // Why: measured once from TerminalWebView on mount, then passed with every
@@ -238,13 +277,6 @@ export default function SessionScreen() {
       const seq = (subscribeSeqRef.current.get(handle) ?? 0) + 1
       subscribeSeqRef.current.set(handle, seq)
 
-      console.log('[fit][session] subscribe', {
-        handle: handle.slice(-8),
-        seq,
-        viewport: viewportRef.current,
-        viewportMeasured: viewportMeasuredRef.current
-      })
-
       // Why: server handles auto-fit on subscribe — no terminal.focus call needed.
       // The viewport is embedded in the subscribe params so the server resizes
       // the PTY before serializing scrollback. This eliminates the focus→safeFit
@@ -287,24 +319,8 @@ export default function SessionScreen() {
           } else if (eventSeq != null && data.type === 'scrollback') {
             layoutSeqRef.current.set(handle, eventSeq)
           }
-          if (data.type === 'scrollback' || data.type === 'resized') {
-            console.log('[fit][session] event', {
-              handle: handle.slice(-8),
-              type: data.type,
-              cols: data.cols,
-              rows: data.rows,
-              displayMode: data.displayMode,
-              seq: eventSeq,
-              reason: data.reason
-            })
-          }
           if (data.type === 'scrollback') {
             if (initializedHandlesRef.current.has(handle)) {
-              console.log('[fit][session] scrollback IGNORED (already initialized)', {
-                handle: handle.slice(-8),
-                cols: data.cols,
-                rows: data.rows
-              })
               return
             }
             const cols = (data.cols as number) || 80
@@ -358,10 +374,6 @@ export default function SessionScreen() {
                   scrollbackRows !== viewportRef.current.rows))
             if (needsResubscribe) {
               void (async () => {
-                console.log('[fit][session] post-scrollback measure-start', {
-                  handle: handle.slice(-8),
-                  containerHeight: terminalFrameHeightRef.current
-                })
                 // Why: wait for the WebView's init() rAF chain to fully
                 // run (term.open → renderService population → first
                 // paint) before measuring. Without this, the measure
@@ -371,9 +383,18 @@ export default function SessionScreen() {
                 // phone dims. See log dump 2026-05-06 confirming the
                 // race + measure-result null pattern.
                 await getTerminalRef(handle)?.awaitReady()
+                if (subscribeSeqRef.current.get(handle) !== seq) return
                 const dims = await getTerminalRef(handle)?.measureFitDimensions(
                   terminalFrameHeightRef.current || undefined
                 )
+                // Why: re-check seq after the awaits — awaitReady (up to
+                // 3s) and measureFitDimensions can take hundreds of ms,
+                // during which a newer subscribe cycle may have armed
+                // its own subscription. Tearing it down here would reset
+                // the freshly-armed initialized flag and re-subscribe a
+                // stale generation.
+                if (subscribeSeqRef.current.get(handle) !== seq) return
+                if (!getTerminalRef(handle)) return
                 // Why: we just got `scrollback` with cols=80 (server's
                 // default fallback for null viewport). That means the
                 // server-side subscriber record was registered before we
@@ -381,20 +402,11 @@ export default function SessionScreen() {
                 // raced ahead via a parallel `measureViewportOnce`, the
                 // server still has a null viewport for THIS subscriber
                 // record — we MUST resubscribe so the server stores it.
-                console.log('[fit][session] post-scrollback measure-result', {
-                  handle: handle.slice(-8),
-                  dims,
-                  alreadyMeasured: viewportMeasuredRef.current
-                })
                 if (dims) {
                   viewportRef.current = dims
                   viewportMeasuredRef.current = true
                   unsubscribeTerminal(handle)
                   initializedHandlesRef.current.delete(handle)
-                  console.log('[fit][session] post-scrollback re-subscribe', {
-                    handle: handle.slice(-8),
-                    viewport: dims
-                  })
                   subscribeToTerminal(handle)
                 }
               })()
@@ -465,11 +477,6 @@ export default function SessionScreen() {
       // not a setting. The toggle only ever requests 'auto' or 'desktop'.
       const next: 'auto' | 'desktop' =
         current === 'auto' || current === 'phone' ? 'desktop' : 'auto'
-      console.log('[fit][session] toggleDisplayMode', {
-        handle: handle.slice(-8),
-        current,
-        next
-      })
       toggleInFlightRef.current.add(handle)
       try {
         await client.sendRequest('terminal.setDisplayMode', {
@@ -571,10 +578,18 @@ export default function SessionScreen() {
   // (clientRef.current.sendRequest...) keep working without churn.
   useEffect(() => {
     clientRef.current = client
+  }, [client])
+
+  // Why: only clear terminal cache on actual unmount. Running it whenever
+  // `client` changes — including the initial null → real-client transition
+  // from useHostClient's async open path — would unsubscribe terminals and
+  // wipe xterm state mid-subscribe on a normal session-screen mount.
+  useEffect(() => {
     return () => {
       clearTerminalCache()
     }
-  }, [client, clearTerminalCache])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Why: deviceToken is read from host record so feature code can pass
   // `client.id` on subscribe/send for driver-state-machine identity.
@@ -886,6 +901,187 @@ export default function SessionScreen() {
     }
   }
 
+  // Why: press-and-hold key repeat for keys flagged repeatable (arrows,
+  // backspace, forward-delete). Matches iOS keyboard cadence: instant first
+  // fire, then ~400ms before the second, then ~45ms between subsequent
+  // repeats. Non-repeatable keys (Tab, Esc, Ctrl-*) intentionally fire once
+  // because holding them is destructive or meaningless.
+  const repeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const repeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Why: hold the latest handleAccessoryKey in a ref so the repeat interval
+  // always invokes the current callback. Otherwise a held key keeps firing
+  // through the callback captured when the interval started, which can route
+  // bytes to a stale terminal/RPC client after a tab switch or reconnect
+  // mid-hold.
+  const handleAccessoryKeyRef = useRef(handleAccessoryKey)
+  handleAccessoryKeyRef.current = handleAccessoryKey
+  const stopAccessoryRepeat = useCallback(() => {
+    if (repeatTimeoutRef.current) {
+      clearTimeout(repeatTimeoutRef.current)
+      repeatTimeoutRef.current = null
+    }
+    if (repeatIntervalRef.current) {
+      clearInterval(repeatIntervalRef.current)
+      repeatIntervalRef.current = null
+    }
+  }, [])
+  const startAccessoryRepeat = useCallback(
+    (bytes: string) => {
+      stopAccessoryRepeat()
+      repeatTimeoutRef.current = setTimeout(() => {
+        repeatIntervalRef.current = setInterval(() => {
+          void handleAccessoryKeyRef.current(bytes)
+        }, 45)
+      }, 400)
+    },
+    [stopAccessoryRepeat]
+  )
+  useEffect(() => {
+    return () => stopAccessoryRepeat()
+  }, [stopAccessoryRepeat])
+
+  const showToast = useCallback((message: string, durationMs = 1200) => {
+    setToastMessage(message)
+    Animated.timing(toastOpacityRef.current, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(toastOpacityRef.current, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true
+        }).start(() => setToastMessage(null))
+      }, durationMs)
+    })
+  }, [])
+
+  const handleSelectionMode = useCallback((handle: string, active: boolean) => {
+    if (handle !== activeHandleRef.current) return
+    setSelectModeActive(active)
+    if (active) Keyboard.dismiss()
+  }, [])
+
+  const handleSelectionCopy = useCallback(
+    async (handle: string, text: string) => {
+      if (handle !== activeHandleRef.current) return
+      if (!text || text.length === 0) {
+        terminalRefs.current.get(handle)?.cancelSelect()
+        return
+      }
+      try {
+        await Clipboard.setStringAsync(text)
+        triggerSuccess()
+        // Why: Android 13+ shows its own system "Copied to clipboard" toast on
+        // every clipboard write, so our toast would be redundant; iOS shows
+        // nothing on copy (it only banners on paste), so the in-app toast is
+        // the only success signal there.
+        if (Platform.OS === 'ios') showToast('Copied')
+        terminalRefs.current.get(handle)?.cancelSelect()
+      } catch (e) {
+        triggerError()
+        const err = e as { name?: string; message?: string }
+        // eslint-disable-next-line no-console
+        console.warn('[mobile-clip] setString failed', {
+          name: err.name,
+          message: err.message
+        })
+        showToast("Couldn't copy", 1500)
+      }
+    },
+    [showToast]
+  )
+
+  const handleSelectionEvicted = useCallback(
+    (handle: string) => {
+      if (handle !== activeHandleRef.current) return
+      // eslint-disable-next-line no-console
+      console.warn('[mobile-clip] selection evicted')
+      showToast('Selection cleared (scrolled out of buffer)', 1500)
+      setSelectModeActive(false)
+    },
+    [showToast]
+  )
+
+  const handleModesChanged = useCallback((handle: string, modes: TerminalModes) => {
+    ptyModesRef.current.set(handle, modes)
+    initialModesSeenRef.current.add(handle)
+  }, [])
+
+  const handleHaptic = useCallback((kind: 'selection' | 'success' | 'error' | 'edge-bump') => {
+    if (kind === 'selection') triggerSelection()
+    else if (kind === 'success') triggerSuccess()
+    else if (kind === 'error') triggerError()
+    else if (kind === 'edge-bump') triggerEdgeBump()
+  }, [])
+
+  const handlePaste = useCallback(async () => {
+    if (!client || !activeHandle || !canSend) return
+    try {
+      const text = await Clipboard.getStringAsync()
+      if (text.length === 0) return
+      const modes = ptyModesRef.current.get(activeHandle) || {
+        bracketedPasteMode: false,
+        altScreen: false
+      }
+      const wrap = modes.bracketedPasteMode && !modes.altScreen
+      // Why: strip embedded bracketed-paste markers from clipboard text so a
+      // malicious copy containing `\x1b[201~` can't terminate paste mode early
+      // and have the trailing bytes interpreted as shell commands. Matches
+      // xterm.js / iTerm2 behavior.
+      // eslint-disable-next-line no-control-regex -- intentional bracketed-paste marker stripping
+      const sanitized = wrap ? text.replace(/\x1b\[20[01]~/g, '') : text
+      const payload = wrap ? `\x1b[200~${sanitized}\x1b[201~` : sanitized
+      const wrappedBytes = new TextEncoder().encode(payload).byteLength
+      if (wrappedBytes > 256 * 1024) {
+        triggerError()
+        // eslint-disable-next-line no-console
+        console.warn('[mobile-clip] paste oversized', { wrappedBytes })
+        showToast('Paste too large (max 256 KiB)', 1500)
+        return
+      }
+      await client.sendRequest('terminal.send', {
+        terminal: activeHandle,
+        text: payload,
+        enter: false,
+        ...(deviceTokenRef.current
+          ? { client: { id: deviceTokenRef.current, type: 'mobile' as const } }
+          : {})
+      })
+      triggerSelection()
+      void Clipboard.hasStringAsync().then(setCanPaste)
+    } catch (e) {
+      triggerError()
+      const err = e as { name?: string; message?: string }
+      const isDisconnected = connState !== 'connected'
+      // eslint-disable-next-line no-console
+      console.warn('[mobile-clip] paste failed', { name: err.name, message: err.message })
+      if (isDisconnected) showToast('Paste failed (disconnected)', 1500)
+    }
+  }, [client, activeHandle, canSend, connState, showToast])
+
+  // Why: refresh canPaste on mount, AppState active, after paste.
+  useEffect(() => {
+    let mounted = true
+    const refresh = () => {
+      void Clipboard.hasStringAsync().then((has) => {
+        if (mounted) setCanPaste(has)
+      })
+    }
+    refresh()
+    const sub = AppState.addEventListener('change', (s: AppStateStatus) => {
+      if (s === 'active') refresh()
+      else if (selectModeActive && activeHandleRef.current) {
+        terminalRefs.current.get(activeHandleRef.current)?.cancelSelect()
+      }
+    })
+    return () => {
+      mounted = false
+      sub.remove()
+    }
+  }, [selectModeActive])
+
   async function handleCreateTerminal() {
     if (!client || creating) return
 
@@ -1119,8 +1315,21 @@ export default function SessionScreen() {
                 active={terminal.handle === activeHandle}
                 onRef={setTerminalWebViewRef}
                 onWebReady={handleTerminalWebReady}
+                onSelectionMode={handleSelectionMode}
+                onSelectionCopy={handleSelectionCopy}
+                onSelectionEvicted={handleSelectionEvicted}
+                onModesChanged={handleModesChanged}
+                onHaptic={handleHaptic}
               />
             ))}
+            {toastMessage && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.toast, { opacity: toastOpacityRef.current }]}
+              >
+                <Text style={styles.toastText}>{toastMessage}</Text>
+              </Animated.View>
+            )}
           </View>
         )}
 
@@ -1156,6 +1365,24 @@ export default function SessionScreen() {
                   <Smartphone size={14} color={canSend ? colors.textSecondary : colors.textMuted} />
                 )}
               </Pressable>
+              {canPaste && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.accessoryKey,
+                    pressed && styles.accessoryKeyPressed,
+                    !canSend && styles.accessoryKeyDisabled
+                  ]}
+                  disabled={!canSend}
+                  onPress={() => void handlePaste()}
+                  accessibilityLabel="Paste from clipboard"
+                >
+                  <Text
+                    style={[styles.accessoryKeyText, !canSend && styles.accessoryKeyTextDisabled]}
+                  >
+                    Paste
+                  </Text>
+                </Pressable>
+              )}
               {ACCESSORY_KEYS.map((key) => (
                 <Pressable
                   key={key.label}
@@ -1165,7 +1392,18 @@ export default function SessionScreen() {
                     !canSend && styles.accessoryKeyDisabled
                   ]}
                   disabled={!canSend}
-                  onPress={() => void handleAccessoryKey(key.bytes)}
+                  onPressIn={() => {
+                    if (!key.repeatable) return
+                    void handleAccessoryKey(key.bytes)
+                    startAccessoryRepeat(key.bytes)
+                  }}
+                  onPressOut={() => {
+                    if (key.repeatable) stopAccessoryRepeat()
+                  }}
+                  onPress={() => {
+                    if (key.repeatable) return
+                    void handleAccessoryKey(key.bytes)
+                  }}
                   accessibilityLabel={key.accessibilityLabel ?? `Send ${key.label}`}
                 >
                   <Text
@@ -1431,6 +1669,23 @@ const styles = StyleSheet.create({
   },
   terminalWebView: {
     flex: 1
+  },
+  toast: {
+    position: 'absolute',
+    bottom: spacing.lg,
+    alignSelf: 'center',
+    left: 0,
+    right: 0,
+    alignItems: 'center'
+  },
+  toastText: {
+    backgroundColor: 'rgba(20, 22, 39, 0.92)',
+    color: colors.textPrimary,
+    fontSize: 13,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.button,
+    overflow: 'hidden'
   },
   emptyState: {
     flex: 1,

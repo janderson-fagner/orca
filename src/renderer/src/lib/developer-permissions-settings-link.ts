@@ -1,16 +1,10 @@
 import { useAppStore } from '@/store'
 
 /**
- * Open Settings → Developer Permissions. The exact pane key, repoId, and
- * sectionId must stay in lockstep across every entry point — extracting them
- * here is the only place this shape needs to be edited if the settings
- * routing ever changes.
- *
- * The pane itself (DeveloperPermissionsPane, shipped in #1233) handles the
- * Superset-shaped UX: per-row status polling and `x-apple.systempreferences:`
- * deep-links into the matching Privacy & Security panes. Both the passive
- * MacPermissionsHint banner and the reactive permission-denied toast in
- * pty-connection.ts route through this single entry point.
+ * Open Settings → Developer Permissions. Used by `MacPermissionsHint` to land
+ * on the Superset-shaped DeveloperPermissionsPane (shipped in #1233), whose
+ * per-row status polling and `x-apple.systempreferences:` deep-links handle
+ * the actual permission flow.
  */
 export function openDeveloperPermissionsSettings(): void {
   const state = useAppStore.getState()
