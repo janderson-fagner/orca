@@ -90,7 +90,7 @@ const TerminalSplit = TerminalHandle.extend({
   direction: z
     .unknown()
     .transform((v) => (v === 'vertical' || v === 'horizontal' ? v : undefined))
-    .pipe(z.enum(['vertical', 'horizontal']).optional())
+    .pipe(z.union([z.enum(['vertical', 'horizontal']), z.undefined()]))
     .optional(),
   command: OptionalString
 })
@@ -187,6 +187,13 @@ const TerminalUpdateViewport = TerminalHandle.extend({
     cols: z.number().int().min(20).max(240),
     rows: z.number().int().min(8).max(120)
   })
+})
+
+// Why: phone-fit auto-restore preference (docs/mobile-fit-hold.md). `null`
+// means Indefinite; finite millisecond values are clamped server-side
+// into [5_000, 60min] before persistence.
+const TerminalSetAutoRestoreFit = z.object({
+  ms: z.number().nullable()
 })
 
 export const TERMINAL_METHODS: RpcAnyMethod[] = [
@@ -409,13 +416,6 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
       const ptyId = leaf.ptyId
       const clientId = params.client?.id
 
-      console.log('[fit][server] terminal.subscribe', {
-        ptyId: ptyId.slice(-8),
-        clientId: clientId?.slice(-8),
-        isMobile,
-        viewport: params.viewport
-      })
-
       // Server-side auto-fit: resize PTY to phone dims before serializing scrollback
       if (isMobile && clientId) {
         await runtime.handleMobileSubscribe(ptyId, clientId, params.viewport)
@@ -515,5 +515,19 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
       }
       return { unsubscribed: true }
     }
+  }),
+  defineMethod({
+    name: 'terminal.getAutoRestoreFit',
+    params: z.object({}),
+    handler: async (_params, { runtime }) => ({
+      ms: runtime.getMobileAutoRestoreFitMs()
+    })
+  }),
+  defineMethod({
+    name: 'terminal.setAutoRestoreFit',
+    params: TerminalSetAutoRestoreFit,
+    handler: async (params, { runtime }) => ({
+      ms: runtime.setMobileAutoRestoreFitMs(params.ms)
+    })
   })
 ]

@@ -45,7 +45,9 @@ import { killAllProcessesForWorktree } from '../runtime/worktree-teardown'
 import { getLocalPtyProvider } from './pty'
 import { removeWorktreeSymlinks } from './worktree-symlinks'
 import { track } from '../telemetry/client'
+import { getCohortAtEmit } from '../telemetry/cohort-classifier'
 import { workspaceSourceSchema, type WorkspaceSource } from '../../shared/telemetry-events'
+import { classifyWorkspaceCreateError } from './workspace-create-error-classifier'
 
 // Why: worktrees discovered on disk (not created via Orca's UI) have no
 // persisted WorktreeMeta, so mergeWorktree falls back to `lastActivityAt: 0`.
@@ -152,7 +154,13 @@ export function registerWorktreeHandlers(
             `[worktrees] failed to list worktrees for repo "${repo.displayName}" (${repo.id}) at ${repo.path}`,
             err
           )
-          rememberLocalWorktreeRoots(store, repo, [])
+          // Why: do NOT seed an empty success here. registerWorktreeRootsForRepo
+          // would mark this repo as registered and flip
+          // registeredWorktreeRootsDirty to false, which causes
+          // resolveRegisteredWorktreePath to permanently deny access to
+          // legitimate linked worktrees of this repo until something invalidates
+          // the cache. Leaving it unregistered keeps the cache dirty so the
+          // next access path can rebuild.
           return []
         }
       })
@@ -206,7 +214,8 @@ export function registerWorktreeHandlers(
         `[worktrees] failed to list worktrees for repo "${repo.displayName}" (${repo.id}) at ${repo.path}`,
         err
       )
-      rememberLocalWorktreeRoots(store, repo, [])
+      // Why: see worktrees:listAll catch — seeding an empty-success result
+      // would poison the auth cache and block linked worktrees.
       return []
     }
   })
@@ -222,10 +231,27 @@ export function registerWorktreeHandlers(
         throw new Error('Folder mode does not support creating worktrees.')
       }
 
-      // Remote repos route all git operations through the relay
-      const result = repo.connectionId
-        ? await createRemoteWorktree(args, repo, store, mainWindow)
-        : await createLocalWorktree(args, repo, store, mainWindow, runtime)
+      const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
+      const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
+
+      let result: CreateWorktreeResult
+      try {
+        // Why: only wrap the helpers themselves. The pre-validation throws
+        // above (`Repo not found`, `Folder mode does not support creating
+        // worktrees`) signal IPC-shape bugs, not the user-visible
+        // git/filesystem failures the funnel cares about — bucketing them
+        // into `unknown` would pollute the failure taxonomy.
+        result = repo.connectionId
+          ? await createRemoteWorktree(args, repo, store, mainWindow)
+          : await createLocalWorktree(args, repo, store, mainWindow, runtime)
+      } catch (error) {
+        track('workspace_create_failed', {
+          source,
+          error_class: classifyWorkspaceCreateError(error),
+          ...getCohortAtEmit()
+        })
+        throw error
+      }
 
       // Why: emit `workspace_created` only after the underlying create has
       // resolved (the helpers throw on failure, so reaching this line means
@@ -235,11 +261,10 @@ export function registerWorktreeHandlers(
       // baseBranch; an unspecified baseBranch means "branch from default
       // HEAD", which is the not-from-existing-branch case. We never send
       // the branch name itself.
-      const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
-      const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
       track('workspace_created', {
         source,
-        from_existing_branch: typeof args.baseBranch === 'string' && args.baseBranch.length > 0
+        from_existing_branch: typeof args.baseBranch === 'string' && args.baseBranch.length > 0,
+        ...getCohortAtEmit()
       })
 
       return result
