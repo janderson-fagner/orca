@@ -36,6 +36,9 @@ type ClaudeAuthIdentity = {
 }
 
 type ClaudeReadBackResult = { status: 'unchanged' | 'persisted' | 'rejected' }
+type ClaudeReadBackMatch =
+  | { kind: 'matched'; account: ClaudeManagedAccount }
+  | { kind: 'none' | 'ambiguous' }
 
 export class ClaudeRuntimeAuthService {
   private readonly pathResolver = new ClaudeRuntimePathResolver()
@@ -156,7 +159,7 @@ export class ClaudeRuntimeAuthService {
       if (this.skipNextReadBackForAccountId === activeAccount.id) {
         this.skipNextReadBackForAccountId = null
       } else {
-        const readBackResult = await this.readBackRefreshedTokens(activeAccount, credentialsJson, {
+        const readBackResult = await this.readBackRefreshedTokens(credentialsJson, {
           updateLastWrittenCredentialsJson: true
         })
         if (readBackResult.status === 'persisted') {
@@ -188,12 +191,11 @@ export class ClaudeRuntimeAuthService {
   }
 
   private async readBackRefreshedTokens(
-    account: ClaudeManagedAccount,
-    managedCredentialsJson: string,
+    baselineCredentialsJson: string,
     options: { updateLastWrittenCredentialsJson: boolean }
   ): Promise<ClaudeReadBackResult> {
     try {
-      const runtimeContents = await this.readRuntimeCredentialsForReadBack(managedCredentialsJson)
+      const runtimeContents = await this.readRuntimeCredentialsForReadBack(baselineCredentialsJson)
       if (!runtimeContents) {
         return { status: 'unchanged' }
       }
@@ -204,20 +206,15 @@ export class ClaudeRuntimeAuthService {
         return { status: 'unchanged' }
       }
 
-      const matchResult = this.runtimeCredentialsMatchAccount(
-        runtimeContents,
-        account,
-        managedCredentialsJson,
-        this.readManagedOauthAccount(account)
-      )
-      if (matchResult === 'unverifiable') {
-        return { status: 'rejected' }
-      }
-      if (matchResult === 'mismatch') {
+      const match = await this.findManagedAccountForRuntimeCredentials(runtimeContents)
+      if (match.kind !== 'matched') {
+        if (match.kind === 'ambiguous') {
+          console.warn('[claude-runtime-auth] Refusing ambiguous Claude auth read-back')
+        }
         return { status: 'rejected' }
       }
 
-      await this.writeManagedCredentials(account, runtimeContents)
+      await this.writeManagedCredentials(match.account, runtimeContents)
       if (options.updateLastWrittenCredentialsJson) {
         this.writeRuntimeCredentials(runtimeContents)
         this.lastWrittenCredentialsJson = runtimeContents
@@ -236,7 +233,7 @@ export class ClaudeRuntimeAuthService {
   }
 
   private async readRuntimeCredentialsForReadBack(
-    managedCredentialsJson: string
+    baselineCredentialsJson: string
   ): Promise<string | null> {
     const paths = this.pathResolver.getRuntimePaths()
     const fileCredentials = existsSync(paths.credentialsPath)
@@ -245,10 +242,10 @@ export class ClaudeRuntimeAuthService {
     if (process.platform === 'darwin') {
       const keychainCredentials = await readActiveClaudeKeychainCredentials()
       if (this.lastWrittenCredentialsJson === null) {
-        if (keychainCredentials && keychainCredentials !== managedCredentialsJson) {
+        if (keychainCredentials && keychainCredentials !== baselineCredentialsJson) {
           return keychainCredentials
         }
-        if (fileCredentials && fileCredentials !== managedCredentialsJson) {
+        if (fileCredentials && fileCredentials !== baselineCredentialsJson) {
           return fileCredentials
         }
         return keychainCredentials ?? fileCredentials
@@ -271,7 +268,7 @@ export class ClaudeRuntimeAuthService {
     if (!managedCredentialsJson) {
       return { status: 'unchanged' }
     }
-    return this.readBackRefreshedTokens(account, managedCredentialsJson, options)
+    return this.readBackRefreshedTokens(managedCredentialsJson, options)
   }
 
   private getPreparation(): ClaudeRuntimeAuthPreparation {
@@ -293,6 +290,33 @@ export class ClaudeRuntimeAuthService {
       return null
     }
     return accounts.find((account) => account.id === activeAccountId) ?? null
+  }
+
+  private async findManagedAccountForRuntimeCredentials(
+    runtimeCredentialsJson: string
+  ): Promise<ClaudeReadBackMatch> {
+    const matches: ClaudeManagedAccount[] = []
+    for (const account of this.store.getSettings().claudeManagedAccounts) {
+      const managedCredentialsJson = await this.readManagedCredentials(account)
+      if (!managedCredentialsJson) {
+        continue
+      }
+      if (
+        this.runtimeCredentialsMatchAccount(
+          runtimeCredentialsJson,
+          account,
+          managedCredentialsJson,
+          this.readManagedOauthAccount(account)
+        ) === 'match'
+      ) {
+        matches.push(account)
+      }
+    }
+
+    if (matches.length === 1) {
+      return { kind: 'matched', account: matches[0] }
+    }
+    return { kind: matches.length === 0 ? 'none' : 'ambiguous' }
   }
 
   private runtimeCredentialsMatchAccount(
