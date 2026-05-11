@@ -186,10 +186,13 @@ test.describe('Terminal output scheduler', () => {
 
     const runId = Date.now()
     const foregroundMarker = `FG_SCHED_${runId}`
+    // Why: the marker is appended AFTER the burst payload so it survives
+    // getTerminalContent's tail-only truncation (charLimit defaults to 4000).
+    // A leading marker would be evicted by the 50000-char x-burst.
     const backgroundCommands = tabIds.slice(1).map((tabId, index) => ({
       ptyId: ptyIdsByTabId[tabId],
       marker: `BG_SCHED_${runId}_${index}`,
-      command: nodeConsoleCommand(`'BG_SCHED_${runId}_${index}:' + 'x'.repeat(50000)`)
+      command: nodeConsoleCommand(`'x'.repeat(50000) + ':BG_SCHED_${runId}_${index}'`)
     }))
 
     await sendPtyCommands(
