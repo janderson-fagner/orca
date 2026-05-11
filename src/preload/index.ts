@@ -1034,6 +1034,12 @@ const api = {
       ipcRenderer.invoke('developerPermissions:openSettings', args)
   },
 
+  computerUsePermissions: {
+    getStatus: (): Promise<unknown> => ipcRenderer.invoke('computerUsePermissions:getStatus'),
+    openSetup: (args?: { id?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('computerUsePermissions:openSetup', args)
+  },
+
   shell: {
     openPath: (path: string): Promise<void> => ipcRenderer.invoke('shell:openPath', path),
 
