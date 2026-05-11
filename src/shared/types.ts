@@ -1413,6 +1413,10 @@ export type OnboardingState = {
   // Stamped true the first time the new build loads any persisted onboarding
   // row, so the migration runs exactly once per install. New rows created
   // by the new build are stamped at write time via the default state.
+  // Main-only at runtime: `src/main/ipc/onboarding.ts` strips this field
+  // from `onboarding:get` / `onboarding:update` responses before crossing
+  // the IPC boundary, so the renderer must never read it. Kept in the
+  // shared type so persistence.ts (which writes it) stays well-typed.
   _legacySoftSkipMigrationDone?: boolean
   checklist: OnboardingChecklistState
 }

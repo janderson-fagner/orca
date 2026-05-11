@@ -156,7 +156,11 @@ export function RemoteRepoStep({
         selectedTargetId={selectedTargetId}
         remotePath={remotePath}
         remoteError={remoteError}
-        isAddingRemote={isAddingRemote}
+        // Why: the wizard's `busyLabel` covers the silent folder-retry path
+        // that runs in flow.retryRemoteAsFolder. Without this, the Add button
+        // re-enables during the retry's IPC round-trip and a second click
+        // dispatches a duplicate repos.addRemote.
+        isAddingRemote={isAddingRemote || busyLabel !== null}
         onSelectTarget={(id) => {
           setSelectedTargetId(id)
           setRemoteError(null)

@@ -63,7 +63,10 @@ export default function OnboardingFlow({
     if (currentStep.id === 'repo' && step4StartedAtRef.current === null) {
       step4StartedAtRef.current = Date.now()
     }
-    if (currentStep.id === 'repo' && !sshRevealedRef.current) {
+    // Why: enforce the documented invariant — the SSH CTA is only visible on
+    // the 'main' substep, so don't latch the reveal if some future code path
+    // auto-routes a first arrival straight into the 'remote' form.
+    if (currentStep.id === 'repo' && repoSubstep === 'main' && !sshRevealedRef.current) {
       sshRevealedRef.current = true
       track('onboarding_step4_path_revealed', { path: 'ssh' })
     }
@@ -73,7 +76,7 @@ export default function OnboardingFlow({
     if (currentStep.id !== 'repo') {
       setRepoSubstep('main')
     }
-  }, [currentStep.id])
+  }, [currentStep.id, repoSubstep])
   // Why: depend on stable callbacks + step id only so the listener doesn't
   // re-bind on every render of the parent (flow object identity changes).
   const { next: flowNext, openFolder: flowOpenFolder } = flow
@@ -109,10 +112,21 @@ export default function OnboardingFlow({
   // Why: shutdown signal for users who quit while still gated on step 4.
   // Sync IPC because async fire-and-forget would be cancelled before delivery
   // when the renderer exits. Only fires on the repo step, so completed
-  // wizards don't emit a spurious abandonment.
+  // wizards don't emit a spurious abandonment. Two extra guards:
+  //   - closedAt check: between closeWith resolving and React unmounting this
+  //     component, a quit in that microsecond gap would otherwise emit an
+  //     abandonment alongside the legitimate completion event.
+  //   - capture phase: App.tsx registers a captureAndFlush beforeunload
+  //     listener; if it ran first and the BrowserWindow was killed before our
+  //     listener fired, the event would be lost. Capture runs before non-
+  //     capture regardless of registration order. Cleanup must mirror the
+  //     capture flag for removeEventListener to match.
   useEffect(() => {
     const onBeforeUnload = (): void => {
       if (currentStep.id !== 'repo') {
+        return
+      }
+      if (onboarding.closedAt !== null) {
         return
       }
       const startedAt = step4StartedAtRef.current
@@ -122,9 +136,9 @@ export default function OnboardingFlow({
         path_revealed_ssh: sshRevealedRef.current
       })
     }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [currentStep.id])
+    window.addEventListener('beforeunload', onBeforeUnload, { capture: true })
+    return () => window.removeEventListener('beforeunload', onBeforeUnload, { capture: true })
+  }, [currentStep.id, onboarding.closedAt])
 
   return (
     <div className="fixed inset-0 z-[100] overflow-auto bg-background text-foreground">

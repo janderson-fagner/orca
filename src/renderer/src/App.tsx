@@ -284,18 +284,30 @@ function App(): React.JSX.Element {
             // main-side updateOnboarding clears the eligibility flag
             // automatically on the closedAt transition (the flag is
             // rejected from renderer-supplied IPC updates by design).
-            // If the persist write throws, the outer try/catch logs and
-            // we leave onboarding null — next launch hits this path again
-            // (idempotent), which is benign.
+            // If the seal IPC fails, fall back to in-memory suppression
+            // (legacySoftSkipEligible already keeps shouldShowOnboarding
+            // false this launch) and let the rest of hydration — SSH
+            // reconnect, terminal restore, zoom sync — proceed. The seal
+            // is retried on next launch (idempotent).
             if (
               onboardingState.legacySoftSkipEligible === true &&
               onboardingState.closedAt === null
             ) {
-              const sealed = await window.api.onboarding.update({
-                closedAt: Date.now()
-              })
-              if (!cancelled) {
-                setOnboarding(sealed)
+              try {
+                const sealed = await window.api.onboarding.update({
+                  closedAt: Date.now()
+                })
+                if (!cancelled) {
+                  setOnboarding(sealed)
+                }
+              } catch (err) {
+                console.warn(
+                  '[onboarding] legacy migration update failed; suppressing wizard via in-memory state',
+                  err
+                )
+                if (!cancelled) {
+                  setOnboarding(onboardingState)
+                }
               }
             } else {
               setOnboarding(onboardingState)

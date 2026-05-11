@@ -82,6 +82,11 @@ export function RepoStep({
 
       <button
         type="button"
+        // Why: explicit accessible name. Without it, the computed name is the
+        // concatenation of all descendant text ("Connect a remote (SSH) Open a
+        // project on a remote machine over SSH. Connect…"), which makes
+        // role+name locators (and assistive tech) unwieldy.
+        aria-label="Connect a remote (SSH)"
         className="group flex w-full items-center gap-4 rounded-xl border border-border bg-muted/30 p-5 text-left transition hover:border-foreground/40 hover:bg-muted/60 disabled:opacity-60"
         disabled={disabled}
         onClick={onConnectRemote}

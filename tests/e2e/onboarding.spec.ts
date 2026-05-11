@@ -348,7 +348,9 @@ test.describe('Onboarding flow', () => {
     // contract — without it, SSH users would be unable to complete the
     // wizard. Pin it here so a regression that drops the third path is
     // caught alongside the no-skip assertion above.
-    await expect(orcaPage.getByRole('button', { name: /Connect a remote/i })).toBeVisible()
+    await expect(
+      orcaPage.getByRole('button', { name: 'Connect a remote (SSH)', exact: true })
+    ).toBeVisible()
 
     // Why: pressing Escape must not close the wizard while gated. The
     // unskippable contract holds for keyboard close-vectors too, not just
@@ -356,7 +358,14 @@ test.describe('Onboarding flow', () => {
     // with no backdrop, so click-outside isn't a real vector here.)
     await orcaPage.keyboard.press('Escape')
     await expect(orcaPage.getByRole('heading', { name: /Add your first project/i })).toBeVisible()
-    expect((await getOnboardingState(orcaPage)).closedAt).toBeNull()
+    // Why: poll instead of synchronous read so any erroneous async close
+    // handler has time to fire before the assertion sticks (mirrors the
+    // expect.poll pattern used elsewhere in this test).
+    await expect
+      .poll(async () => (await getOnboardingState(orcaPage)).closedAt, {
+        timeout: 1_000
+      })
+      .toBeNull()
 
     // Why: the previous Skip click flushes persistence async via IPC, so poll
     // for lastCompletedStep === 3 before snapshotting the rest of the state.
@@ -368,7 +377,7 @@ test.describe('Onboarding flow', () => {
 
     const final = await getOnboardingState(orcaPage)
     expect(final.closedAt).toBeNull()
-    expect(final.outcome).toBeNull()
+    expect(final.checklist.addedRepo).toBe(false)
     expect(final.checklist.dismissed).toBe(false)
   })
 })

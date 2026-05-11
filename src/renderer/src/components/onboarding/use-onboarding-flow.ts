@@ -253,6 +253,11 @@ export function useOnboardingFlow(
         return
       }
       setActiveRepo(repoId)
+      // Why: a stale activeWorktreeId from a hydrated session would otherwise
+      // carry over and route the user to that previous repo's terminal instead
+      // of the new repo's home view; clear it so worktrees populate fresh on
+      // reconnect.
+      useAppStore.setState({ activeWorktreeId: null })
     },
     [setActiveRepo]
   )
@@ -313,6 +318,10 @@ export function useOnboardingFlow(
   // already chose 'Connect a remote' on a step they cannot dismiss.
   const retryRemoteAsFolder = useCallback(
     async (args: { connectionId: string; remotePath: string }) => {
+      // Why: re-entry guard — prevents duplicate retries from the not-a-git-repo branch.
+      if (busyLabel !== null) {
+        return
+      }
       setError(null)
       setBusyLabel('Adding folder…')
       try {
@@ -338,7 +347,7 @@ export function useOnboardingFlow(
         setBusyLabel(null)
       }
     },
-    [completeRepo]
+    [busyLabel, completeRepo]
   )
 
   const persistCurrentStep = usePersistCurrentStep({

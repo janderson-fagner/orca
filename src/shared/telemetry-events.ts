@@ -377,8 +377,11 @@ const onboardingStep4PathClickedSchema = z
 // Why: distinct from `path_clicked` because revealing the SSH CTA happens
 // before any repo-add attempt — it tells us whether SSH-only users actually
 // discover the third CTA, separate from whether they then succeed.
+// Currently SSH-specific by design (matches design doc framing); the only
+// emitter hardcodes `path: 'ssh'`. If a future reveal of `open_folder` or
+// `clone_url` is wanted, widen the schema to `onboardingPathSchema` then.
 const onboardingStep4PathRevealedSchema = z
-  .object({ path: onboardingPathSchema, cohort: cohortSchema })
+  .object({ path: z.literal('ssh'), cohort: cohortSchema })
   .strict()
 const onboardingStep4PathFailedSchema = z
   .object({

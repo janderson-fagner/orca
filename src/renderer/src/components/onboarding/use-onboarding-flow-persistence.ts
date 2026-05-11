@@ -36,7 +36,10 @@ export function useCloseWith({
     async (
       outcome: 'completed',
       checklist: Partial<OnboardingState['checklist']>,
-      completedPath?: 'open_folder' | 'clone_url' | 'ssh'
+      // Why: required (not optional) so the funnel `onboarding_completed` event
+      // always fires on wizard completion. An optional param invites a silent
+      // funnel-loss regression if a future caller forgets to pass it.
+      completedPath: 'open_folder' | 'clone_url' | 'ssh'
     ): Promise<boolean> => {
       let nextState: OnboardingState
       try {
@@ -58,29 +61,27 @@ export function useCloseWith({
         return false
       }
       onOnboardingChange(nextState)
-      if (completedPath) {
-        const total = Math.max(0, Date.now() - startTimeRef.current)
-        track('onboarding_completed', {
-          path: completedPath,
-          is_git_repo: checklist.addedRepo === true,
-          total_duration_ms: total
+      const total = Math.max(0, Date.now() - startTimeRef.current)
+      track('onboarding_completed', {
+        path: completedPath,
+        is_git_repo: checklist.addedRepo === true,
+        total_duration_ms: total
+      })
+      // Why: checklist items completed by the wizard itself must fire
+      // `activation_checklist_item_completed` so the post-wizard panel and
+      // analytics agree. Other items (ranFirstAgent, triedCmdJ, …) emit
+      // from their own product surfaces.
+      if (checklist.addedRepo && !onboardingChecklist.addedRepo) {
+        track('activation_checklist_item_completed', {
+          item: 'addedRepo',
+          time_since_completed_ms: 0
         })
-        // Why: checklist items completed by the wizard itself must fire
-        // `activation_checklist_item_completed` so the post-wizard panel and
-        // analytics agree. Other items (ranFirstAgent, triedCmdJ, …) emit
-        // from their own product surfaces.
-        if (checklist.addedRepo && !onboardingChecklist.addedRepo) {
-          track('activation_checklist_item_completed', {
-            item: 'addedRepo',
-            time_since_completed_ms: 0
-          })
-        }
-        if (checklist.addedFolder && !onboardingChecklist.addedFolder) {
-          track('activation_checklist_item_completed', {
-            item: 'addedFolder',
-            time_since_completed_ms: 0
-          })
-        }
+      }
+      if (checklist.addedFolder && !onboardingChecklist.addedFolder) {
+        track('activation_checklist_item_completed', {
+          item: 'addedFolder',
+          time_since_completed_ms: 0
+        })
       }
       return true
     },
