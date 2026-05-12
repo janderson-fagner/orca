@@ -884,7 +884,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
         <section className="min-w-0 flex-1 overflow-hidden">
           {selectedThread ? (
             <div className="flex h-full min-h-0 flex-col">
-              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 pt-2 pb-3">
+              <div className="shrink-0 border-b border-border px-4 pt-2 pb-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <h2 className="truncate text-base font-semibold">
@@ -896,17 +896,6 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                     Complete workspace history, from creation through latest agent updates
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => {
-                    markThreadRead(selectedThread)
-                    activateAndRevealWorktree(selectedThread.worktree.id)
-                  }}
-                >
-                  Jump to workspace
-                </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-auto scrollbar-sleek">
                 {(['Today', 'Yesterday', 'Earlier'] as const).map((group) =>
