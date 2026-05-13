@@ -10,7 +10,7 @@ const ORCA_ANDROID_RELEASE_URL = 'https://github.com/stablyai/orca/releases/tag/
 
 const MOBILE_ENABLE_SEARCH_ENTRY: SettingsSearchEntry = {
   title: 'Mobile',
-  description: 'Pair a mobile device to control Orca remotely.',
+  description: 'Control terminals and agents from your phone.',
   keywords: [
     'mobile',
     'phone',
@@ -49,7 +49,7 @@ export function MobileSettingsPane({
       {showEnableSetting ? (
         <SearchableSetting
           title="Mobile"
-          description="Pair a mobile device to control Orca remotely."
+          description="Control terminals and agents from your phone."
           keywords={MOBILE_ENABLE_SEARCH_ENTRY.keywords}
           className="space-y-3 px-1 py-2"
         >
