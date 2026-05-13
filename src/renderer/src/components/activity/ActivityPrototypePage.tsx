@@ -599,12 +599,17 @@ function ThreadRow({
           {thread.paneTitle}
         </span>
         <span className="inline-flex shrink-0 items-center gap-1.5 pt-[3px]">
-          {thread.unread ? (
-            <BellDot className="size-3.5 shrink-0 text-primary" aria-label="Unread" />
-          ) : null}
           <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
             {thread.events.length}
           </Badge>
+          {/* Why: the unread indicator lives next to the timestamp/hover-bell
+              in the same top-right column. The hover-bell already swaps in for
+              the timestamp on hover, and putting the static BellDot adjacent
+              keeps unread cues clustered with the row's time/action area
+              (matches the Slack reference). */}
+          {thread.unread ? (
+            <BellDot className="size-3.5 shrink-0 text-primary" aria-label="Unread" />
+          ) : null}
           <span className="relative inline-flex h-5 min-w-16 items-center justify-end">
             <span className="transition-opacity group-hover:opacity-0">
               <EventTime timestamp={latest.timestamp} />
