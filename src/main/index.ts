@@ -45,8 +45,7 @@ import { claudeHookService } from './claude/hook-service'
 import { codexHookService } from './codex/hook-service'
 import { geminiHookService } from './gemini/hook-service'
 import { cursorHookService } from './cursor/hook-service'
-import { getProviderForPty, getPtyIdForPaneKey, registerPaneKeyTeardownListener } from './ipc/pty'
-import { createAgentForegroundPoller } from './agent-foreground-poller'
+import { getPtyIdForPaneKey, registerPaneKeyTeardownListener } from './ipc/pty'
 import { AGENT_DASHBOARD_ENABLED } from '../shared/constants'
 import { AgentBrowserBridge } from './browser/agent-browser-bridge'
 import { browserManager } from './browser/browser-manager'
@@ -184,11 +183,6 @@ function openMainWindow(): BrowserWindow {
     for (const paneKey of cursorSpinnerByPaneKey.keys()) {
       stopCursorSpinner(paneKey)
     }
-    // Why: the foreground-process poller writes into the closed webContents
-    // via `pty:foreground-shell`. Stop the timer here so the interval cannot
-    // outlive the window; a fresh window re-registers via the agentHookServer
-    // listener above on the next `agentStatus:set`.
-    agentForegroundPoller.stop()
   })
   mainWindow = window
   agentHookServer.setListener(({ paneKey, tabId, worktreeId, payload }) => {
@@ -202,37 +196,6 @@ function openMainWindow(): BrowserWindow {
         worktreeId,
         ...payload
       })
-      // Why: every paneKey that surfaces an agent-status event has a live
-      // entry in the renderer's `agentStatusByPaneKey`. Tracking on the same
-      // signal keeps the main-side poller in lock-step with the renderer map
-      // without needing a separate subscribe/unsubscribe IPC round trip. The
-      // poller is idempotent on re-tracking the same (paneKey, ptyId).
-      // Why: skip tracking when the first observed state is terminal
-      // (`done`). There's no live agent process to observe, so the poller's
-      // first tick would record `lastWasShell = true` (shell is foreground)
-      // and the non-shell→shell edge would never fire — but the timer would
-      // keep ticking for the life of the pane. Only active states
-      // (`working`, `blocked`, `waiting`) have an in-progress agent whose
-      // exit back to the shell is worth polling for.
-      //
-      // Why no untrack on a subsequent `done`: once tracking is live, the
-      // agent CLI may linger at a "turn complete" prompt before the user
-      // runs `/exit`. Keeping the pane tracked past `done` lets the poller
-      // still fire the shell transition when the user eventually exits —
-      // the alternative (untrack on done) would regress the interrupted-
-      // then-resumed-then-exited flow that this whole poller exists to
-      // cover. Teardown happens via registerPaneKeyTeardownListener when
-      // the PTY itself goes away.
-      if (
-        payload.state === 'working' ||
-        payload.state === 'blocked' ||
-        payload.state === 'waiting'
-      ) {
-        const ptyId = getPtyIdForPaneKey(paneKey)
-        if (ptyId) {
-          agentForegroundPoller.trackPane(paneKey, ptyId)
-        }
-      }
     }
     // Why: cursor-agent emits no title-based working/idle signal — its OSC
     // title stays "Cursor Agent" for the whole turn. Synthesize an OSC title
@@ -249,37 +212,6 @@ function openMainWindow(): BrowserWindow {
   })
   return window
 }
-
-// Why: owns the per-PTY foreground-process poller that emits
-// `pty:foreground-shell` when an interrupted agent CLI exits back to the
-// shell. Lives at module scope so the single instance outlives window
-// re-creation (macOS dock re-activation closes and reopens the main window
-// without re-initializing the PTY provider). Routing goes through
-// `getProviderForPty` so remote (SSH) panes are covered too — the local
-// provider's `ptyProcesses` map doesn't contain SSH-owned PTYs, so a hardcoded
-// `getLocalPtyProvider()` lookup would return null forever on those panes and
-// the agent-exit edge would never fire. See agent-foreground-poller.ts for the
-// full rationale.
-const agentForegroundPoller = createAgentForegroundPoller({
-  getForegroundProcess: (ptyId) => getProviderForPty(ptyId).getForegroundProcess(ptyId),
-  emitShell: (ptyId) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return
-    }
-    // Why: every other `pty:*` IPC event (data/exit/replay) keys its payload
-    // on `id`. Match that convention so the renderer's preload type definitions
-    // and dispatch code stay uniform across PTY events.
-    mainWindow.webContents.send('pty:foreground-shell', { id: ptyId })
-  }
-})
-
-// Why: stop tracking a pane the moment its PTY is torn down so the poller's
-// map cannot outlive the process it's observing. Without this, an unsubscribed
-// paneKey would continue to be polled (and worse, a recycled PTY id could
-// resolve to a different real process by the time the next tick fires).
-registerPaneKeyTeardownListener((paneKey) => {
-  agentForegroundPoller.untrackPane(paneKey)
-})
 
 // Why: Pi-style persistent spinner — cursor-agent re-emits its own
 // "Cursor Agent" OSC title on every internal redraw, so a single synthesized
@@ -477,13 +409,12 @@ app.whenReady().then(async () => {
   }
   setAppRuntimeFlags({ daemonEnabledAtStartup: daemonStarted })
 
-  // Why: the hook server runs unconditionally — cursor-agent panes depend on
-  // it even when the dashboard flag is off, and Claude/Codex/Gemini hook
-  // scripts install only when AGENT_DASHBOARD_ENABLED is true (see the
-  // install block earlier in this function). PTY spawn env reads
-  // ORCA_AGENT_HOOK_* from the live server state, so the server must start
-  // before the window opens — otherwise restored terminals race ahead
-  // without the env on first launch.
+  // Why: the hook server also runs unconditionally so cursor-agent panes can
+  // reach it. Claude/Codex/Gemini hook scripts stay uninstalled while
+  // AGENT_DASHBOARD_ENABLED is false, so only cursor events flow in. PTY
+  // spawn env reads ORCA_AGENT_HOOK_* from the live server state, so the
+  // server must start before the window opens — otherwise restored terminals
+  // race ahead without the env on first launch.
   try {
     await agentHookServer.start({ env: app.isPackaged ? 'production' : 'development' })
   } catch (error) {

@@ -13,11 +13,8 @@ function createTestDir(): string {
   return mkdtempSync(join(tmpdir(), 'daemon-server-test-'))
 }
 
-function createMockSubprocess(): SubprocessHandle & {
-  _setForeground: (name: string | null) => void
-} {
+function createMockSubprocess(): SubprocessHandle {
   let onExitCb: ((code: number) => void) | null = null
-  let foreground: string | null = null
   return {
     pid: 55555,
     write: vi.fn(),
@@ -25,15 +22,11 @@ function createMockSubprocess(): SubprocessHandle & {
     kill: vi.fn(() => setTimeout(() => onExitCb?.(0), 5)),
     forceKill: vi.fn(),
     signal: vi.fn(),
-    getForegroundProcess: () => foreground,
     onData(_cb) {
       /* stored for future tests */
     },
     onExit(cb) {
       onExitCb = cb
-    },
-    _setForeground(name) {
-      foreground = name
     }
   }
 }
@@ -44,7 +37,6 @@ describe('DaemonServer', () => {
   let tokenPath: string
   let server: DaemonServer
   let client: DaemonClient
-  let lastSubprocess: ReturnType<typeof createMockSubprocess>
 
   beforeEach(() => {
     dir = createTestDir()
@@ -62,10 +54,7 @@ describe('DaemonServer', () => {
     server = new DaemonServer({
       socketPath,
       tokenPath,
-      spawnSubprocess: () => {
-        lastSubprocess = createMockSubprocess()
-        return lastSubprocess
-      }
+      spawnSubprocess: () => createMockSubprocess()
     })
     await server.start()
   }
@@ -184,27 +173,6 @@ describe('DaemonServer', () => {
 
       // Mock subprocess doesn't emit OSC-7, so cwd is null
       expect(result.cwd).toBeNull()
-    })
-
-    it('handles getForegroundProcess', async () => {
-      // Why: proves the server routes the new RPC end-to-end
-      // (request.payload → host → session → subprocess) and wraps the
-      // result in the { foreground } envelope the adapter expects.
-      await startServer()
-      const c = await connectClient()
-
-      await c.request('createOrAttach', {
-        sessionId: 'test-session',
-        cols: 80,
-        rows: 24
-      })
-      lastSubprocess._setForeground('codex')
-
-      const result = await c.request<{ foreground: string | null }>('getForegroundProcess', {
-        sessionId: 'test-session'
-      })
-
-      expect(result).toEqual({ foreground: 'codex' })
     })
 
     it('returns error for unknown session operations', async () => {

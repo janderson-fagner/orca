@@ -362,7 +362,6 @@ export type PreloadApi = {
     onData: (callback: (data: { id: string; data: string }) => void) => () => void
     onReplay: (callback: (data: { id: string; data: string }) => void) => () => void
     onExit: (callback: (data: { id: string; code: number }) => void) => () => void
-    onForegroundShell: (callback: (data: { id: string }) => void) => () => void
   }
   feedback: {
     submit: (args: {

@@ -241,14 +241,10 @@ export function connectPanePty(
     // the agent has exited. Clear any running cache timer so the sidebar doesn't
     // show a stale countdown for a tab that no longer has an active Claude session.
     deps.setCacheTimerStartedAt(cacheKey, null)
-    // Why: we intentionally do NOT call removeAgentStatus here. The agent-status
-    // entry's lifecycle is now driven by the main-process foreground-process
-    // poller (pty:foreground-shell → removeAgentStatus) for interrupted agents,
-    // and by the Stop hook's `state: 'done'` for normal completions — which must
-    // remain visible in the hovercard until a teardown or freshness TTL. Removing
-    // here on a title-reversion race was exactly the stale-title heuristic this
-    // PR replaces; dropping a `done` entry immediately made the dashboard look
-    // like the agent had vanished as soon as it finished responding.
+    // Why: do not let terminal-title reversion own agent-status lifecycle.
+    // Explicit hooks and OSC 133 command-finished marks are the reliable
+    // signals; title changes can race normal "done" states and make agents
+    // look like they vanished as soon as they finished responding.
   }
   // Why: inject ORCA_PANE_KEY so global Claude/Codex hooks can attribute their
   // callbacks to the correct Orca pane without resolving worktrees from cwd.
