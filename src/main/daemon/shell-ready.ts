@@ -86,7 +86,12 @@ unset ZDOTDIR
 # bare \`local\`/\`typeset\` in user .zshenv become function-scoped; use \`typeset -g\`
 # or \`export\` to escape.
 __orca_source_user_zshenv() {
-  [[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"
+  # Why: honor an externally-set ZDOTDIR (login manager, /etc/zshenv, parent
+  # shell) so users whose real .zshenv lives at \$ZDOTDIR (not \$HOME) still
+  # get PATH/aliases/exports loaded. Falls back to \$HOME when no spawn-env
+  # ZDOTDIR was inherited.
+  local _orca_user_zdotdir="\${_orca_spawn_orig_zdotdir:-$HOME}"
+  [[ -f "$_orca_user_zdotdir/.zshenv" ]] && source "$_orca_user_zdotdir/.zshenv"
 }
 __orca_source_user_zshenv
 unfunction __orca_source_user_zshenv
