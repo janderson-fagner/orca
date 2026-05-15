@@ -442,7 +442,13 @@ export function registerWorktreeHandlers(
         }
         await provider.removeWorktree(worktreePath, args.force)
         runtime.clearOptimisticReconcileToken(args.worktreeId)
-        await runtime.unlinkNotesWorktree(repoId, args.worktreeId)
+        // Why: notes cleanup writes to userData. A disk-full / EACCES / read-only
+        // userData failure must not abort removeWorktreeMeta + history cleanup,
+        // or the worktree would still appear in the sidebar after git-level
+        // removal succeeded.
+        await runtime.unlinkNotesWorktree(repoId, args.worktreeId).catch((err) => {
+          console.warn(`[worktrees] unlinkNotesWorktree failed for ${args.worktreeId}:`, err)
+        })
         store.removeWorktreeMeta(args.worktreeId)
         deleteWorktreeHistoryDir(args.worktreeId)
         notifyWorktreesChanged(mainWindow, repoId)
@@ -480,7 +486,9 @@ export function registerWorktreeHandlers(
           // remains locked — other worktrees cannot check it out.
           await gitExecFileAsync(['worktree', 'prune'], { cwd: repo.path }).catch(() => {})
           runtime.clearOptimisticReconcileToken(args.worktreeId)
-          await runtime.unlinkNotesWorktree(repoId, args.worktreeId)
+          await runtime.unlinkNotesWorktree(repoId, args.worktreeId).catch((err) => {
+            console.warn(`[worktrees] unlinkNotesWorktree failed for ${args.worktreeId}:`, err)
+          })
           store.removeWorktreeMeta(args.worktreeId)
           deleteWorktreeHistoryDir(args.worktreeId)
           invalidateAuthorizedRootsCache()
@@ -490,7 +498,9 @@ export function registerWorktreeHandlers(
         throw new Error(formatWorktreeRemovalError(error, worktreePath, args.force ?? false))
       }
       runtime.clearOptimisticReconcileToken(args.worktreeId)
-      await runtime.unlinkNotesWorktree(repoId, args.worktreeId)
+      await runtime.unlinkNotesWorktree(repoId, args.worktreeId).catch((err) => {
+        console.warn(`[worktrees] unlinkNotesWorktree failed for ${args.worktreeId}:`, err)
+      })
       store.removeWorktreeMeta(args.worktreeId)
       deleteWorktreeHistoryDir(args.worktreeId)
       invalidateAuthorizedRootsCache()
