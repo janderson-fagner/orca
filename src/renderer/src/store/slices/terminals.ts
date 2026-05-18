@@ -221,11 +221,7 @@ export type TerminalSlice = {
    *  model where the bell stays visible until the user engages with the
    *  surface that raised it. */
   clearTerminalTabUnread: (tabId: string) => void
-  setTabCustomTitle: (
-    tabId: string,
-    title: string | null,
-    options?: { preservePaneTitleMirror?: boolean }
-  ) => void
+  setTabCustomTitle: (tabId: string, title: string | null) => void
   setTabColor: (tabId: string, color: string | null) => void
   updateTabPtyId: (tabId: string, ptyId: string) => void
   clearTabPtyId: (tabId: string, ptyId?: string) => void
@@ -962,34 +958,14 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
     })
   },
 
-  setTabCustomTitle: (tabId, title, options) => {
+  setTabCustomTitle: (tabId, title) => {
     set((s) => {
       const next = { ...s.tabsByWorktree }
       for (const wId of Object.keys(next)) {
         next[wId] = next[wId].map((t) => (t.id === tabId ? { ...t, customTitle: title } : t))
       }
-      let terminalLayoutsByTabId = s.terminalLayoutsByTabId
-      const layout = s.terminalLayoutsByTabId[tabId]
-      if (options?.preservePaneTitleMirror && title) {
-        terminalLayoutsByTabId = {
-          ...s.terminalLayoutsByTabId,
-          [tabId]: {
-            ...(layout ?? emptyLayoutSnapshot()),
-            paneTitleMirroredCustomTitle: title
-          }
-        }
-      } else if (layout?.paneTitleMirroredCustomTitle !== undefined) {
-        const { paneTitleMirroredCustomTitle: _mirrorOwner, ...layoutWithoutMirrorOwner } = layout
-        // Why: generic tab renames, including same-text renames, are explicit
-        // owners. TerminalPane immediately restores this marker when Set Title
-        // is the caller that is intentionally mirroring a single-pane title.
-        terminalLayoutsByTabId = {
-          ...s.terminalLayoutsByTabId,
-          [tabId]: layoutWithoutMirrorOwner
-        }
-      }
       scheduleRuntimeGraphSync()
-      return { tabsByWorktree: next, terminalLayoutsByTabId }
+      return { tabsByWorktree: next }
     })
     const item = Object.values(get().unifiedTabsByWorktree)
       .flat()

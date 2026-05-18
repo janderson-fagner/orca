@@ -83,19 +83,6 @@ async function expectTabCustomTitle(
     .toBe(expected)
 }
 
-async function setTabCustomTitleDirect(
-  page: Page,
-  tabId: string,
-  title: string | null
-): Promise<void> {
-  await page.evaluate(
-    ({ targetTabId, title }) => {
-      window.__store!.getState().setTabCustomTitle(targetTabId, title)
-    },
-    { targetTabId: tabId, title }
-  )
-}
-
 async function expectSavedLayoutNotToContainTitle(
   page: Page,
   tabId: string,
@@ -216,54 +203,54 @@ test.describe('Terminal Panes', () => {
     expect(activeLeafId).toMatch(UUID_RE)
   })
 
-  test('Set Title ownership survives agent churn and preserves split semantics', async ({
-    orcaPage
-  }) => {
+  test('Set Title stays pane-local during agent title churn', async ({ orcaPage }) => {
     const worktreeId = (await getActiveWorktreeId(orcaPage))!
-    let tabId = (await getActiveTabId(orcaPage))!
-    const customTitle = `Codex label ${Date.now()}`
+    const tabId = (await getActiveTabId(orcaPage))!
+    const paneTitle = `Codex pane ${Date.now()}`
     const removeButtonTitle = `Remove button label ${Date.now()}`
     const splitTitle = `Split label ${Date.now()}`
-    const runtimeTitle = '⠋ Codex split working'
-    const explicitTitle = `Explicit tab ${Date.now()}`
-    const paneOnlyTitle = `Pane only ${Date.now()}`
+    const runtimeTitle = '⠋ Codex working'
 
-    await setPaneTitleFromTerminalMenu(orcaPage, customTitle)
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, customTitle)
+    await setPaneTitleFromTerminalMenu(orcaPage, paneTitle)
+    await expect(orcaPage.locator('.pane-title-text', { hasText: paneTitle })).toBeVisible()
+    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
 
-    await orcaPage.getByRole('button', { name: `Edit pane title: ${customTitle}` }).focus()
+    await orcaPage.getByRole('button', { name: `Edit pane title: ${paneTitle}` }).focus()
     await orcaPage.keyboard.press('Enter')
     await expect(orcaPage.getByRole('textbox', { name: 'Pane title' })).toBeVisible()
     await orcaPage.keyboard.press('Escape')
 
-    await orcaPage.evaluate((targetTabId) => {
-      window.__store!.getState().updateTabTitle(targetTabId, '⠋ Codex working')
-    }, tabId)
+    await orcaPage.evaluate(
+      ({ targetTabId, title }) => {
+        window.__store!.getState().updateTabTitle(targetTabId, title)
+      },
+      { targetTabId: tabId, title: runtimeTitle }
+    )
 
-    // Why: active agent CLIs continuously write OSC titles. A user-set label
-    // must stay visible as customTitle while the live title keeps changing.
+    // Why: active agents continuously write OSC titles. Set Title is Orca's
+    // pane-local overlay and must remain visible while the tab runtime title
+    // continues to follow the active PTY.
+    await expect(orcaPage.locator('.pane-title-text', { hasText: paneTitle })).toBeVisible()
     await expect(
       orcaPage.locator(`[data-testid="sortable-tab"][data-tab-id="${tabId}"]`)
-    ).toHaveAttribute('data-tab-title', customTitle)
+    ).toHaveAttribute('data-tab-title', runtimeTitle)
+    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
 
     await setPaneTitleFromTerminalMenu(orcaPage, '')
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
-    await expect(orcaPage.locator('.pane-title-text', { hasText: customTitle })).toBeHidden()
-    await expectSavedLayoutNotToContainTitle(orcaPage, tabId, customTitle)
+    await expect(orcaPage.locator('.pane-title-text', { hasText: paneTitle })).toBeHidden()
+    await expectSavedLayoutNotToContainTitle(orcaPage, tabId, paneTitle)
 
     await setPaneTitleFromTerminalMenu(orcaPage, removeButtonTitle)
     await orcaPage.locator('.pane-title-bar', { hasText: removeButtonTitle }).hover()
     await orcaPage.getByRole('button', { name: `Remove pane title: ${removeButtonTitle}` }).click()
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
     await expect(orcaPage.locator('.pane-title-text', { hasText: removeButtonTitle })).toBeHidden()
     await expectSavedLayoutNotToContainTitle(orcaPage, tabId, removeButtonTitle)
 
     await setPaneTitleFromTerminalMenu(orcaPage, splitTitle)
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, splitTitle)
+    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
 
     await splitActiveTerminalPane(orcaPage, 'vertical')
     await waitForPaneCount(orcaPage, 2)
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, null)
     await expect(orcaPage.locator('.pane-title-text', { hasText: splitTitle })).toBeVisible()
 
     await orcaPage.evaluate(
@@ -275,22 +262,6 @@ test.describe('Terminal Panes', () => {
     await expect(
       orcaPage.locator(`[data-testid="sortable-tab"][data-tab-id="${tabId}"]`)
     ).toHaveAttribute('data-tab-title', runtimeTitle)
-
-    await orcaPage.evaluate((targetWorktreeId) => {
-      window.__store!.getState().createTab(targetWorktreeId)
-    }, worktreeId)
-    await waitForPaneCount(orcaPage, 1)
-    tabId = (await getActiveTabId(orcaPage))!
-
-    await setPaneTitleFromTerminalMenu(orcaPage, `Mirror before explicit ${Date.now()}`)
-    await setTabCustomTitleDirect(orcaPage, tabId, explicitTitle)
-    await splitActiveTerminalPane(orcaPage, 'vertical')
-    await waitForPaneCount(orcaPage, 2)
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, explicitTitle)
-
-    await setPaneTitleFromTerminalMenu(orcaPage, paneOnlyTitle)
-    await expect(orcaPage.locator('.pane-title-text', { hasText: paneOnlyTitle })).toBeVisible()
-    await expectTabCustomTitle(orcaPage, worktreeId, tabId, explicitTitle)
   })
 
   test('closing a split pane prunes its leaf-keyed PTY binding without remapping siblings', async ({

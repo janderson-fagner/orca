@@ -135,26 +135,6 @@ async function getTabCustomTitle(
   )
 }
 
-async function setTabCustomTitleDirect(
-  page: Page,
-  tabId: string,
-  title: string | null
-): Promise<void> {
-  await page.evaluate(
-    ({ targetTabId, title }) => {
-      window.__store!.getState().setTabCustomTitle(targetTabId, title)
-    },
-    { targetTabId: tabId, title }
-  )
-}
-
-async function getSavedLayoutMirrorTitle(page: Page, tabId: string): Promise<string | null> {
-  return page.evaluate((targetTabId) => {
-    const layout = window.__store!.getState().terminalLayoutsByTabId[targetTabId]
-    return layout?.paneTitleMirroredCustomTitle ?? null
-  }, tabId)
-}
-
 async function expectSavedLayoutToContainTitle(
   page: Page,
   tabId: string,
@@ -301,7 +281,7 @@ test.describe('Terminal restart persistence', () => {
     }
   })
 
-  test('restored single-pane Set Title ownership clears after split', async (// oxlint-disable-next-line no-empty-pattern -- Playwright's second fixture arg is testInfo; the first must be an object destructure to opt out of the default fixture set.
+  test('restored Set Title pane label survives agent title churn', async (// oxlint-disable-next-line no-empty-pattern -- Playwright's second fixture arg is testInfo; the first must be an object destructure to opt out of the default fixture set.
   {}, testInfo) => {
     const repoPath = readFileSync(TEST_REPO_PATH_FILE, 'utf-8').trim()
     if (!repoPath || !existsSync(repoPath)) {
@@ -325,7 +305,7 @@ test.describe('Terminal restart persistence', () => {
         .poll(() => getTabCustomTitle(firstLaunch.page, worktreeId, firstTabId), {
           timeout: 3_000
         })
-        .toBe(title)
+        .toBe(null)
 
       await session.close(firstApp)
       firstApp = null
@@ -340,23 +320,10 @@ test.describe('Terminal restart persistence', () => {
         .poll(() => getTabCustomTitle(secondLaunch.page, worktreeId, restoredTabId), {
           timeout: 3_000
         })
-        .toBe(title)
-      await expectSavedLayoutToContainTitle(secondLaunch.page, restoredTabId, title)
-      await expect
-        .poll(() => getSavedLayoutMirrorTitle(secondLaunch.page, restoredTabId), {
-          timeout: 3_000
-        })
-        .toBe(title)
-
-      await splitActiveTerminalPane(secondLaunch.page, 'vertical')
-      await waitForPaneCount(secondLaunch.page, 2)
-      await expect
-        .poll(() => getTabCustomTitle(secondLaunch.page, worktreeId, restoredTabId), {
-          timeout: 3_000
-        })
         .toBe(null)
+      await expectSavedLayoutToContainTitle(secondLaunch.page, restoredTabId, title)
 
-      const runtimeTitle = '⠋ Codex restored split working'
+      const runtimeTitle = '⠋ Codex restored working'
       await secondLaunch.page.evaluate(
         ({ targetTabId, title }) => {
           window.__store!.getState().updateTabTitle(targetTabId, title)
@@ -366,71 +333,16 @@ test.describe('Terminal restart persistence', () => {
       await expect(
         secondLaunch.page.locator(`[data-testid="sortable-tab"][data-tab-id="${restoredTabId}"]`)
       ).toHaveAttribute('data-tab-title', runtimeTitle)
-    } finally {
-      if (secondApp) {
-        await session.close(secondApp)
-      }
-      if (firstApp) {
-        await session.close(firstApp)
-      }
-      await session.dispose()
-    }
-  })
-
-  test('restored same-text explicit tab title survives split', async (// oxlint-disable-next-line no-empty-pattern -- Playwright's second fixture arg is testInfo; the first must be an object destructure to opt out of the default fixture set.
-  {}, testInfo) => {
-    const repoPath = readFileSync(TEST_REPO_PATH_FILE, 'utf-8').trim()
-    if (!repoPath || !existsSync(repoPath)) {
-      test.skip(true, 'Global setup did not produce a seeded test repo')
-      return
-    }
-
-    const session = createRestartSession(testInfo)
-    let firstApp: ElectronApplication | null = null
-    let secondApp: ElectronApplication | null = null
-
-    try {
-      const firstLaunch = await session.launch()
-      firstApp = firstLaunch.app
-      const { worktreeId } = await bootstrapFirstLaunch(firstLaunch.page, repoPath)
-      const title = `Explicit same label ${Date.now()}`
-      const firstTabId = (await getActiveTabId(firstLaunch.page))!
-
-      await setPaneTitleFromTerminalMenu(firstLaunch.page, title)
+      await expect(secondLaunch.page.locator('.pane-title-text', { hasText: title })).toBeVisible()
       await expect
-        .poll(() => getTabCustomTitle(firstLaunch.page, worktreeId, firstTabId), {
-          timeout: 3_000
-        })
-        .toBe(title)
-
-      await session.close(firstApp)
-      firstApp = null
-
-      const secondLaunch = await session.launch()
-      secondApp = secondLaunch.app
-      await bootstrapRestoredLaunch(secondLaunch.page, worktreeId)
-      const restoredTabId = (await getActiveTabId(secondLaunch.page))!
-
-      await expect
-        .poll(() => getSavedLayoutMirrorTitle(secondLaunch.page, restoredTabId), {
-          timeout: 3_000
-        })
-        .toBe(title)
-
-      await setTabCustomTitleDirect(secondLaunch.page, restoredTabId, title)
-      await expect
-        .poll(() => getSavedLayoutMirrorTitle(secondLaunch.page, restoredTabId), {
+        .poll(() => getTabCustomTitle(secondLaunch.page, worktreeId, restoredTabId), {
           timeout: 3_000
         })
         .toBe(null)
 
       await splitActiveTerminalPane(secondLaunch.page, 'vertical')
       await waitForPaneCount(secondLaunch.page, 2)
-      await expect
-        .poll(() => getTabCustomTitle(secondLaunch.page, worktreeId, restoredTabId), {
-          timeout: 3_000
-        })
-        .toBe(title)
+      await expect(secondLaunch.page.locator('.pane-title-text', { hasText: title })).toBeVisible()
     } finally {
       if (secondApp) {
         await session.close(secondApp)

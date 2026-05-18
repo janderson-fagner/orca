@@ -485,8 +485,6 @@ export type TerminalLayoutSnapshot = {
   /** User-assigned pane titles, keyed by stable layout leaf UUID.
    *  Persisted alongside buffers via the existing session:set flow. */
   titlesByLeafId?: Record<string, string>
-  /** Single-pane title mirrored into the tab custom title by Terminal Set Title. */
-  paneTitleMirroredCustomTitle?: string
 }
 
 /** Minimal subset of OpenFile persisted across restarts.

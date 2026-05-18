@@ -230,8 +230,7 @@ export default function TerminalPane({
   const [paneTitles, setPaneTitles] = useState<Record<number, string>>({})
   const paneTitlesRef = useRef<Record<number, string>>({})
   paneTitlesRef.current = paneTitles
-  const mirroredPaneTitleCustomTitleRef = useRef<string | null>(null)
-  const previousPaneCountRef = useRef<number | null>(null)
+  const removedTitleLeafIdsRef = useRef<Set<string>>(new Set())
   const [renamingPaneId, setRenamingPaneId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -256,12 +255,6 @@ export default function TerminalPane({
   const setTabLayout = useAppStore((store) => store.setTabLayout)
   const initialLayoutRef = useRef(savedLayout)
   const updateTabTitle = useAppStore((store) => store.updateTabTitle)
-  const setTabCustomTitle = useAppStore((store) => store.setTabCustomTitle)
-  const tabCustomTitle = useAppStore(
-    (store) =>
-      (store.tabsByWorktree[worktreeId] ?? []).find((entry) => entry.id === tabId)?.customTitle ??
-      null
-  )
   const setRuntimePaneTitle = useAppStore((store) => store.setRuntimePaneTitle)
   const clearRuntimePaneTitle = useAppStore((store) => store.clearRuntimePaneTitle)
   const updateTabPtyId = useAppStore((store) => store.updateTabPtyId)
@@ -322,25 +315,6 @@ export default function TerminalPane({
   const dispatchNotification = useNotificationDispatch(worktreeId)
   const setCacheTimerStartedAt = useAppStore((store) => store.setCacheTimerStartedAt)
 
-  const getCurrentTabCustomTitle = useCallback((): string | null => {
-    const state = useAppStore.getState()
-    return (
-      (state.tabsByWorktree[worktreeId] ?? []).find((entry) => entry.id === tabId)?.customTitle ??
-      null
-    )
-  }, [tabId, worktreeId])
-
-  const clearMirroredPaneTitleCustomTitle = useCallback((): void => {
-    const mirroredTitle = mirroredPaneTitleCustomTitleRef.current
-    if (!mirroredTitle) {
-      return
-    }
-    if (getCurrentTabCustomTitle() === mirroredTitle) {
-      setTabCustomTitle(tabId, null)
-    }
-    mirroredPaneTitleCustomTitleRef.current = null
-  }, [getCurrentTabCustomTitle, setTabCustomTitle, tabId])
-
   // Memoized with useCallback so downstream hooks (useTerminalKeyboardShortcuts,
   // useTerminalPaneLifecycle, createExpandCollapseActions) don't tear down and
   // re-register event listeners on every render. All data it reads comes from
@@ -397,31 +371,30 @@ export default function TerminalPane({
     // Preserve pane titles — uses the live React state (via ref) rather than
     // the stale Zustand value because React state reflects in-flight title
     // edits that haven't been persisted yet.
-    const titles = paneTitlesRef.current
-    const titleEntries = currentPanes
-      .filter((p) => titles[p.id])
-      .map((p) => [p.leafId, titles[p.id]] as const)
-    if (titleEntries.length > 0) {
-      layout.titlesByLeafId = Object.fromEntries(titleEntries)
+    const titlesByLeafId: Record<string, string> = {}
+    const removedTitleLeafIds = removedTitleLeafIdsRef.current
+    for (const pane of currentPanes) {
+      const existingTitle = existing?.titlesByLeafId?.[pane.leafId]
+      if (existingTitle && !removedTitleLeafIds.has(pane.leafId)) {
+        titlesByLeafId[pane.leafId] = existingTitle
+      }
     }
-    const existingMirrorCustomTitle = existing?.paneTitleMirroredCustomTitle?.trim()
-    const currentTabCustomTitle = getCurrentTabCustomTitle()
-    const restoredMirrorCustomTitle =
-      existingMirrorCustomTitle &&
-      currentPanes.length === 1 &&
-      currentTabCustomTitle === existingMirrorCustomTitle
-        ? existingMirrorCustomTitle
-        : null
-    const mirroredCustomTitle = mirroredPaneTitleCustomTitleRef.current ?? restoredMirrorCustomTitle
-    if (
-      mirroredCustomTitle &&
-      currentPanes.length === 1 &&
-      currentTabCustomTitle === mirroredCustomTitle
-    ) {
-      layout.paneTitleMirroredCustomTitle = mirroredCustomTitle
+    // Why: active agents can trigger layout persists while pane-title React
+    // state is catching up. Preserve existing leaf titles unless this pane
+    // explicitly removed them, then overlay the live local pane-title state.
+    const titles = paneTitlesRef.current
+    for (const pane of currentPanes) {
+      const title = titles[pane.id]
+      if (title) {
+        titlesByLeafId[pane.leafId] = title
+        removedTitleLeafIds.delete(pane.leafId)
+      }
+    }
+    if (Object.keys(titlesByLeafId).length > 0) {
+      layout.titlesByLeafId = titlesByLeafId
     }
     setTabLayout(tabId, layout)
-  }, [getCurrentTabCustomTitle, tabId, setTabLayout])
+  }, [tabId, setTabLayout])
 
   const syncPanePtyLayoutBinding = useCallback(
     (paneId: number, ptyId: string | null): void => {
@@ -988,58 +961,6 @@ export default function TerminalPane({
     }
   }, [paneTitles, renamingPaneId])
 
-  useEffect(() => {
-    const manager = managerRef.current
-    if (!manager || mirroredPaneTitleCustomTitleRef.current !== null) {
-      return
-    }
-    const panes = manager.getPanes()
-    if (panes.length !== 1) {
-      return
-    }
-    const paneTitle = paneTitles[panes[0].id]?.trim()
-    const mirroredCustomTitle = savedLayout?.paneTitleMirroredCustomTitle?.trim()
-    if (paneTitle && mirroredCustomTitle && tabCustomTitle === mirroredCustomTitle) {
-      // Why: after session restore, a single-pane title mirrored into
-      // customTitle before shutdown should still be invalidated if the user
-      // later splits the terminal.
-      mirroredPaneTitleCustomTitleRef.current = mirroredCustomTitle
-      previousPaneCountRef.current = panes.length
-    }
-  }, [paneCount, paneTitles, savedLayout?.paneTitleMirroredCustomTitle, tabCustomTitle])
-
-  useEffect(() => {
-    const mirroredTitle = mirroredPaneTitleCustomTitleRef.current
-    if (mirroredTitle && tabCustomTitle !== null && tabCustomTitle !== mirroredTitle) {
-      // Why: a tab-bar rename is a separate, explicit label owner. Once the
-      // value diverges from the pane-title mirror, later split/remove actions
-      // must not clear that unrelated customTitle.
-      mirroredPaneTitleCustomTitleRef.current = null
-    }
-  }, [tabCustomTitle])
-
-  useEffect(() => {
-    const currentPaneCount = managerRef.current?.getPanes().length ?? paneCount
-    const previousPaneCount = previousPaneCountRef.current
-    previousPaneCountRef.current = currentPaneCount
-    if (previousPaneCount !== null && previousPaneCount <= 1 && currentPaneCount > 1) {
-      clearMirroredPaneTitleCustomTitle()
-    }
-  }, [clearMirroredPaneTitleCustomTitle, paneCount])
-
-  useEffect(() => {
-    const mirroredTitle = mirroredPaneTitleCustomTitleRef.current
-    if (!mirroredTitle) {
-      return
-    }
-    if (savedLayout?.paneTitleMirroredCustomTitle !== mirroredTitle) {
-      // Why: an explicit tab rename is allowed to match the pane title text.
-      // The persisted owner marker, not text equality, decides whether later
-      // split/remove cleanup may clear customTitle.
-      mirroredPaneTitleCustomTitleRef.current = null
-    }
-  }, [savedLayout?.paneTitleMirroredCustomTitle])
-
   // Register a capture callback for shutdown. The beforeunload handler in
   // App.tsx calls all registered callbacks to serialize terminal buffers.
   useEffect(() => {
@@ -1109,12 +1030,13 @@ export default function TerminalPane({
         delete next[paneId]
         paneTitlesRef.current = next
       }
-      if ((managerRef.current?.getPanes().length ?? 1) <= 1) {
-        clearMirroredPaneTitleCustomTitle()
+      const leafId = managerRef.current?.getPanes().find((pane) => pane.id === paneId)?.leafId
+      if (leafId) {
+        removedTitleLeafIdsRef.current.add(leafId)
       }
       persistLayoutSnapshot()
     },
-    [clearMirroredPaneTitleCustomTitle, persistLayoutSnapshot]
+    [persistLayoutSnapshot]
   )
 
   const handleRenameSubmit = useCallback(() => {
@@ -1136,25 +1058,14 @@ export default function TerminalPane({
     // waiting for React to re-render and assign it during the next
     // render pass.
     paneTitlesRef.current = { ...paneTitlesRef.current, [renamingPaneId]: trimmed }
-    if ((managerRef.current?.getPanes().length ?? 1) <= 1) {
-      // Why: with one pane, the terminal context menu's title action is the
-      // tab title action users expect; customTitle keeps Codex OSC title churn
-      // from immediately replacing their label.
-      mirroredPaneTitleCustomTitleRef.current = trimmed
-      previousPaneCountRef.current = managerRef.current?.getPanes().length ?? 1
-      setTabCustomTitle(tabId, trimmed, { preservePaneTitleMirror: true })
+    const leafId = managerRef.current?.getPanes().find((pane) => pane.id === renamingPaneId)?.leafId
+    if (leafId) {
+      removedTitleLeafIdsRef.current.delete(leafId)
     }
     setRenamingPaneId(null)
     // Persist immediately so the title survives restarts.
     persistLayoutSnapshot()
-  }, [
-    renamingPaneId,
-    renameValue,
-    removePaneTitle,
-    setTabCustomTitle,
-    tabId,
-    persistLayoutSnapshot
-  ])
+  }, [renamingPaneId, renameValue, removePaneTitle, persistLayoutSnapshot])
 
   const handleRenameCancel = useCallback(() => {
     renameSubmittedRef.current = true
