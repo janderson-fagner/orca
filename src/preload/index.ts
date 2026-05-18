@@ -96,7 +96,13 @@ import type {
   AgentStatusIpcPayload,
   MigrationUnsupportedPtyEntry
 } from '../shared/agent-status-types'
-import type { SpeechModelManifest, SpeechModelState } from '../shared/speech-types'
+import type {
+  SpeechErrorEvent,
+  SpeechLifecycleEvent,
+  SpeechModelManifest,
+  SpeechModelState,
+  SpeechTranscriptEvent
+} from '../shared/speech-types'
 import type { TelemetryConsentState } from '../shared/telemetry-consent-types'
 import type { RefreshAgentsResult } from './api-types'
 import type { AgentKind, LaunchSource, RequestKind } from '../shared/telemetry-events'
@@ -3014,25 +3020,32 @@ const api = {
       ipcRenderer.invoke('speech:cancelDownload', modelId),
     deleteModel: (modelId: string): Promise<void> =>
       ipcRenderer.invoke('speech:deleteModel', modelId),
-    startDictation: (modelId: string, hotwords?: string[]): Promise<void> =>
-      ipcRenderer.invoke('speech:startDictation', modelId, hotwords),
-    feedAudio: (samples: Float32Array, sampleRate: number): Promise<void> =>
+    startDictation: (
+      modelId: string,
+      hotwords: string[] | undefined,
+      sessionId: string
+    ): Promise<void> => ipcRenderer.invoke('speech:startDictation', modelId, hotwords, sessionId),
+    feedAudio: (samples: Float32Array, sampleRate: number, sessionId = 'desktop'): Promise<void> =>
       // Why: Float32Array data gets zeroed out when crossing the contextBridge
       // + IPC boundary. Wrapping in a Buffer preserves the raw bytes reliably.
       ipcRenderer.invoke(
         'speech:feedAudio',
         Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength),
-        sampleRate
+        sampleRate,
+        sessionId
       ),
-    stopDictation: (): Promise<void> => ipcRenderer.invoke('speech:stopDictation'),
+    stopDictation: (sessionId = 'desktop'): Promise<void> =>
+      ipcRenderer.invoke('speech:stopDictation', sessionId),
 
-    onPartialTranscript: (callback: (text: string) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, text: string): void => callback(text)
+    onPartialTranscript: (callback: (data: SpeechTranscriptEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: SpeechTranscriptEvent): void =>
+        callback(data)
       ipcRenderer.on('speech:partial', listener)
       return () => ipcRenderer.removeListener('speech:partial', listener)
     },
-    onFinalTranscript: (callback: (text: string) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, text: string): void => callback(text)
+    onFinalTranscript: (callback: (data: SpeechTranscriptEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: SpeechTranscriptEvent): void =>
+        callback(data)
       ipcRenderer.on('speech:final', listener)
       return () => ipcRenderer.removeListener('speech:final', listener)
     },
@@ -3046,18 +3059,21 @@ const api = {
       ipcRenderer.on('speech:downloadProgress', listener)
       return () => ipcRenderer.removeListener('speech:downloadProgress', listener)
     },
-    onReady: (callback: () => void): (() => void) => {
-      const listener = (): void => callback()
+    onReady: (callback: (data: SpeechLifecycleEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: SpeechLifecycleEvent): void =>
+        callback(data)
       ipcRenderer.on('speech:ready', listener)
       return () => ipcRenderer.removeListener('speech:ready', listener)
     },
-    onStopped: (callback: () => void): (() => void) => {
-      const listener = (): void => callback()
+    onStopped: (callback: (data: SpeechLifecycleEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: SpeechLifecycleEvent): void =>
+        callback(data)
       ipcRenderer.on('speech:stopped', listener)
       return () => ipcRenderer.removeListener('speech:stopped', listener)
     },
-    onError: (callback: (error: string) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, error: string): void => callback(error)
+    onError: (callback: (data: SpeechErrorEvent) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: SpeechErrorEvent): void =>
+        callback(data)
       ipcRenderer.on('speech:error', listener)
       return () => ipcRenderer.removeListener('speech:error', listener)
     }
