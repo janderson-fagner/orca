@@ -267,7 +267,8 @@ function ensureOrcaDirIgnored(repoPath: string): void {
 function getEffectiveHookScript(
   yamlScript: string | undefined,
   localScript: string | undefined,
-  policy: HookCommandSourcePolicy
+  policy: HookCommandSourcePolicy,
+  legacyFallback: boolean
 ): string | undefined {
   const shared = yamlScript?.trim()
   const local = localScript?.trim()
@@ -280,16 +281,38 @@ function getEffectiveHookScript(
     return [shared, local].filter(Boolean).join('\n') || undefined
   }
 
+  // Why: existing users persisted local setup/archive scripts before
+  // commandSourcePolicy existed. Without a fallback the new default
+  // 'shared-only' would silently drop those scripts when orca.yaml is missing.
+  if (legacyFallback) {
+    return shared || local || undefined
+  }
+
   return shared || undefined
 }
 
+function hasLegacyLocalScripts(repo: Repo): boolean {
+  return Boolean(
+    repo.hookSettings?.scripts.setup?.trim() || repo.hookSettings?.scripts.archive?.trim()
+  )
+}
+
 export function getEffectiveHooks(repo: Repo, worktreePath?: string): OrcaHooks | null {
-  const yamlHooks = loadHooks(worktreePath ?? repo.path)
+  const hooksRoot = worktreePath ?? repo.path
+  const yamlHooks = loadHooks(hooksRoot)
+  const yamlFileExists = hasHooksFile(hooksRoot)
   const localSetup = repo.hookSettings?.scripts.setup
   const localArchive = repo.hookSettings?.scripts.archive
-  const policy = normalizeHookCommandSourcePolicy(repo.hookSettings?.commandSourcePolicy)
-  const setup = getEffectiveHookScript(yamlHooks?.scripts.setup, localSetup, policy)
-  const archive = getEffectiveHookScript(yamlHooks?.scripts.archive, localArchive, policy)
+  const rawPolicy = repo.hookSettings?.commandSourcePolicy
+  const policy = normalizeHookCommandSourcePolicy(rawPolicy)
+  const legacyFallback = rawPolicy === undefined && !yamlFileExists && hasLegacyLocalScripts(repo)
+  const setup = getEffectiveHookScript(yamlHooks?.scripts.setup, localSetup, policy, legacyFallback)
+  const archive = getEffectiveHookScript(
+    yamlHooks?.scripts.archive,
+    localArchive,
+    policy,
+    legacyFallback
+  )
 
   if (!setup && !archive) {
     return null
@@ -330,9 +353,13 @@ export function getSetupCommandSource(
   repo: Repo,
   worktreePath?: string
 ): { source: 'yaml' | 'local' | 'both'; command: string } | null {
-  const yamlSetup = loadHooks(worktreePath ?? repo.path)?.scripts.setup?.trim()
+  const hooksRoot = worktreePath ?? repo.path
+  const yamlHooks = loadHooks(hooksRoot)
+  const yamlFileExists = hasHooksFile(hooksRoot)
+  const yamlSetup = yamlHooks?.scripts.setup?.trim()
   const localSetup = repo.hookSettings?.scripts.setup?.trim()
-  const policy = normalizeHookCommandSourcePolicy(repo.hookSettings?.commandSourcePolicy)
+  const rawPolicy = repo.hookSettings?.commandSourcePolicy
+  const policy = normalizeHookCommandSourcePolicy(rawPolicy)
 
   if (policy === 'local-only') {
     return localSetup ? { source: 'local', command: localSetup } : null
@@ -344,6 +371,12 @@ export function getSetupCommandSource(
 
   if (yamlSetup) {
     return { source: 'yaml', command: yamlSetup }
+  }
+
+  // Why: pre-policy persisted local setup scripts must keep working when
+  // orca.yaml is missing; otherwise upgrading silently drops the legacy hook.
+  if (rawPolicy === undefined && !yamlFileExists && localSetup && hasLegacyLocalScripts(repo)) {
+    return { source: 'local', command: localSetup }
   }
 
   return null

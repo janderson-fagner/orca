@@ -580,6 +580,40 @@ describe('registerPtyHandlers', () => {
       expect(env.ORCA_AGENT_HOOK_TOKEN).toBe('agent-token')
     })
 
+    it('strips stale inherited hook receiver env before injecting this runtime', async () => {
+      const env = await spawnAndGetEnv({
+        ORCA_AGENT_HOOK_PORT: '1111',
+        ORCA_AGENT_HOOK_TOKEN: 'stale-token',
+        ORCA_AGENT_HOOK_ENV: 'production',
+        ORCA_AGENT_HOOK_VERSION: 'stale-version',
+        ORCA_AGENT_HOOK_ENDPOINT: '/tmp/stale-endpoint.env'
+      })
+
+      expect(env.ORCA_AGENT_HOOK_PORT).toBe('5678')
+      expect(env.ORCA_AGENT_HOOK_TOKEN).toBe('agent-token')
+      expect(env.ORCA_AGENT_HOOK_ENV).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_VERSION).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_ENDPOINT).toBeUndefined()
+    })
+
+    it('does not leak inherited hook receiver env if the hook server is unavailable', async () => {
+      buildAgentHookEnvMock.mockReturnValueOnce({})
+
+      const env = await spawnAndGetEnv({
+        ORCA_AGENT_HOOK_PORT: '1111',
+        ORCA_AGENT_HOOK_TOKEN: 'stale-token',
+        ORCA_AGENT_HOOK_ENV: 'production',
+        ORCA_AGENT_HOOK_VERSION: 'stale-version',
+        ORCA_AGENT_HOOK_ENDPOINT: '/tmp/stale-endpoint.env'
+      })
+
+      expect(env.ORCA_AGENT_HOOK_PORT).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_TOKEN).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_ENV).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_VERSION).toBeUndefined()
+      expect(env.ORCA_AGENT_HOOK_ENDPOINT).toBeUndefined()
+    })
+
     it('prepends local git/gh attribution shims when attribution is enabled', async () => {
       const env = await spawnAndGetEnv(undefined, undefined, undefined, () => ({
         enableGitHubAttribution: true

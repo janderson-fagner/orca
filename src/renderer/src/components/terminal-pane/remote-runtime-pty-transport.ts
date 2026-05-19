@@ -31,12 +31,6 @@ const REMOTE_TERMINAL_VIEWPORT_FLUSH_MS = 33
 const HOST_SESSION_ATTACH_POLL_MS = 150
 const HOST_SESSION_ATTACH_TIMEOUT_MS = 15_000
 
-function normalizeRemoteTerminalInput(data: string): string {
-  // Why: PTYs expect the Enter key as carriage return. Some browser/mobile
-  // input paths can emit bare LF, which zsh renders with PROMPT_SP `%` marks.
-  return data.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
-}
-
 function isRemoteTerminalGoneMessage(message: string): boolean {
   return (
     message.includes('terminal_handle_stale') ||
@@ -218,11 +212,10 @@ export function createRemoteRuntimePtyTransport(
     if (!connected || !targetHandle) {
       return false
     }
-    const normalized = normalizeRemoteTerminalInput(data)
-    if (!normalized) {
+    if (!data) {
       return true
     }
-    const text = `${inputBatcher.takePending()}${normalized}`
+    const text = `${inputBatcher.takePending()}${data}`
     try {
       const result = await callRuntime<{ send: RuntimeTerminalSend }>('terminal.send', {
         terminal: targetHandle,
@@ -479,13 +472,12 @@ export function createRemoteRuntimePtyTransport(
       if (!connected || !handle) {
         return false
       }
-      const normalized = normalizeRemoteTerminalInput(data)
-      if (!normalized) {
+      if (!data) {
         return true
       }
-      // Why: remote terminal input currently crosses the runtime RPC boundary;
-      // coalescing same-frame key bursts avoids a per-keystroke remote round-trip.
-      inputBatcher.push(normalized)
+      // Why: callers use \r or terminal.send's enter flag for semantic Enter;
+      // literal LF bytes from paste/programmatic input must survive the stream.
+      inputBatcher.push(data)
       return true
     },
 

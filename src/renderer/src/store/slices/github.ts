@@ -585,7 +585,7 @@ export type GitHubSlice = {
    * "new workspace" buttons) to warm the cache before the page mounts.
    */
   prefetchWorkItems: (repoId: string, repoPath: string, limit?: number, query?: string) => void
-  patchWorkItem: (itemId: string, patch: Partial<GitHubWorkItem>) => void
+  patchWorkItem: (itemId: string, patch: Partial<GitHubWorkItem>, repoId?: string | null) => void
   /**
    * Monotonic counter bumped whenever a repo's issue-source preference is
    * flipped. Subscribers (TaskPage's fetch effect) include this in their
@@ -1663,7 +1663,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     }
   },
 
-  patchWorkItem: (itemId, patch) => {
+  patchWorkItem: (itemId, patch, repoId) => {
     set((s) => {
       const nextCache = { ...s.workItemsCache }
       let changed = false
@@ -1672,7 +1672,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         if (!entry?.data) {
           continue
         }
-        const idx = entry.data.findIndex((item) => item.id === itemId)
+        // Why: GitHub issue/PR ids are only unique within a repo. Cross-repo
+        // task views can contain the same `pr:42` id from multiple repos.
+        const idx = entry.data.findIndex(
+          (item) => item.id === itemId && (!repoId || item.repoId === repoId)
+        )
         if (idx === -1) {
           continue
         }

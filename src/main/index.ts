@@ -108,6 +108,9 @@ let watcherShutdownDone = false
 let automations: AutomationService | null = null
 const isServeMode = process.argv.includes('--serve')
 const devInstanceIdentity = getDevInstanceIdentity(is.dev)
+const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
+  ? devInstanceIdentity.appUserModelId
+  : undefined
 
 installUncaughtPipeErrorGuard()
 // Why: propagate the Orca app version into `process.env` so PTY-env
@@ -164,12 +167,11 @@ function focusExistingWindow(): void {
 //
 // Why skip in dev: engineers routinely run `pnpm dev` in parallel from
 // multiple worktrees while shipping features, and the lock makes the second
-// `pnpm dev` exit silently. In dev we accept that `orca-runtime.json` and
-// `endpoint.env` may race (the bundled `orca-dev` CLI / agent hooks route
-// to whichever instance wrote last). The dev build is not used for real
-// agent work, so that routing ambiguity is acceptable. Packaged Orca keeps
-// the lock to protect against the corruption documented in PR #1326 /
-// issue #1312.
+// `pnpm dev` exit silently. In dev we accept that `orca-runtime.json` may race
+// (the bundled `orca-dev` CLI routes to whichever instance wrote last). Agent
+// hook endpoint files are namespaced per dev instance when the hook server
+// starts below. Packaged Orca keeps the lock to protect against the corruption
+// documented in PR #1326 / issue #1312.
 const hasSingleInstanceLock =
   is.dev && !isServeMode ? true : acquireSingleInstanceLock(app, focusExistingWindow)
 if (!hasSingleInstanceLock) {
@@ -787,6 +789,7 @@ app.whenReady().then(async () => {
   })
   runtime = runtimeService
   automations = new AutomationService(store, { claudeUsage, codexUsage })
+  runtimeService.setAutomationService(automations)
   runtimeService.setAccountServices({ claudeAccounts, codexAccounts, rateLimits })
   runtimeService.setCommitMessageAgentEnvironmentResolvers({
     prepareForCodexLaunch: () =>
@@ -941,7 +944,9 @@ app.whenReady().then(async () => {
           env: app.isPackaged ? 'production' : 'development',
           // Why: hooks source this endpoint file at invocation time, so old PTY
           // env still reaches the current Orca process after an app restart.
-          userDataPath: app.getPath('userData')
+          // Dev uses a namespace because all worktrees share `orca-dev`.
+          userDataPath: app.getPath('userData'),
+          endpointNamespace: devAgentHookEndpointNamespace
         }),
       onDaemonError: (error) => {
         console.error('[daemon] Failed to start daemon PTY provider, falling back to local:', error)

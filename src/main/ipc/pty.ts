@@ -80,6 +80,14 @@ const ptyPaneKey = new Map<string, string>()
 // Kept in lock-step with ptyPaneKey via the same spawn and teardown sites.
 const paneKeyPtyId = new Map<string, string>()
 
+const AGENT_HOOK_RUNTIME_ENV_KEYS = [
+  'ORCA_AGENT_HOOK_PORT',
+  'ORCA_AGENT_HOOK_TOKEN',
+  'ORCA_AGENT_HOOK_ENV',
+  'ORCA_AGENT_HOOK_VERSION',
+  'ORCA_AGENT_HOOK_ENDPOINT'
+] as const
+
 export function getPtyIdForPaneKey(paneKey: string): string | undefined {
   return paneKeyPtyId.get(paneKey)
 }
@@ -305,12 +313,11 @@ export function buildPtyHostEnv(
   // must inject the loopback receiver coordinates before the agent starts.
   // Without these env vars the global hook config cannot map callbacks back
   // to the correct Orca pane.
-  if (!opts.isPackaged) {
-    // Why: `pnpm dev` is often launched from an Orca-managed terminal, so
-    // process.env can already contain another instance's endpoint.env path.
-    // Dev PTYs must use their direct port/token only; otherwise hook scripts
-    // source the stale shared endpoint and report to the wrong app.
-    delete baseEnv.ORCA_AGENT_HOOK_ENDPOINT
+  // Why: nested Orca terminals can inherit another process's hook endpoint or
+  // token. Strip all hook runtime coordinates before injecting this PTY's fresh
+  // server values so callbacks route to the owning app/runtime.
+  for (const key of AGENT_HOOK_RUNTIME_ENV_KEYS) {
+    delete baseEnv[key]
   }
   Object.assign(baseEnv, agentHookServer.buildPtyEnv())
 

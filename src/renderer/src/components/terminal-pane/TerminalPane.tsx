@@ -53,6 +53,7 @@ import {
   getRemoteRuntimePtyEnvironmentId,
   getRemoteRuntimeTerminalHandle
 } from '@/runtime/runtime-terminal-stream'
+import { closeWebRuntimeTerminal } from '@/runtime/web-runtime-session'
 import { isPrimarySelectionEnabled, readPrimarySelectionText } from '@/lib/primary-selection'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
 import { isTerminalSessionStateSaveFailure } from '../../../../shared/terminal-session-state-save-failure'
@@ -60,6 +61,7 @@ import {
   isSyntheticSinglePaneTitle,
   sanitizeTerminalLayoutPaneTitles
 } from '@/lib/terminal-pane-title-sanitization'
+import { planTerminalLiveLayoutInsertions } from './terminal-live-layout-reconciliation'
 import type { TerminalQuickCommand, TerminalQuickCommandScope } from '../../../../shared/types'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
@@ -587,6 +589,8 @@ export default function TerminalPane({
         // so the sidebar doesn't show a stale countdown for a pane that no
         // longer exists. The closeTab path handles bulk cleanup, but closing
         // a single split pane doesn't go through closeTab.
+        const ptyId = paneTransportsRef.current.get(paneId)?.getPtyId() ?? null
+        closeWebRuntimeTerminal(ptyId)
         const leafId = manager.getLeafId(paneId)
         if (leafId) {
           useAppStore.getState().setCacheTimerStartedAt(makePaneKey(tabId, leafId), null)
@@ -698,6 +702,69 @@ export default function TerminalPane({
     setRenamingPaneId,
     setPaneCount
   })
+
+  useEffect(() => {
+    if (!(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__) {
+      return
+    }
+    const manager = managerRef.current
+    if (!manager || !restoredLayout.root) {
+      return
+    }
+    const insertions = planTerminalLiveLayoutInsertions(
+      restoredLayout.root,
+      manager.getPanes().map((pane) => pane.leafId)
+    )
+    if (insertions.length === 0) {
+      return
+    }
+
+    let appliedInsertion = false
+    for (const insertion of insertions) {
+      const ptyId = restoredLayout.ptyIdsByLeafId?.[insertion.newLeafId]
+      const sourcePaneId = manager.getNumericIdForLeaf(insertion.sourceLeafId)
+      if (!ptyId || sourcePaneId === null || manager.getNumericIdForLeaf(insertion.newLeafId)) {
+        continue
+      }
+      // Why: paired web terminals receive host split-pane snapshots after the
+      // pane manager is already mounted. Adopt the host leaf + PTY instead of
+      // spawning a local-only web pane.
+      // Before-placement swaps [source, new] after splitPane, so invert the
+      // host first-child ratio before applying it to the temporary order.
+      const splitRatio =
+        insertion.ratio === undefined
+          ? undefined
+          : insertion.placement === 'before'
+            ? 1 - insertion.ratio
+            : insertion.ratio
+      const createdPane = manager.splitPaneAroundLeafIds(
+        insertion.sourceLeafIds,
+        sourcePaneId,
+        insertion.direction,
+        {
+          ...(splitRatio !== undefined && { ratio: splitRatio }),
+          leafId: insertion.newLeafId,
+          ptyId,
+          placement: insertion.placement
+        }
+      )
+      if (!createdPane) {
+        continue
+      }
+      appliedInsertion = true
+    }
+
+    if (appliedInsertion) {
+      persistLayoutSnapshot()
+    }
+
+    if (restoredLayout.activeLeafId) {
+      const activePaneId = manager.getNumericIdForLeaf(restoredLayout.activeLeafId)
+      if (activePaneId !== null) {
+        manager.setActivePane(activePaneId, { focus: isActive })
+      }
+    }
+  }, [isActive, paneCount, persistLayoutSnapshot, restoredLayout])
 
   // Why (Activity-only pane isolation): when this TerminalPane is being
   // portaled into the Activity page for a specific agent pane, hide the

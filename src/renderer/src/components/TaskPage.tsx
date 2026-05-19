@@ -8,6 +8,7 @@ import {
   AlertCircle,
   ArrowDownUp,
   ArrowRight,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -31,7 +32,6 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
-  UserPlus,
   Users,
   X
 } from 'lucide-react'
@@ -77,6 +77,12 @@ import IssueSourceIndicator, { sameGitHubOwnerRepo } from '@/components/github/I
 import IssueSourceSelector, { issueSourceChipClass } from '@/components/github/IssueSourceSelector'
 import { reconcileLinearTeamSelection } from '@/components/task-page-linear-team-selection'
 import {
+  getGitHubPRPrimaryReviewer,
+  getGitHubPRReviewLabel,
+  normalizeGitHubReviewerLogins,
+  type GitHubPRPrimaryReviewer
+} from '@/components/github-pr-reviewer-display'
+import {
   getLinearStateMarkerStyle,
   getLinearStatePillStyle
 } from '@/components/linear-state-pill-style'
@@ -100,6 +106,7 @@ import {
   buildTaskPageRepoSourceState,
   findTaskPageDialogWorkItem,
   findTaskPageLinearIssue,
+  reconcileTaskPagePagesWithWorkItemsCache,
   selectTaskPageWorkItemsCacheEntries,
   type TaskPageRepoSourceState
 } from '@/components/task-page-cache-selectors'
@@ -220,6 +227,25 @@ const GITHUB_TASK_GRID_CLASS =
   'min-w-[860px] grid-cols-[72px_minmax(260px,2fr)_minmax(130px,0.8fr)_100px_92px_158px]'
 const GITHUB_PR_TASK_GRID_CLASS =
   'min-w-[1270px] grid-cols-[72px_minmax(260px,2fr)_minmax(130px,0.8fr)_100px_132px_128px_132px_92px_158px]'
+const GITHUB_TASK_ROW_SURFACE_CLASS =
+  '[background:color-mix(in_srgb,var(--muted)_50%,var(--background))]'
+const GITHUB_TASK_ROW_HOVER_SURFACE_CLASS =
+  'group-hover/github-task-row:[background:color-mix(in_srgb,var(--muted)_70%,var(--background))]'
+const GITHUB_TASK_STICKY_ID_HEADER_CLASS = cn('sticky left-3 z-30', GITHUB_TASK_ROW_SURFACE_CLASS)
+const GITHUB_TASK_STICKY_TITLE_HEADER_CLASS = cn(
+  'sticky left-[92px] z-30 border-r border-border/50 before:absolute before:-left-2 before:top-0 before:bottom-0 before:w-2 before:bg-inherit',
+  GITHUB_TASK_ROW_SURFACE_CLASS
+)
+const GITHUB_TASK_STICKY_ID_CELL_CLASS = cn(
+  'sticky left-3 z-20 flex items-center',
+  GITHUB_TASK_ROW_SURFACE_CLASS,
+  GITHUB_TASK_ROW_HOVER_SURFACE_CLASS
+)
+const GITHUB_TASK_STICKY_TITLE_CELL_CLASS = cn(
+  'sticky left-[92px] z-20 min-w-0 border-r border-border/50 pr-2 before:absolute before:-left-2 before:top-0 before:bottom-0 before:w-2 before:bg-inherit',
+  GITHUB_TASK_ROW_SURFACE_CLASS,
+  GITHUB_TASK_ROW_HOVER_SURFACE_CLASS
+)
 
 type GitHubModeButton = { id: GitHubTaskKind | 'project'; label: string }
 
@@ -658,7 +684,7 @@ function GHStatusCell({
       reqRef.current += 1
       const reqId = reqRef.current
       setLocalState(newState)
-      patchWorkItem(item.id, { state: newState })
+      patchWorkItem(item.id, { state: newState }, item.repoId)
       const target = getActiveRuntimeTarget(useAppStore.getState().settings)
       const updatePromise =
         target.kind === 'environment'
@@ -682,7 +708,11 @@ function GHStatusCell({
           const typed = result as { ok?: boolean; error?: string }
           if (typed && typed.ok === false) {
             setLocalState(newState === 'closed' ? 'open' : 'closed')
-            patchWorkItem(item.id, { state: newState === 'closed' ? 'open' : 'closed' })
+            patchWorkItem(
+              item.id,
+              { state: newState === 'closed' ? 'open' : 'closed' },
+              item.repoId
+            )
             toast.error(typed.error ?? 'Failed to update state')
           }
         })
@@ -691,11 +721,11 @@ function GHStatusCell({
             return
           }
           setLocalState(newState === 'closed' ? 'open' : 'closed')
-          patchWorkItem(item.id, { state: newState === 'closed' ? 'open' : 'closed' })
+          patchWorkItem(item.id, { state: newState === 'closed' ? 'open' : 'closed' }, item.repoId)
           toast.error('Failed to update state')
         })
     },
-    [item.id, item.number, item.type, localState, repo, patchWorkItem]
+    [item.id, item.number, item.repoId, item.type, localState, repo, patchWorkItem]
   )
 
   if (item.type !== 'issue' || !repo) {
@@ -776,29 +806,6 @@ function formatPRDelta(item: GitHubWorkItem): string | null {
   return parts.length > 0 ? parts.join(' ') : null
 }
 
-function getReviewLabel(item: GitHubWorkItem): string {
-  if (
-    item.reviewDecision === undefined &&
-    item.reviewRequests === undefined &&
-    item.latestReviews === undefined
-  ) {
-    return 'Reviewers'
-  }
-  if (item.reviewDecision === 'APPROVED') {
-    return 'Approved'
-  }
-  if (item.reviewDecision === 'CHANGES_REQUESTED') {
-    return 'Changes requested'
-  }
-  if (item.reviewRequests && item.reviewRequests.length > 0) {
-    return `${item.reviewRequests.length} requested`
-  }
-  if (item.latestReviews && item.latestReviews.length > 0) {
-    return `${item.latestReviews.length} reviewed`
-  }
-  return 'No reviewers'
-}
-
 function getReviewTone(item: GitHubWorkItem): string {
   if (item.reviewDecision === 'APPROVED') {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
@@ -810,6 +817,36 @@ function getReviewTone(item: GitHubWorkItem): string {
     return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
   }
   return 'border-border/60 bg-background/70 text-muted-foreground'
+}
+
+function ReviewChipAvatar({
+  reviewer
+}: {
+  reviewer: GitHubPRPrimaryReviewer | null
+}): React.JSX.Element {
+  if (reviewer?.avatarUrl) {
+    return (
+      <img
+        src={reviewer.avatarUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        title={reviewer.name ? `${reviewer.name} (${reviewer.login})` : reviewer.login}
+        className="size-3.5 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
+      />
+    )
+  }
+  if (reviewer?.login) {
+    return (
+      <span
+        title={reviewer.login}
+        className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[8px] font-medium text-muted-foreground"
+      >
+        {reviewer.login.slice(0, 1).toUpperCase()}
+      </span>
+    )
+  }
+  return <Users className="size-3 shrink-0" />
 }
 
 function getChecksLabel(item: GitHubWorkItem): string {
@@ -912,27 +949,6 @@ function getMergeTooltip(item: GitHubWorkItem): string {
   return 'GitHub has not reported a final merge status'
 }
 
-function getReviewerInputToken(
-  value: string,
-  caret: number
-): { start: number; end: number; query: string } {
-  let start = Math.max(0, Math.min(caret, value.length))
-  let end = start
-
-  while (start > 0 && !/[\s,]/.test(value[start - 1])) {
-    start--
-  }
-  while (end < value.length && !/[\s,]/.test(value[end])) {
-    end++
-  }
-
-  return {
-    start,
-    end,
-    query: value.slice(start, end).replace(/^@/, '').toLowerCase()
-  }
-}
-
 function mergeReviewerSuggestions(
   users: GitHubAssignableUser[],
   seedUsers: GitHubAssignableUser[]
@@ -984,9 +1000,8 @@ function PRReviewCell({
   const [localReviewRequests, setLocalReviewRequests] = useState<GitHubAssignableUser[]>(
     () => item.reviewRequests ?? []
   )
-  const [reviewerInputCaret, setReviewerInputCaret] = useState(0)
-  const [reviewerSuggestionsOpen, setReviewerSuggestionsOpen] = useState(false)
-  const [activeReviewerSuggestionIndex, setActiveReviewerSuggestionIndex] = useState(0)
+  const patchWorkItem = useAppStore((s) => s.patchWorkItem)
+  const [activeReviewerIndex, setActiveReviewerIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const settings = useAppStore((s) => s.settings)
   const reviewerInputRef = useRef<HTMLInputElement | null>(null)
@@ -1027,32 +1042,31 @@ function PRReviewCell({
     settings
   )
 
+  const authorLogin = item.author?.toLowerCase() ?? null
   const reviewerCandidates = useMemo(
-    () => mergeReviewerSuggestions(reviewerMetadata.data, reviewerSeedUsers),
-    [reviewerMetadata.data, reviewerSeedUsers]
+    () =>
+      mergeReviewerSuggestions(reviewerMetadata.data, reviewerSeedUsers).filter(
+        (user) => user.login.toLowerCase() !== authorLogin
+      ),
+    [authorLogin, reviewerMetadata.data, reviewerSeedUsers]
   )
-  const reviewerInputToken = useMemo(
-    () => getReviewerInputToken(reviewerInput, reviewerInputCaret),
-    [reviewerInput, reviewerInputCaret]
+  const reviewerCandidatesByLogin = useMemo(
+    () => new Map(reviewerCandidates.map((user) => [user.login.toLowerCase(), user])),
+    [reviewerCandidates]
   )
-  const alreadyEnteredReviewerLogins = useMemo(
+  const selectedReviewerLogins = useMemo(
     () =>
       new Set(
-        reviewerInput
-          .split(/[\s,]+/)
-          .map((login) => login.trim().replace(/^@/, '').toLowerCase())
-          .filter(Boolean)
+        localReviewRequests.map((reviewer) => reviewer.login.trim().toLowerCase()).filter(Boolean)
       ),
-    [reviewerInput]
+    [localReviewRequests]
   )
-  const reviewerSuggestions = useMemo(() => {
-    const query = reviewerInputToken.query
+  const reviewerQuery = reviewerInput.trim().replace(/^@/, '').toLowerCase()
+  const filteredReviewerCandidates = useMemo(() => {
+    const query = reviewerQuery
     return reviewerCandidates
       .filter((user) => {
         const login = user.login.toLowerCase()
-        if (alreadyEnteredReviewerLogins.has(login) && login !== query) {
-          return false
-        }
         return (
           query.length === 0 ||
           login.includes(query) ||
@@ -1069,65 +1083,94 @@ function PRReviewCell({
         }
         return a.login.localeCompare(b.login)
       })
-      .slice(0, 8)
-  }, [alreadyEnteredReviewerLogins, reviewerCandidates, reviewerInputToken.query])
-  const showReviewerSuggestions =
-    reviewerSuggestionsOpen &&
-    !submitting &&
-    !!repo &&
-    (reviewerMetadata.loading || reviewerSuggestions.length > 0 || reviewerInput.trim().length > 0)
+  }, [reviewerCandidates, reviewerQuery])
+  const suggestedReviewerRows = useMemo(
+    () =>
+      reviewerQuery.length === 0
+        ? reviewerSeedUsers
+            .filter((user) => !selectedReviewerLogins.has(user.login.toLowerCase()))
+            .filter((user) => user.login.toLowerCase() !== authorLogin)
+            .map((user) => reviewerCandidatesByLogin.get(user.login.toLowerCase()) ?? user)
+            .slice(0, 1)
+        : [],
+    [
+      authorLogin,
+      reviewerCandidatesByLogin,
+      reviewerQuery.length,
+      reviewerSeedUsers,
+      selectedReviewerLogins
+    ]
+  )
+  const everyoneElseReviewerRows = useMemo(() => {
+    const suggestedLogins = new Set(suggestedReviewerRows.map((user) => user.login.toLowerCase()))
+    return filteredReviewerCandidates.filter(
+      (user) => !suggestedLogins.has(user.login.toLowerCase())
+    )
+  }, [filteredReviewerCandidates, suggestedReviewerRows])
+  const actionableReviewerRows = useMemo(
+    () => [...suggestedReviewerRows, ...everyoneElseReviewerRows],
+    [everyoneElseReviewerRows, suggestedReviewerRows]
+  )
 
   useEffect(() => {
-    setActiveReviewerSuggestionIndex(0)
-  }, [reviewerInputToken.query, reviewerSuggestions.length])
+    setActiveReviewerIndex(0)
+  }, [reviewerQuery, actionableReviewerRows.length])
 
   if (item.type !== 'pr') {
     return <span className="text-[11px] text-muted-foreground">Issue</span>
   }
 
   const itemWithLocalReviewRequests = { ...item, reviewRequests: localReviewRequests }
-  const reviewers = [
-    ...localReviewRequests.map((user) => ({ ...user, state: 'Requested' })),
-    ...(item.latestReviews ?? []).map((review) => ({
-      login: review.login,
-      name: null,
-      avatarUrl: review.avatarUrl ?? '',
-      state: review.state ?? 'Reviewed'
-    }))
-  ]
+  const primaryReviewer = getGitHubPRPrimaryReviewer(itemWithLocalReviewRequests)
   const hasReviewerMetadata =
     item.reviewDecision !== undefined ||
     localReviewRequests.length > 0 ||
     item.reviewRequests !== undefined ||
     item.latestReviews !== undefined
 
-  const handleRequestReview = async (): Promise<void> => {
+  const handleRequestReview = async (requestedLogins?: string[]): Promise<void> => {
     if (!repo || submitting) {
       return
     }
-    const logins = reviewerInput
-      .split(/[\s,]+/)
-      .map((login) => login.trim().replace(/^@/, ''))
-      .filter(Boolean)
+    const logins = normalizeGitHubReviewerLogins(
+      requestedLogins ?? reviewerInput.split(/[\s,]+/),
+      selectedReviewerLogins
+    )
     if (logins.length === 0) {
-      toast.error('Enter a reviewer login')
+      toast.error('Enter a reviewer')
+      return
+    }
+    if (localReviewRequests.length + logins.length > 15) {
+      toast.error('You can request up to 15 reviewers')
       return
     }
     setSubmitting(true)
     try {
-      const result = await window.api.gh.requestPRReviewers({
-        repoPath: repo.path,
-        repoId: repo.id,
-        prNumber: item.number,
-        reviewers: logins
-      })
+      const target = getActiveRuntimeTarget(settings)
+      const result =
+        target.kind === 'environment'
+          ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
+              target,
+              'github.requestPRReviewers',
+              { repo: repo.id, prNumber: item.number, reviewers: logins },
+              { timeoutMs: 30_000 }
+            )
+          : await window.api.gh.requestPRReviewers({
+              repoPath: repo.path,
+              repoId: repo.id,
+              prNumber: item.number,
+              reviewers: logins
+            })
       if (result.ok) {
         toast.success('Reviewer requested')
-        setLocalReviewRequests((current) =>
-          buildRequestedReviewUsers(logins, reviewerCandidates, current)
+        const nextReviewRequests = buildRequestedReviewUsers(
+          logins,
+          reviewerCandidates,
+          localReviewRequests
         )
+        setLocalReviewRequests(nextReviewRequests)
+        patchWorkItem(item.id, { reviewRequests: nextReviewRequests }, item.repoId)
         setReviewerInput('')
-        setReviewerSuggestionsOpen(false)
       } else {
         toast.error(result.error)
       }
@@ -1138,25 +1181,73 @@ function PRReviewCell({
     }
   }
 
-  const insertReviewerSuggestion = (suggestion: GitHubAssignableUser): void => {
-    const token = getReviewerInputToken(
-      reviewerInput,
-      reviewerInputRef.current?.selectionStart ?? reviewerInputCaret
+  const requestReviewer = async (reviewer: GitHubAssignableUser): Promise<void> => {
+    if (selectedReviewerLogins.has(reviewer.login.toLowerCase())) {
+      return
+    }
+    await handleRequestReview([reviewer.login])
+    requestAnimationFrame(() => reviewerInputRef.current?.focus())
+  }
+
+  const handleReviewerPickerOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen)
+    if (nextOpen) {
+      requestAnimationFrame(() => reviewerInputRef.current?.focus())
+      return
+    }
+    setReviewerInput('')
+  }
+
+  const renderReviewerPickerRow = (
+    reviewer: GitHubAssignableUser,
+    options: { suggested: boolean; activeIndex: number }
+  ): React.JSX.Element => {
+    const selected = selectedReviewerLogins.has(reviewer.login.toLowerCase())
+    const active = actionableReviewerRows[activeReviewerIndex]?.login === reviewer.login
+    return (
+      <button
+        key={`${options.suggested ? 'suggested' : 'reviewer'}:${reviewer.login}`}
+        type="button"
+        className={cn(
+          'flex min-h-10 w-full items-center gap-2 border-b border-border/50 px-3 py-2 text-left text-[13px] outline-none last:border-b-0 hover:bg-accent/70',
+          active && 'bg-accent text-accent-foreground',
+          selected && 'font-medium'
+        )}
+        onMouseEnter={() => setActiveReviewerIndex(options.activeIndex)}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          void requestReviewer(reviewer)
+        }}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center text-foreground">
+          {selected ? <Check className="size-3.5" /> : null}
+        </span>
+        {reviewer.avatarUrl ? (
+          <img src={reviewer.avatarUrl} alt="" className="size-5 shrink-0 rounded-full" />
+        ) : (
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+            {reviewer.login.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            <span className="font-semibold text-foreground">{reviewer.login}</span>
+            {reviewer.name ? (
+              <span className="ml-1 font-normal text-muted-foreground">{reviewer.name}</span>
+            ) : null}
+          </span>
+          {options.suggested ? (
+            <span className="block truncate text-[12px] leading-4 text-muted-foreground">
+              Recently active in this pull request
+            </span>
+          ) : null}
+        </span>
+      </button>
     )
-    const inserted = `@${suggestion.login}`
-    const nextValue = `${reviewerInput.slice(0, token.start)}${inserted}${reviewerInput.slice(token.end)}`
-    const nextCaret = token.start + inserted.length
-    setReviewerInput(nextValue)
-    setReviewerInputCaret(nextCaret)
-    setReviewerSuggestionsOpen(false)
-    requestAnimationFrame(() => {
-      reviewerInputRef.current?.focus()
-      reviewerInputRef.current?.setSelectionRange(nextCaret, nextCaret)
-    })
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleReviewerPickerOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -1166,170 +1257,100 @@ function PRReviewCell({
             getReviewTone(itemWithLocalReviewRequests)
           )}
         >
-          <Users className="size-3" />
-          <span className="truncate">{getReviewLabel(itemWithLocalReviewRequests)}</span>
+          <ReviewChipAvatar reviewer={primaryReviewer} />
+          <span className="truncate">{getGitHubPRReviewLabel(itemWithLocalReviewRequests)}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-72 overflow-visible p-3"
+        className="w-[330px] overflow-hidden rounded-md border-border/70 p-0"
         align="start"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="space-y-3">
-          <div>
-            <div className="text-xs font-medium text-foreground">Reviewers</div>
-            <div className="mt-2 space-y-1.5">
-              {reviewers.length > 0 ? (
-                reviewers.slice(0, 6).map((reviewer) => (
-                  <div
-                    key={`${reviewer.login}:${reviewer.state}`}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5 text-xs"
-                  >
-                    <span className="truncate">@{reviewer.login}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {reviewer.state}
-                    </span>
+        <div className="border-b border-border/70 px-3 py-2">
+          <div className="text-[13px] font-semibold text-foreground">
+            Request up to 15 reviewers
+          </div>
+        </div>
+        <div className="border-b border-border/70 p-3">
+          <Input
+            ref={reviewerInputRef}
+            value={reviewerInput}
+            onChange={(event) => setReviewerInput(event.target.value)}
+            placeholder="Type or choose a user"
+            disabled={!repo || submitting}
+            className="h-8 rounded-md bg-background px-2 text-[13px]"
+            aria-label="Type or choose a user"
+            aria-autocomplete="list"
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown' && actionableReviewerRows.length > 0) {
+                event.preventDefault()
+                setActiveReviewerIndex((current) => (current + 1) % actionableReviewerRows.length)
+                return
+              }
+              if (event.key === 'ArrowUp' && actionableReviewerRows.length > 0) {
+                event.preventDefault()
+                setActiveReviewerIndex(
+                  (current) =>
+                    (current - 1 + actionableReviewerRows.length) % actionableReviewerRows.length
+                )
+                return
+              }
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                const activeReviewer = actionableReviewerRows[activeReviewerIndex]
+                if (activeReviewer) {
+                  void requestReviewer(activeReviewer)
+                  return
+                }
+                void handleRequestReview()
+                return
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                handleReviewerPickerOpenChange(false)
+              }
+            }}
+          />
+        </div>
+        <div className="max-h-[300px] overflow-y-auto scrollbar-sleek">
+          {reviewerMetadata.loading ? (
+            <div className="px-3 py-2 text-[13px] text-muted-foreground">Loading…</div>
+          ) : filteredReviewerCandidates.length > 0 ? (
+            <>
+              {suggestedReviewerRows.length > 0 ? (
+                <>
+                  <div className="border-b border-border/70 bg-muted/50 px-3 py-1.5 text-[12px] font-semibold text-foreground">
+                    Suggestions
                   </div>
-                ))
+                  {suggestedReviewerRows.map((reviewer, index) =>
+                    renderReviewerPickerRow(reviewer, { suggested: true, activeIndex: index })
+                  )}
+                </>
+              ) : null}
+              <div className="border-b border-border/70 bg-muted/50 px-3 py-1.5 text-[12px] font-semibold text-foreground">
+                Everyone else
+              </div>
+              {everyoneElseReviewerRows.length > 0 ? (
+                everyoneElseReviewerRows.map((reviewer, index) =>
+                  renderReviewerPickerRow(reviewer, {
+                    suggested: false,
+                    activeIndex: suggestedReviewerRows.length + index
+                  })
+                )
               ) : (
-                <div className="text-xs text-muted-foreground">
-                  {hasReviewerMetadata
-                    ? 'No reviewers requested yet.'
-                    : 'Open the PR details to view current reviewers.'}
+                <div className="px-3 py-2 text-[13px] text-muted-foreground">
+                  No matching reviewers.
                 </div>
               )}
+            </>
+          ) : (
+            <div className="px-3 py-2 text-[13px] text-muted-foreground">
+              {reviewerMetadata.error ??
+                (hasReviewerMetadata
+                  ? 'No matching reviewers.'
+                  : 'Open the PR details to view current reviewers.')}
             </div>
-          </div>
-          <div className="relative">
-            <div className="flex items-center gap-2">
-              <Input
-                ref={reviewerInputRef}
-                value={reviewerInput}
-                onChange={(event) => {
-                  setReviewerInput(event.target.value)
-                  setReviewerInputCaret(
-                    event.currentTarget.selectionStart ?? event.target.value.length
-                  )
-                  setReviewerSuggestionsOpen(true)
-                }}
-                onClick={(event) => {
-                  setReviewerInputCaret(event.currentTarget.selectionStart ?? reviewerInput.length)
-                  setReviewerSuggestionsOpen(true)
-                }}
-                onFocus={(event) => {
-                  setReviewerInputCaret(event.currentTarget.selectionStart ?? reviewerInput.length)
-                  setReviewerSuggestionsOpen(true)
-                }}
-                onBlur={() => setReviewerSuggestionsOpen(false)}
-                onKeyUp={(event) => {
-                  if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
-                    setReviewerInputCaret(
-                      event.currentTarget.selectionStart ?? reviewerInput.length
-                    )
-                  }
-                }}
-                placeholder="login or @login"
-                disabled={!repo || submitting}
-                className="h-8 text-xs"
-                aria-expanded={showReviewerSuggestions}
-                aria-autocomplete="list"
-                onKeyDown={(event) => {
-                  if (showReviewerSuggestions && reviewerSuggestions.length > 0) {
-                    if (event.key === 'ArrowDown') {
-                      event.preventDefault()
-                      setActiveReviewerSuggestionIndex(
-                        (current) => (current + 1) % reviewerSuggestions.length
-                      )
-                      return
-                    }
-                    if (event.key === 'ArrowUp') {
-                      event.preventDefault()
-                      setActiveReviewerSuggestionIndex(
-                        (current) =>
-                          (current - 1 + reviewerSuggestions.length) % reviewerSuggestions.length
-                      )
-                      return
-                    }
-                    if (event.key === 'Enter' || event.key === 'Tab') {
-                      event.preventDefault()
-                      insertReviewerSuggestion(
-                        reviewerSuggestions[activeReviewerSuggestionIndex] ?? reviewerSuggestions[0]
-                      )
-                      return
-                    }
-                  }
-                  if (event.key === 'Escape' && reviewerSuggestionsOpen) {
-                    event.preventDefault()
-                    setReviewerSuggestionsOpen(false)
-                    return
-                  }
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    void handleRequestReview()
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                disabled={!repo || submitting}
-                onClick={() => void handleRequestReview()}
-              >
-                {submitting ? (
-                  <LoaderCircle className="size-3 animate-spin" />
-                ) : (
-                  <UserPlus className="size-3" />
-                )}
-                Request
-              </Button>
-            </div>
-            {showReviewerSuggestions && (
-              <div className="absolute top-[calc(100%+4px)] right-0 left-0 z-[70] max-h-56 overflow-y-auto rounded-md border border-border/70 bg-popover p-1 text-popover-foreground shadow-md">
-                {reviewerMetadata.loading ? (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
-                ) : reviewerSuggestions.length > 0 ? (
-                  reviewerSuggestions.map((suggestion, index) => (
-                    <button
-                      key={suggestion.login}
-                      type="button"
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs',
-                        index === activeReviewerSuggestionIndex &&
-                          'bg-accent text-accent-foreground'
-                      )}
-                      onMouseDown={(event) => {
-                        event.preventDefault()
-                        insertReviewerSuggestion(suggestion)
-                      }}
-                    >
-                      {suggestion.avatarUrl ? (
-                        <img
-                          src={suggestion.avatarUrl}
-                          alt=""
-                          className="size-5 shrink-0 rounded-full"
-                        />
-                      ) : (
-                        <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
-                          {suggestion.login.slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="min-w-0 flex-1 truncate font-medium">
-                        @{suggestion.login}
-                      </span>
-                      {suggestion.name ? (
-                        <span className="max-w-24 truncate text-[11px] text-muted-foreground">
-                          {suggestion.name}
-                        </span>
-                      ) : null}
-                    </button>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    {reviewerMetadata.error ?? 'No matching reviewers.'}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -1825,6 +1846,7 @@ export default function TaskPage(): React.JSX.Element {
     defaultTaskViewPreset
   )
   const [tasksLoading, setTasksLoading] = useState(false)
+  const [tasksRefreshing, setTasksRefreshing] = useState(false)
   const [tasksError, setTasksError] = useState<string | null>(null)
   // Why: per-repo failure count surfaced through the "N of M" banner. IPC-level
   // rejections populate tasksError instead — the two are mutually exclusive so
@@ -1908,6 +1930,34 @@ export default function TaskPage(): React.JSX.Element {
     setDialogWorkItemFallback(item)
   }, [])
 
+  const patchTaskPageWorkItemRows = useCallback(
+    (itemKey: { id: string; repoId: string }, patch: Partial<GitHubWorkItem>): void => {
+      setPages((current) => {
+        let changed = false
+        const nextPages = current.map((page) => {
+          let pageChanged = false
+          const nextPage = page.map((item) => {
+            if (item.id !== itemKey.id || item.repoId !== itemKey.repoId) {
+              return item
+            }
+            pageChanged = true
+            changed = true
+            return { ...item, ...patch }
+          })
+          return pageChanged ? nextPage : page
+        })
+        return changed ? nextPages : current
+      })
+    },
+    []
+  )
+  const handleDialogReviewRequestsChange = useCallback(
+    (itemKey: { id: string; repoId: string }, reviewRequests: GitHubAssignableUser[]): void => {
+      patchTaskPageWorkItemRows(itemKey, { reviewRequests })
+    },
+    [patchTaskPageWorkItemRows]
+  )
+
   // Why: feature 1 — render the "Issues from {owner}/{repo}" indicator per
   // selected repo whose issue-source and PR-source slugs differ, and surface
   // a per-repo retryable banner when the issue-side fetch failed. Both derive
@@ -1921,6 +1971,17 @@ export default function TaskPage(): React.JSX.Element {
     () => buildTaskPageRepoSourceState(selectedRepos, selectedWorkItemsCacheEntries),
     [selectedRepos, selectedWorkItemsCacheEntries]
   )
+
+  useEffect(() => {
+    if (taskSource !== 'github' || githubMode !== 'items') {
+      return
+    }
+    // Why: inline/dialog edits patch `workItemsCache`; the paged table renders
+    // from a local snapshot so it needs the patched row objects copied across.
+    setPages((current) =>
+      reconcileTaskPagePagesWithWorkItemsCache(current, selectedWorkItemsCacheEntries)
+    )
+  }, [githubMode, selectedWorkItemsCacheEntries, taskSource])
 
   // Why: surface a one-time toast per session per repo when the user's
   // preferred `'upstream'` is no longer configured and we fell back to
@@ -1981,6 +2042,10 @@ export default function TaskPage(): React.JSX.Element {
     },
     [selectedRepos]
   )
+  const handleRefreshGithubTasks = useCallback((): void => {
+    setTasksRefreshing(true)
+    setTaskRefreshNonce((current) => current + 1)
+  }, [])
   const [newIssueOpen, setNewIssueOpen] = useState(false)
   const [newIssueTitle, setNewIssueTitle] = useState('')
   const [newIssueBody, setNewIssueBody] = useState('')
@@ -2692,10 +2757,12 @@ export default function TaskPage(): React.JSX.Element {
     // button would stay stuck in its disabled/Retrying state indefinitely.
     if (taskSource !== 'github' || githubMode !== 'items') {
       setRetryingRepoPaths(new Set())
+      setTasksRefreshing(false)
       return
     }
     if (selectedRepos.length === 0) {
       setRetryingRepoPaths(new Set())
+      setTasksRefreshing(false)
       return
     } // unreachable — multi-combobox forbids empty
 
@@ -2745,6 +2812,11 @@ export default function TaskPage(): React.JSX.Element {
     const preferenceInvalidated =
       workItemsInvalidationNonce !== lastFetchedInvalidationNonceRef.current
     lastFetchedInvalidationNonceRef.current = workItemsInvalidationNonce
+    const forcedFetch = (forceRefresh && taskRefreshNonce > 0) || preferenceInvalidated
+    // Why: manual refresh keeps cached rows visible, so the normal
+    // `tasksLoading` flag may stay false. Track the forced fetch separately
+    // so the toolbar still shows a refresh-in-progress affordance.
+    setTasksRefreshing(forcedFetch)
 
     const repoArgs = selectedRepos.map((r) => ({ repoId: r.id, path: r.path }))
     // Why: snapshot the retrying paths at effect-dispatch so overlapping
@@ -2754,7 +2826,7 @@ export default function TaskPage(): React.JSX.Element {
     // when this effect dispatched preserves later additions.
     const dispatchedRetryPaths = retryingRepoPaths
     void fetchWorkItemsAcrossRepos(repoArgs, PER_REPO_FETCH_LIMIT, CROSS_REPO_DISPLAY_LIMIT, q, {
-      force: (forceRefresh && taskRefreshNonce > 0) || preferenceInvalidated
+      force: forcedFetch
     })
       .then(({ items, failedCount: failed }) => {
         // Why: clear only the repos this effect was responsible for
@@ -2780,6 +2852,7 @@ export default function TaskPage(): React.JSX.Element {
         setCurrentPage(0)
         setFailedCount(failed)
         setTasksLoading(false)
+        setTasksRefreshing(false)
       })
       .catch((err) => {
         // Why: fetchWorkItemsAcrossRepos swallows per-repo failures, so a
@@ -2806,6 +2879,7 @@ export default function TaskPage(): React.JSX.Element {
         setTasksError(err instanceof Error ? err.message : 'Failed to load GitHub work.')
         setFailedCount(0) // the per-repo banner would be misleading next to tasksError
         setTasksLoading(false)
+        setTasksRefreshing(false)
       })
 
     // Why: fire-and-forget count query in parallel with the items fetch.
@@ -3123,6 +3197,8 @@ export default function TaskPage(): React.JSX.Element {
     setSelectedLinearIssue
   ])
 
+  const githubTasksBusy = tasksLoading || tasksRefreshing
+
   useEffect(() => {
     // Why: when a modal is open, let it own Esc dismissal.
     if (
@@ -3382,19 +3458,19 @@ export default function TaskPage(): React.JSX.Element {
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-background text-foreground">
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Why: pt-1.5 vertically centers this row's 32px icon cluster (X +
             source toggles) with the sidebar's "Tasks" nav row. Sidebar Tasks
             center sits 22px below the titlebar (pt-2 + py-1.5 + half size-4
             icon). Matching that here needs 6px top padding above the 32px
             cluster (6 + 16 = 22). The previous pt-3 placed the cluster 6px
             too low, breaking the visual band across the top chrome. */}
-        <div className="mx-auto flex w-full flex-1 flex-col min-h-0 px-5 pt-1.5 pb-5 md:px-8 md:pt-1.5 md:pb-7">
+        <div className="mx-auto flex min-h-0 min-w-0 w-full flex-1 flex-col px-5 pt-1.5 pb-5 md:px-8 md:pt-1.5 md:pb-7">
           <div className="flex-none flex flex-col gap-3">
             <section className="flex flex-col gap-3">
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {/* Why: Close is anchored left in the same row as the
                         source icons so the top chrome is one compact band.
                         Left-aligned keeps it clear of the app sidebar on the
@@ -3478,7 +3554,7 @@ export default function TaskPage(): React.JSX.Element {
                           </SelectContent>
                         </Select>
                       ) : null}
-                      <div className="w-[200px]">
+                      <div className="min-w-0 w-full sm:w-[200px]">
                         <TeamMultiCombobox
                           teams={linearTeamOptions}
                           selected={linearTeamSelection}
@@ -3504,7 +3580,7 @@ export default function TaskPage(): React.JSX.Element {
                 </div>
 
                 {taskSource === 'github' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {projectModeVisible ? (
                       <div className="flex items-center gap-1 text-xs">
                         {GITHUB_MODE_BUTTONS.map((mode) => {
@@ -3545,7 +3621,7 @@ export default function TaskPage(): React.JSX.Element {
                         inert — hide it to avoid suggesting it does
                         something. */}
                     {githubMode !== 'project' && (
-                      <div className="w-[200px]">
+                      <div className="min-w-0 w-full sm:w-[200px]">
                         <RepoMultiCombobox
                           repos={eligibleRepos}
                           selected={repoSelection}
@@ -3570,9 +3646,9 @@ export default function TaskPage(): React.JSX.Element {
                 ) : null}
 
                 {taskSource === 'github' && githubMode === 'items' ? (
-                  <div className="rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
+                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <div className="flex flex-wrap gap-2">
                           {getGitHubTaskKindPresets(activeGithubTaskKind).map((option) => {
                             const active = activeTaskPreset === option.id
@@ -3637,12 +3713,15 @@ export default function TaskPage(): React.JSX.Element {
                             <Button
                               variant="outline"
                               size="icon"
-                              onClick={() => setTaskRefreshNonce((current) => current + 1)}
-                              disabled={tasksLoading}
-                              aria-label="Refresh GitHub work"
-                              className="border-border/50 bg-transparent hover:bg-muted/50 backdrop-blur-md supports-[backdrop-filter]:bg-transparent"
+                              onClick={handleRefreshGithubTasks}
+                              disabled={githubTasksBusy}
+                              aria-busy={githubTasksBusy}
+                              aria-label={
+                                githubTasksBusy ? 'Refreshing GitHub work' : 'Refresh GitHub work'
+                              }
+                              className="cursor-pointer border-border/50 bg-transparent hover:bg-muted/50 backdrop-blur-md disabled:pointer-events-auto disabled:cursor-wait supports-[backdrop-filter]:bg-transparent"
                             >
-                              {tasksLoading ? (
+                              {githubTasksBusy ? (
                                 <LoaderCircle className="size-4 animate-spin" />
                               ) : (
                                 <RefreshCw className="size-4" />
@@ -3650,14 +3729,14 @@ export default function TaskPage(): React.JSX.Element {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" sideOffset={6}>
-                            Refresh GitHub work
+                            {githubTasksBusy ? 'Refreshing GitHub work…' : 'Refresh GitHub work'}
                           </TooltipContent>
                         </Tooltip>
                       </div>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <div className="relative min-w-[320px] flex-1">
+                      <div className="relative min-w-0 flex-1 basis-64">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           ref={taskSearchInputRef}
@@ -3758,7 +3837,7 @@ export default function TaskPage(): React.JSX.Element {
                     })()}
                   </div>
                 ) : taskSource === 'linear' && linearStatus.connected ? (
-                  <div className="rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
+                  <div className="min-w-0 rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap gap-2">
                         {LINEAR_PRESETS.map((preset) => {
@@ -3832,8 +3911,8 @@ export default function TaskPage(): React.JSX.Element {
                         </Tooltip>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="relative min-w-[320px] flex-1">
+                    <div className="mt-3 flex min-w-0 items-center gap-3">
+                      <div className="relative min-w-0 flex-1 basis-64">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           value={linearSearchInput}
@@ -3878,7 +3957,7 @@ export default function TaskPage(): React.JSX.Element {
                     </div>
                   </div>
                 ) : taskSource === 'gitlab' ? (
-                  <div className="rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
+                  <div className="min-w-0 rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
                     {/* Why: view toggle — Project = the selected repo's MRs
                         and issues; My Todos = the user's cross-project
                         gitlab.com/dashboard/todos stream. They have
@@ -3972,11 +4051,11 @@ export default function TaskPage(): React.JSX.Element {
           </div>
 
           {taskSource === 'github' && githubMode === 'project' ? (
-            <div className="mt-3 flex min-h-0 max-h-full flex-col rounded-md border border-border/50 bg-muted/50 overflow-hidden shadow-sm">
+            <div className="mt-3 flex min-h-0 min-w-0 max-h-full flex-col overflow-hidden rounded-md border border-border/50 bg-muted/50 shadow-sm">
               <ProjectViewWrapper />
             </div>
           ) : taskSource === 'github' ? (
-            <div className="flex min-h-0 max-h-full flex-col rounded-md border border-t-0 border-border/50 bg-muted/50 overflow-hidden rounded-t-none shadow-sm">
+            <div className="flex min-h-0 min-w-0 max-h-full flex-col overflow-hidden rounded-md rounded-t-none border border-t-0 border-border/50 bg-muted/50 shadow-sm">
               <div
                 className="min-h-0 flex-initial overflow-auto scrollbar-sleek"
                 style={{ scrollbarGutter: 'stable' }}
@@ -3987,8 +4066,8 @@ export default function TaskPage(): React.JSX.Element {
                     githubTaskGridClass
                   )}
                 >
-                  <span>ID</span>
-                  <span>Title / Context</span>
+                  <span className={GITHUB_TASK_STICKY_ID_HEADER_CLASS}>ID</span>
+                  <span className={GITHUB_TASK_STICKY_TITLE_HEADER_CLASS}>Title / Context</span>
                   <span>Branch</span>
                   <span>Status</span>
                   {showPRManagementColumns ? (
@@ -4071,10 +4150,10 @@ export default function TaskPage(): React.JSX.Element {
                   <div className="divide-y divide-border/50">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <div key={i} className={cn('grid gap-2 px-3 py-2', githubTaskGridClass)}>
-                        <div className="flex items-center">
+                        <div className={GITHUB_TASK_STICKY_ID_CELL_CLASS}>
                           <div className="h-7 w-16 animate-pulse rounded-lg bg-muted/70" />
                         </div>
-                        <div className="min-w-0">
+                        <div className={GITHUB_TASK_STICKY_TITLE_CELL_CLASS}>
                           <div className="h-4 w-3/5 animate-pulse rounded bg-muted/70" />
                           <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-muted/60" />
                         </div>
@@ -4154,11 +4233,11 @@ export default function TaskPage(): React.JSX.Element {
                           }
                         }}
                         className={cn(
-                          'grid cursor-pointer gap-2 px-3 py-2 text-left transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                          'group/github-task-row grid cursor-pointer gap-2 px-3 py-2 text-left transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                           githubTaskGridClass
                         )}
                       >
-                        <div className="flex items-center">
+                        <div className={GITHUB_TASK_STICKY_ID_CELL_CLASS}>
                           <span className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 px-1.5 py-0.5 text-muted-foreground">
                             {item.type === 'pr' ? (
                               <GitPullRequest className="size-3" />
@@ -4171,7 +4250,7 @@ export default function TaskPage(): React.JSX.Element {
                           </span>
                         </div>
 
-                        <div className="min-w-0">
+                        <div className={GITHUB_TASK_STICKY_TITLE_CELL_CLASS}>
                           <div className="flex items-center gap-2">
                             <h3 className="truncate text-sm font-semibold text-foreground">
                               {item.title}
@@ -5332,6 +5411,7 @@ export default function TaskPage(): React.JSX.Element {
           setDialogWorkItem(null)
           handleUseWorkItem(item)
         }}
+        onReviewRequestsChange={handleDialogReviewRequestsChange}
         onClose={() => setDialogWorkItem(null)}
       />
 

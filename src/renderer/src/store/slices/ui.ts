@@ -312,6 +312,7 @@ export type UISlice = {
       | 'input'
       | 'tasks'
       | 'terminal'
+      | 'notifications'
       | 'computer-use'
       | 'developer-permissions'
       | 'shortcuts'

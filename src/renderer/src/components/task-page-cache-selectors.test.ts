@@ -7,6 +7,7 @@ import {
   buildTaskPageRepoSourceState,
   findTaskPageDialogWorkItem,
   findTaskPageLinearDrawerIssue,
+  reconcileTaskPagePagesWithWorkItemsCache,
   selectTaskPageWorkItemsCacheEntries
 } from './task-page-cache-selectors'
 
@@ -71,6 +72,26 @@ describe('task page cache selectors', () => {
     expect(findTaskPageDialogWorkItem(cache, null)).toBeNull()
     expect(findTaskPageDialogWorkItem(cache, { id: 'issue-1', repoId: 'repo-1' })).toBe(item)
     expect(findTaskPageDialogWorkItem(cache, { id: 'issue-1', repoId: 'repo-2' })).toBeNull()
+  })
+
+  it('reconciles paged table rows with patched work-item cache entries', () => {
+    const stale = {
+      ...workItem('pr-1', 'repo-1'),
+      reviewRequests: []
+    }
+    const patched = {
+      ...stale,
+      reviewRequests: [{ login: 'AmethystLiang', name: null, avatarUrl: '' }]
+    }
+    const otherRepoSameId = workItem('pr-1', 'repo-2')
+    const pages = [[stale, otherRepoSameId]]
+
+    const nextPages = reconcileTaskPagePagesWithWorkItemsCache(pages, [
+      entry<GitHubWorkItem[]>([patched])
+    ])
+
+    expect(nextPages[0][0]).toBe(patched)
+    expect(nextPages[0][1]).toBe(otherRepoSameId)
   })
 
   it('returns null while the Linear drawer is closed and finds open issues by stable reference', () => {

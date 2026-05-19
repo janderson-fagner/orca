@@ -346,13 +346,33 @@ describe('getEffectiveHooks', () => {
     expect(result?.scripts.setup).not.toContain('old-version')
   })
 
-  it('does not fall back to local settings hooks by default when yaml is missing', async () => {
+  it('falls back to legacy local hooks when policy is unset and yaml is missing', async () => {
     const fs = await import('fs')
     vi.mocked(fs.existsSync).mockReturnValue(false)
 
     const { getEffectiveHooks } = await import('./hooks')
     const repo = makeRepo({
       mode: 'override',
+      scripts: { setup: 'echo "local setup"', archive: 'echo "local archive"' }
+    })
+    const result = getEffectiveHooks(repo)
+
+    expect(result).toEqual({
+      scripts: {
+        setup: 'echo "local setup"',
+        archive: 'echo "local archive"'
+      }
+    })
+  })
+
+  it('does not fall back to local hooks when policy is explicitly shared-only', async () => {
+    const fs = await import('fs')
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const { getEffectiveHooks } = await import('./hooks')
+    const repo = makeRepo({
+      mode: 'override',
+      commandSourcePolicy: 'shared-only',
       scripts: { setup: 'echo "local setup"', archive: 'echo "local archive"' }
     })
     const result = getEffectiveHooks(repo)
@@ -438,6 +458,21 @@ describe('getEffectiveHooks', () => {
     })
   })
 
+  it('does not fall back to legacy local hooks when yaml exists without supported hooks', async () => {
+    const fs = await import('fs')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('futureFeature: enabled\n')
+
+    const { getEffectiveHooks } = await import('./hooks')
+    const repo = makeRepo({
+      mode: 'override',
+      scripts: { setup: 'echo "legacy setup"', archive: 'echo "legacy archive"' }
+    })
+    const result = getEffectiveHooks(repo)
+
+    expect(result).toBeNull()
+  })
+
   it('treats legacy shared-first policy as orca.yaml only', async () => {
     const fs = await import('fs')
     vi.mocked(fs.existsSync).mockReturnValue(true)
@@ -465,6 +500,50 @@ describe('getEffectiveHooks', () => {
     const { getEffectiveHooks } = await import('./hooks')
     const repo = makeRepo({ mode: 'auto', scripts: { setup: '', archive: '' } })
     const result = getEffectiveHooks(repo)
+
+    expect(result).toBeNull()
+  })
+
+  it('falls back to legacy local setup source only when yaml is missing', async () => {
+    const fs = await import('fs')
+    vi.mocked(fs.existsSync).mockReturnValue(false)
+
+    const { getSetupCommandSource } = await import('./hooks')
+    const repo = makeRepo({
+      mode: 'override',
+      scripts: { setup: 'echo "legacy setup"', archive: '' }
+    })
+    const result = getSetupCommandSource(repo)
+
+    expect(result).toEqual({ source: 'local', command: 'echo "legacy setup"' })
+  })
+
+  it('does not use legacy local setup source when yaml omits setup', async () => {
+    const fs = await import('fs')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('scripts:\n  archive: |\n    echo "yaml archive"\n')
+
+    const { getSetupCommandSource } = await import('./hooks')
+    const repo = makeRepo({
+      mode: 'override',
+      scripts: { setup: 'echo "legacy setup"', archive: '' }
+    })
+    const result = getSetupCommandSource(repo)
+
+    expect(result).toBeNull()
+  })
+
+  it('does not use legacy local setup source when yaml exists without supported hooks', async () => {
+    const fs = await import('fs')
+    vi.mocked(fs.existsSync).mockReturnValue(true)
+    vi.mocked(fs.readFileSync).mockReturnValue('futureFeature: enabled\n')
+
+    const { getSetupCommandSource } = await import('./hooks')
+    const repo = makeRepo({
+      mode: 'override',
+      scripts: { setup: 'echo "legacy setup"', archive: '' }
+    })
+    const result = getSetupCommandSource(repo)
 
     expect(result).toBeNull()
   })

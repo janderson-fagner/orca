@@ -34,11 +34,13 @@ import {
   RefreshCw,
   Send,
   UndoDot,
+  Users,
   X
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
+import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { VisuallyHidden } from 'radix-ui'
 import {
@@ -84,6 +86,11 @@ import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-cl
 import { useRepoLabels, useRepoAssignees, useImmediateMutation } from '@/hooks/useIssueMetadata'
 import { useRepoLabelsBySlug, useRepoAssigneesBySlug } from '@/hooks/useGitHubSlugMetadata'
 import IssueSourceIndicator, { sameGitHubOwnerRepo } from '@/components/github/IssueSourceIndicator'
+import {
+  appendGitHubPRRequestedReviewers,
+  getGitHubPRReviewerRows,
+  normalizeGitHubReviewerLogins
+} from '@/components/github-pr-reviewer-display'
 import type {
   GitHubOwnerRepo,
   GitHubPRFile,
@@ -177,6 +184,10 @@ type GitHubItemDialogProps = {
   repoId?: string | null
   /** Called when the user clicks the primary CTA to start work from this item. */
   onUse: (item: GitHubWorkItem) => void
+  onReviewRequestsChange?: (
+    itemKey: { id: string; repoId: string },
+    reviewRequests: GitHubAssignableUser[]
+  ) => void
   onClose: () => void
   /** Optional Project-origin context. When set, edits in the dialog are
    *  routed via slug-addressed mutation IPCs against the row's actual repo
@@ -356,6 +367,193 @@ function WorkItemStateBadge({
     >
       {getStateLabel(item)}
     </span>
+  )
+}
+
+function ReviewerAvatar({
+  login,
+  avatarUrl
+}: {
+  login: string
+  avatarUrl: string
+}): React.JSX.Element {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        title={login}
+        className="size-6 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      title={login}
+      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[10px] font-medium text-muted-foreground"
+    >
+      {login.slice(0, 1).toUpperCase()}
+    </span>
+  )
+}
+
+function PRReviewersPanel({
+  item,
+  loading,
+  repoPath,
+  onReviewersRequested
+}: {
+  item: GitHubWorkItem
+  loading: boolean
+  repoPath: string | null
+  onReviewersRequested: (reviewRequests: GitHubAssignableUser[]) => void
+}): React.JSX.Element {
+  const [reviewerInput, setReviewerInput] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [localReviewRequests, setLocalReviewRequests] = useState<GitHubAssignableUser[]>(
+    () => item.reviewRequests ?? []
+  )
+  const patchWorkItem = useAppStore((s) => s.patchWorkItem)
+
+  useEffect(() => {
+    setLocalReviewRequests(item.reviewRequests ?? [])
+  }, [item.id, item.reviewRequests])
+
+  const displayItem = { ...item, reviewRequests: localReviewRequests }
+  const reviewers = getGitHubPRReviewerRows(displayItem)
+  const selectedReviewerLogins = useMemo(
+    () =>
+      new Set(
+        localReviewRequests.map((reviewer) => reviewer.login.trim().toLowerCase()).filter(Boolean)
+      ),
+    [localReviewRequests]
+  )
+  const hasReviewerMetadata =
+    item.reviewDecision !== undefined ||
+    localReviewRequests.length > 0 ||
+    item.reviewRequests !== undefined ||
+    item.latestReviews !== undefined
+  const canRequestReview =
+    !!repoPath || getActiveRuntimeTarget(useAppStore.getState().settings).kind === 'environment'
+
+  const handleRequestReview = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault()
+    if (submitting) {
+      return
+    }
+    const logins = normalizeGitHubReviewerLogins(
+      reviewerInput.split(/[\s,]+/),
+      selectedReviewerLogins
+    )
+    if (logins.length === 0) {
+      toast.error('Enter a reviewer')
+      return
+    }
+    if (localReviewRequests.length + logins.length > 15) {
+      toast.error('You can request up to 15 reviewers')
+      return
+    }
+    const target = getActiveRuntimeTarget(useAppStore.getState().settings)
+    if (target.kind !== 'environment' && !repoPath) {
+      toast.error('No repo context available for this pull request.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const result =
+        target.kind === 'environment'
+          ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
+              target,
+              'github.requestPRReviewers',
+              { repo: item.repoId, prNumber: item.number, reviewers: logins },
+              { timeoutMs: 30_000 }
+            )
+          : await window.api.gh.requestPRReviewers({
+              repoPath: repoPath ?? '',
+              repoId: item.repoId,
+              prNumber: item.number,
+              reviewers: logins
+            })
+      if (!result.ok) {
+        toast.error(result.error ?? 'Failed to request reviewer')
+        return
+      }
+      const nextReviewRequests = appendGitHubPRRequestedReviewers(localReviewRequests, logins)
+      setLocalReviewRequests(nextReviewRequests)
+      patchWorkItem(item.id, { reviewRequests: nextReviewRequests }, item.repoId)
+      onReviewersRequested(nextReviewRequests)
+      setReviewerInput('')
+      toast.success(logins.length === 1 ? 'Reviewer requested' : 'Reviewers requested')
+    } catch {
+      toast.error('Failed to request reviewer')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <aside className="rounded-lg border border-border/50 bg-card/50 shadow-xs">
+      <div className="flex h-10 items-center gap-2 border-b border-border/50 px-3">
+        <Users className="size-3.5 text-muted-foreground" />
+        <span className="text-[13px] font-medium text-foreground">Reviewers</span>
+        {reviewers.length > 0 ? (
+          <span className="ml-auto rounded-full border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+            {reviewers.length}
+          </span>
+        ) : null}
+      </div>
+      <div className="px-3 py-2.5">
+        {loading && !hasReviewerMetadata ? (
+          <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+            <LoaderCircle className="size-3.5 animate-spin" />
+            Loading reviewers
+          </div>
+        ) : reviewers.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {reviewers.map((reviewer) => (
+              <div key={reviewer.login} className="flex min-w-0 items-center gap-2">
+                <ReviewerAvatar login={reviewer.login} avatarUrl={reviewer.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium text-foreground">
+                    {reviewer.login}
+                  </div>
+                  {reviewer.name ? (
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {reviewer.name}
+                    </div>
+                  ) : null}
+                </div>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {reviewer.stateLabel}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-1 text-[12px] text-muted-foreground">No reviewers requested.</div>
+        )}
+        <form className="mt-3 flex items-center gap-2" onSubmit={handleRequestReview}>
+          <Input
+            value={reviewerInput}
+            onChange={(event) => setReviewerInput(event.target.value)}
+            disabled={submitting || !canRequestReview}
+            placeholder="Reviewer"
+            aria-label="Reviewer"
+            className="h-8 min-w-0 flex-1 rounded-md border-border/50 bg-background text-xs"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={submitting || !canRequestReview || reviewerInput.trim().length === 0}
+            className="h-8 shrink-0 px-2.5 text-xs"
+          >
+            {submitting ? <LoaderCircle className="size-3.5 animate-spin" /> : 'Request'}
+          </Button>
+        </form>
+      </div>
+    </aside>
   )
 }
 
@@ -738,6 +936,25 @@ function patchCachedPRChecks(cacheKey: string, checks: PRCheckDetail[]): void {
   touchWorkItemDetailsCache(cacheKey, {
     ...prev,
     details: { ...prev.details, checks },
+    fetchedAt: Date.now(),
+    error: undefined
+  })
+}
+
+function patchCachedPRReviewRequests(
+  cacheKey: string,
+  reviewRequests: GitHubAssignableUser[]
+): void {
+  const prev = workItemDetailsCache.get(cacheKey)
+  if (!prev?.details) {
+    return
+  }
+  touchWorkItemDetailsCache(cacheKey, {
+    ...prev,
+    details: {
+      ...prev.details,
+      item: { ...prev.details.item, reviewRequests }
+    },
     fetchedAt: Date.now(),
     error: undefined
   })
@@ -1484,7 +1701,8 @@ function ConversationTab({
   onUse,
   onMutated,
   onChecksUpdated,
-  onCommentAdded
+  onCommentAdded,
+  onReviewersRequested
 }: {
   item: GitHubWorkItem
   repoPath: string | null
@@ -1504,6 +1722,7 @@ function ConversationTab({
   onMutated: () => void
   onChecksUpdated: (checks: PRCheckDetail[]) => void
   onCommentAdded: (comment: PRComment) => void
+  onReviewersRequested: (reviewRequests: GitHubAssignableUser[]) => void
 }): React.JSX.Element {
   const authorLabel = item.author ?? 'unknown'
   const [replyingTo, setReplyingTo] = useState<number | null>(null)
@@ -1573,7 +1792,7 @@ function ConversationTab({
   const startWorkspaceButton = (
     <Button
       onClick={() => onUse(item)}
-      className="w-full justify-center gap-2"
+      className="self-start justify-center gap-2 xl:self-stretch"
       aria-label={`Start workspace from ${item.type === 'pr' ? 'PR' : 'issue'}`}
     >
       {`Start workspace from ${item.type === 'pr' ? 'PR' : 'issue'}`}
@@ -1593,6 +1812,12 @@ function ConversationTab({
           localState={localState}
           onStateChange={onStateChange}
           onMutated={onMutated}
+        />
+        <PRReviewersPanel
+          item={item}
+          loading={loading}
+          repoPath={repoPath}
+          onReviewersRequested={onReviewersRequested}
         />
         <aside className="rounded-lg border border-border/50 bg-card/50 shadow-xs">
           <div className="flex h-10 items-center gap-2 border-b border-border/50 px-3">
@@ -1899,10 +2124,10 @@ function PRActionsPanel({
   const applyStatePatch = useCallback(
     (state: GitHubWorkItem['state']) => {
       onStateChange(state)
-      patchWorkItem(item.id, { state })
+      patchWorkItem(item.id, { state }, item.repoId)
       patchProjectRowIfNeeded(state)
     },
-    [item.id, onStateChange, patchProjectRowIfNeeded, patchWorkItem]
+    [item.id, item.repoId, onStateChange, patchProjectRowIfNeeded, patchWorkItem]
   )
 
   const handleStateChange = async (): Promise<void> => {
@@ -1980,7 +2205,7 @@ function PRActionsPanel({
           type="button"
           variant={nextState === 'closed' ? 'destructive' : 'secondary'}
           size="sm"
-          className="w-full justify-center gap-2"
+          className="w-fit justify-center gap-2 xl:w-full"
           disabled={!canMutateState || statePending}
           onClick={() => void handleStateChange()}
         >
@@ -2002,7 +2227,7 @@ function PRActionsPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full justify-center gap-2"
+                  className="w-fit justify-center gap-2 xl:w-full"
                   disabled={mergePending || localState === 'closed' || localState === 'merged'}
                 >
                   {mergePending ? (
@@ -2668,16 +2893,16 @@ function GHEditSection({
           }),
         onOptimistic: () => {
           onStateChange(newState)
-          patchWorkItem(item.id, { state: newState })
+          patchWorkItem(item.id, { state: newState }, item.repoId)
           patchProjectRowIfNeeded({ state: newState })
         },
         onRevert: () => {
           onStateChange(prevState)
-          patchWorkItem(item.id, { state: prevState })
+          patchWorkItem(item.id, { state: prevState }, item.repoId)
           patchProjectRowIfNeeded({ state: prevState })
         },
         onSuccess: () => {
-          patchWorkItem(item.id, { state: newState })
+          patchWorkItem(item.id, { state: newState }, item.repoId)
           patchProjectRowIfNeeded({ state: newState })
           onMutated()
         },
@@ -2717,7 +2942,7 @@ function GHEditSection({
             }),
           onOptimistic: () => {
             onLabelsChange(newLabels)
-            patchWorkItem(item.id, { labels: newLabels })
+            patchWorkItem(item.id, { labels: newLabels }, item.repoId)
             patchProjectRowIfNeeded({ labels: newLabels })
           },
           onSuccess: () => {
@@ -2725,7 +2950,7 @@ function GHEditSection({
           },
           onRevert: () => {
             onLabelsChange(prevLabels)
-            patchWorkItem(item.id, { labels: prevLabels })
+            patchWorkItem(item.id, { labels: prevLabels }, item.repoId)
             patchProjectRowIfNeeded({ labels: prevLabels })
           },
           onError: (err) => toast.error(err)
@@ -2742,12 +2967,12 @@ function GHEditSection({
             }),
           onOptimistic: () => {
             onLabelsChange(newLabels)
-            patchWorkItem(item.id, { labels: newLabels })
+            patchWorkItem(item.id, { labels: newLabels }, item.repoId)
             patchProjectRowIfNeeded({ labels: newLabels })
           },
           onRevert: () => {
             onLabelsChange(prevLabels)
-            patchWorkItem(item.id, { labels: prevLabels })
+            patchWorkItem(item.id, { labels: prevLabels }, item.repoId)
             patchProjectRowIfNeeded({ labels: prevLabels })
           },
           onSuccess: () => {
@@ -3202,6 +3427,7 @@ export default function GitHubItemDialog({
   repoId,
   projectOrigin,
   onUse,
+  onReviewRequestsChange,
   onClose
 }: GitHubItemDialogProps): React.JSX.Element {
   const [tab, setTab] = useState<ItemDialogTab>('conversation')
@@ -3445,6 +3671,28 @@ export default function GitHubItemDialog({
   }, [repoPath, effectiveRepoId, workItem, detailsCacheKey, refetchTick])
 
   const Icon = workItem?.type === 'pr' ? GitPullRequest : CircleDot
+  const displayWorkItem = useMemo<GitHubWorkItem | null>(() => {
+    if (!workItem) {
+      return null
+    }
+    if (!details?.item) {
+      return workItem
+    }
+    return { ...workItem, ...details.item, repoId: workItem.repoId }
+  }, [details?.item, workItem])
+
+  useEffect(() => {
+    if (!workItem || details?.item.reviewRequests === undefined) {
+      return
+    }
+    // Why: PR details can carry fresher reviewer metadata than the list row;
+    // push it back so the Tasks review chip doesn't keep a stale snapshot.
+    onReviewRequestsChange?.(
+      { id: workItem.id, repoId: workItem.repoId },
+      details.item.reviewRequests
+    )
+  }, [details?.item.reviewRequests, onReviewRequestsChange, workItem])
+
   const body = details?.body ?? ''
   const comments = details?.comments ?? []
   const files = details?.files ?? []
@@ -3725,7 +3973,7 @@ export default function GitHubItemDialog({
                   <div className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
                     <TabsContent value="conversation" className="mt-0">
                       <ConversationTab
-                        item={workItem}
+                        item={displayWorkItem ?? workItem}
                         repoPath={repoPath}
                         repoId={effectiveRepoId}
                         body={body}
@@ -3756,6 +4004,15 @@ export default function GitHubItemDialog({
                           }
                         }}
                         onCommentAdded={appendOptimisticComment}
+                        onReviewersRequested={(nextReviewRequests) => {
+                          if (detailsCacheKey) {
+                            patchCachedPRReviewRequests(detailsCacheKey, nextReviewRequests)
+                          }
+                          onReviewRequestsChange?.(
+                            { id: workItem.id, repoId: workItem.repoId },
+                            nextReviewRequests
+                          )
+                        }}
                       />
                     </TabsContent>
 

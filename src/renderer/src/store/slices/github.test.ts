@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { create } from 'zustand'
 import { createGitHubSlice, workItemsCacheKey } from './github'
 import type { AppState } from '../types'
-import type { PRInfo } from '../../../../shared/types'
+import type { GitHubWorkItem, PRInfo } from '../../../../shared/types'
 import {
   createCompatibleRuntimeStatusResponseIfNeeded,
   type RuntimeEnvironmentCallRequest
@@ -160,6 +160,49 @@ describe('createGitHubSlice.evictGitHubRepoCaches', () => {
     await secondFetch
 
     expect(mockApi.gh.listWorkItems).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('createGitHubSlice.patchWorkItem', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetRemoteRuntimeMocks()
+  })
+
+  it('can scope patches to one repo when different repos have the same work-item id', () => {
+    const store = createTestStore()
+    const repoOneItem = {
+      id: 'pr:42',
+      repoId: 'repo-1',
+      type: 'pr',
+      number: 42,
+      title: 'Repo one PR'
+    } as GitHubWorkItem
+    const repoTwoItem = {
+      id: 'pr:42',
+      repoId: 'repo-2',
+      type: 'pr',
+      number: 42,
+      title: 'Repo two PR'
+    } as GitHubWorkItem
+
+    store.setState({
+      workItemsCache: {
+        [workItemsCacheKey('repo-1', 20, '')]: { data: [repoOneItem], fetchedAt: 1 },
+        [workItemsCacheKey('repo-2', 20, '')]: { data: [repoTwoItem], fetchedAt: 1 }
+      }
+    })
+
+    store.getState().patchWorkItem('pr:42', { reviewRequests: [] }, 'repo-1')
+
+    const state = store.getState()
+    const repoOnePatched = state.workItemsCache[workItemsCacheKey('repo-1', 20, '')]?.data?.[0]
+    const repoTwoPatched = state.workItemsCache[workItemsCacheKey('repo-2', 20, '')]?.data?.[0]
+    expect(repoOnePatched).toMatchObject({
+      repoId: 'repo-1',
+      reviewRequests: []
+    })
+    expect(repoTwoPatched).toBe(repoTwoItem)
   })
 })
 

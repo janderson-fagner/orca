@@ -84,6 +84,7 @@ vi.mock('./rate-limit', () => ({
 import {
   getPRComments,
   getPRForBranch,
+  getWorkItem,
   getPullRequestPushTarget,
   mergePR,
   resolveReviewThread,
@@ -832,6 +833,37 @@ describe('getPRForBranch', () => {
       ['api', 'repos/stablyai/orca/pulls/1849'],
       { cwd: '/repo-root' }
     )
+  })
+
+  it('normalizes reviewer avatars from REST pull request payloads', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        number: 42,
+        title: 'Review me',
+        state: 'open',
+        html_url: 'https://github.com/acme/widgets/pull/42',
+        labels: [],
+        updated_at: '2026-03-28T00:00:00Z',
+        user: { login: 'author' },
+        draft: false,
+        requested_reviewers: [
+          {
+            login: 'AmethystLiang',
+            avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4'
+          }
+        ]
+      })
+    })
+
+    await expect(getWorkItem('/repo-root', 42, 'pr')).resolves.toMatchObject({
+      reviewRequests: [
+        {
+          login: 'AmethystLiang',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/1?v=4'
+        }
+      ]
+    })
   })
 })
 
