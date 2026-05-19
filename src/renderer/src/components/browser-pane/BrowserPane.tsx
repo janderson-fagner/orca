@@ -3960,6 +3960,12 @@ function BrowserPagePane({
     annotationCopyTimerRef.current = setTimeout(() => setBrowserAnnotationsCopied(false), 1400)
   }, [browserAnnotationsPrompt])
 
+  const handleClearBrowserAnnotations = useCallback((): void => {
+    clearTimeout(annotationCopyTimerRef.current)
+    setBrowserAnnotationsCopied(false)
+    clearBrowserPageAnnotations(browserTab.id)
+  }, [browserTab.id, clearBrowserPageAnnotations])
+
   const navigateToUrl = useCallback(
     (url: string): void => {
       const navigateBrowserUrl = (targetUrl: string): void => {
@@ -4555,6 +4561,22 @@ function BrowserPagePane({
                 )}
                 {browserAnnotationsCopied ? 'Copied' : 'Copy All'}
               </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onClick={handleClearBrowserAnnotations}
+                    aria-label="Clear browser annotations"
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={6}>
+                  Clear annotations
+                </TooltipContent>
+              </Tooltip>
             </>
           ) : null}
           <button
@@ -4725,6 +4747,22 @@ function BrowserPagePane({
                 )}
                 {browserAnnotationsCopied ? 'Copied' : 'Copy'}
               </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={handleClearBrowserAnnotations}
+                    aria-label="Clear browser annotations"
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={6}>
+                  Clear annotations
+                </TooltipContent>
+              </Tooltip>
             </div>
             <div className="scrollbar-sleek min-h-0 flex-1 overflow-auto p-1.5">
               {browserAnnotations.map((annotation, index) => (
