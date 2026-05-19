@@ -88,6 +88,7 @@ import {
   getStartupErrorFallbackUI,
   hydratePersistedUIAfterStartupRead
 } from './lib/startup-ui-hydration'
+import { shouldDeferSessionHydrationUntilWorktreesLoaded } from './lib/startup-worktree-hydration'
 import { applyDocumentTheme } from './lib/document-theme'
 import { isEditableTarget } from './lib/editable-target'
 import { getSelectedTextForFileSearch } from './lib/file-search-selection'
@@ -487,7 +488,7 @@ function App(): React.JSX.Element {
         // the local filesystem and then hydrate stale local workspace state.
         await actions.fetchSettings()
         await actions.fetchRepos()
-        await actions.fetchAllWorktrees()
+        const worktreeHydration = await actions.fetchAllWorktrees()
         await actions.fetchWorktreeLineage()
         const persistedUI = await window.api.ui.get()
         uiHydrated = hydratePersistedUIAfterStartupRead({
@@ -496,6 +497,15 @@ function App(): React.JSX.Element {
           hydratePersistedUI: actions.hydratePersistedUI
         })
         const session = await window.api.session.get()
+        if (
+          shouldDeferSessionHydrationUntilWorktreesLoaded({
+            repos: useAppStore.getState().repos,
+            session,
+            worktreeHydration
+          })
+        ) {
+          throw new Error('worktree hydration incomplete during startup')
+        }
         if (!cancelled) {
           actions.hydrateWorkspaceSession(session)
           actions.hydrateTabsSession(session)

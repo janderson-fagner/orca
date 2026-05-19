@@ -20,6 +20,10 @@ export type WorktreeDeleteState = {
   canForceDelete: boolean
 }
 
+export type FetchAllWorktreesResult = {
+  canHydrateSession: boolean
+}
+
 export type WorktreeSlice = {
   worktreesByRepo: Record<string, Worktree[]>
   worktreeLineageById: Record<string, WorktreeLineage>
@@ -64,7 +68,7 @@ export type WorktreeSlice = {
    */
   hasHydratedWorktreePurge: boolean
   fetchWorktrees: (repoId: string) => Promise<void>
-  fetchAllWorktrees: () => Promise<void>
+  fetchAllWorktrees: () => Promise<FetchAllWorktreesResult>
   fetchWorktreeLineage: () => Promise<void>
   updateWorktreeLineage: (
     worktreeId: string,

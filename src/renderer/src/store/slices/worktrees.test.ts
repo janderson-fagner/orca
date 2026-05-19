@@ -1581,8 +1581,9 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
       }
     } as unknown as Partial<AppState>)
 
-    await store.getState().fetchAllWorktrees()
+    const degradedResult = await store.getState().fetchAllWorktrees()
 
+    expect(degradedResult.canHydrateSession).toBe(true)
     expect(store.getState().hasHydratedWorktreePurge).toBe(false)
     expect(store.getState().tabsByWorktree).toEqual({
       'repoA::/a/stale': [{ id: 'tab-A-stale', worktreeId: 'repoA::/a/stale' }],
@@ -1597,8 +1598,9 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
       return [wtB]
     })
 
-    await store.getState().fetchAllWorktrees()
+    const recoveredResult = await store.getState().fetchAllWorktrees()
 
+    expect(recoveredResult.canHydrateSession).toBe(true)
     expect(store.getState().hasHydratedWorktreePurge).toBe(true)
     expect(store.getState().tabsByWorktree).toEqual({
       'repoB::/b/wt1': [{ id: 'tab-B', worktreeId: 'repoB::/b/wt1' }]
@@ -1620,8 +1622,9 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
       }
     } as unknown as Partial<AppState>)
 
-    await store.getState().fetchAllWorktrees()
+    const result = await store.getState().fetchAllWorktrees()
 
+    expect(result.canHydrateSession).toBe(false)
     expect(store.getState().hasHydratedWorktreePurge).toBe(false)
     expect(store.getState().tabsByWorktree).toEqual({
       'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }]
@@ -1651,8 +1654,9 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
       }
     } as unknown as Partial<AppState>)
 
-    await store.getState().fetchAllWorktrees()
+    const result = await store.getState().fetchAllWorktrees()
 
+    expect(result.canHydrateSession).toBe(true)
     expect(store.getState().hasHydratedWorktreePurge).toBe(true)
     expect(mockApi.worktrees.list).toHaveBeenCalledTimes(2)
     expect(store.getState().tabsByWorktree).toEqual({
