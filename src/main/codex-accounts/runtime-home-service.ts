@@ -12,12 +12,12 @@ import {
   rmSync,
   statSync
 } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, extname, join, parse, relative } from 'node:path'
 import { app } from 'electron'
 import type { CodexManagedAccount } from '../../shared/types'
 import type { Store } from '../persistence'
 import { writeFileAtomically } from './fs-utils'
+import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from '../codex/codex-home-paths'
 
 type CodexAuthIdentity = {
   email: string | null
@@ -27,6 +27,11 @@ type CodexAuthIdentity = {
 
 type CodexSystemDefaultSnapshot = {
   authJson: string | null
+}
+
+type CodexRuntimeLogoutMarker = {
+  systemDefaultAuthJson: string | null
+  loggedOutAt: number
 }
 
 type CodexReadBackResult = 'unchanged' | 'persisted' | 'rejected'
@@ -40,12 +45,11 @@ type CodexReadBackMatch =
   | { kind: 'none' | 'ambiguous' }
 
 export class CodexRuntimeHomeService {
-  // Why: tracks whether auth.json is currently managed by Orca. When null,
-  // Orca does NOT own auth.json and must not overwrite external changes
-  // (e.g. user running `codex login` or another auth tool). The snapshot
-  // restore only fires on the managed→system-default transition.
+  // Why: tracks whether the runtime auth.json currently mirrors a managed
+  // account. When null, runtime auth follows the user's system-default
+  // ~/.codex/auth.json instead of being written back to a managed account.
   private lastSyncedAccountId: string | null = null
-  // Why: tracks the auth.json content Orca last wrote to ~/.codex/auth.json.
+  // Why: tracks the auth.json content Orca last wrote to the runtime CODEX_HOME.
   // Between syncs, if the file differs, Codex CLI refreshed the token — so
   // Orca writes back the refreshed token to managed storage before overwriting.
   // On managed→system-default transition, if the file differs, an external
@@ -77,6 +81,7 @@ export class CodexRuntimeHomeService {
 
   syncForCurrentSelection(): void {
     const settings = this.store.getSettings()
+    const runtimeAuthExistedBeforeSync = existsSync(this.getRuntimeAuthPath())
     if (this.lastSyncedAccountId === null) {
       this.captureSystemDefaultSnapshot({ force: false })
     }
@@ -98,16 +103,30 @@ export class CodexRuntimeHomeService {
       if (settings.activeCodexManagedAccountId) {
         this.store.updateSettings({ activeCodexManagedAccountId: null })
       }
-      // Why: only restore the snapshot when transitioning FROM a managed
-      // account back to system default. When no managed account was ever
-      // active, auth.json belongs to the user and Orca must not touch it.
-      // This prevents overwriting external auth changes (codex login or other
-      // tools) on every PTY launch / rate-limit fetch.
+      // Why: only restore the system-default mirror when transitioning FROM a
+      // managed account. When no managed account was ever active, later syncs
+      // should mirror the user's current ~/.codex/auth.json instead of
+      // replaying an old snapshot on every PTY launch / rate-limit fetch.
       if (this.lastSyncedAccountId !== null) {
         this.restoreSystemDefaultSnapshot({
           detectExternalLogin: outgoingReadBackResult !== 'rejected'
         })
         this.lastSyncedAccountId = null
+      } else if (!runtimeAuthExistedBeforeSync) {
+        if (this.runtimeLogoutMarkerStillApplies()) {
+          this.lastWrittenAuthJson = null
+        } else if (this.lastWrittenAuthJson === null) {
+          // Why: Orca-launched Codex sessions now use an Orca-owned CODEX_HOME
+          // even when no managed account is selected. Seed that runtime home
+          // from the user's current system-default auth once so dev/prod Orca
+          // terminals stay logged in without mutating ~/.codex on startup.
+          this.restoreSystemDefaultSnapshot({ detectExternalLogin: false })
+        } else {
+          this.persistRuntimeLogoutMarker()
+        }
+      } else {
+        this.clearRuntimeLogoutMarker()
+        this.syncRuntimeAuthWithSystemDefault()
       }
       return
     }
@@ -129,10 +148,10 @@ export class CodexRuntimeHomeService {
       this.captureSystemDefaultSnapshot({ force: true })
     }
 
-    // Why: Codex CLI refreshes expired OAuth tokens and writes them back to
-    // ~/.codex/auth.json. If we detect the runtime file differs from what Orca
-    // last wrote, the CLI must have refreshed — so we preserve those tokens
-    // back to managed storage before overwriting runtime with managed state.
+    // Why: Codex CLI refreshes expired OAuth tokens in CODEX_HOME/auth.json.
+    // If we detect the runtime file differs from what Orca last wrote, the CLI
+    // must have refreshed — so we preserve those tokens back to managed
+    // storage before overwriting runtime with managed state.
     if (this.lastSyncedAccountId === activeAccount.id) {
       if (this.skipNextReadBackForAccountId === activeAccount.id) {
         this.skipNextReadBackForAccountId = null
@@ -441,9 +460,7 @@ export class CodexRuntimeHomeService {
   }
 
   private getRuntimeHomePath(): string {
-    const runtimeHomePath = join(homedir(), '.codex')
-    mkdirSync(runtimeHomePath, { recursive: true })
-    return runtimeHomePath
+    return getOrcaManagedCodexHomePath()
   }
 
   private getRuntimeAuthPath(): string {
@@ -452,6 +469,10 @@ export class CodexRuntimeHomeService {
 
   private getSystemDefaultSnapshotPath(): string {
     return join(this.getRuntimeMetadataDir(), 'system-default-auth.json')
+  }
+
+  private getRuntimeLogoutMarkerPath(): string {
+    return join(this.getRuntimeMetadataDir(), 'system-default-runtime-logout.json')
   }
 
   private getRuntimeMetadataDir(): string {
@@ -490,8 +511,8 @@ export class CodexRuntimeHomeService {
     }
 
     // Why: migration is intentionally one-shot. Re-importing every startup
-    // would keep replaying stale managed-home state back into ~/.codex and
-    // make the shared runtime feel nondeterministic.
+    // would keep replaying stale managed-home state back into the shared
+    // runtime and make it feel nondeterministic.
     writeFileAtomically(
       this.getMigrationMarkerPath(),
       `${JSON.stringify({ completedAt: Date.now(), migratedHomeCount: managedHomes.length })}\n`
@@ -618,79 +639,128 @@ export class CodexRuntimeHomeService {
       return
     }
 
-    const runtimeAuthPath = this.getRuntimeAuthPath()
+    const runtimeAuthPath = join(getSystemCodexHomePath(), 'auth.json')
     const snapshot: CodexSystemDefaultSnapshot = {
       authJson: existsSync(runtimeAuthPath) ? readFileSync(runtimeAuthPath, 'utf-8') : null
     }
     writeFileAtomically(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600 })
   }
 
-  private restoreSystemDefaultSnapshot(options: { detectExternalLogin: boolean }): void {
-    // Why: detect whether an external tool (e.g. `codex auth login`) overwrote
-    // auth.json while a managed account was active. If so, that external login
-    // becomes the new system default — skip the stale snapshot restore.
-    if (options.detectExternalLogin && this.detectExternalLoginAndUpdateSnapshot()) {
+  private syncRuntimeAuthWithSystemDefault(): void {
+    const runtimeAuthPath = this.getRuntimeAuthPath()
+    const systemDefaultAuthPath = join(getSystemCodexHomePath(), 'auth.json')
+    if (!existsSync(runtimeAuthPath)) {
       return
     }
 
+    try {
+      const runtimeAuth = readFileSync(runtimeAuthPath, 'utf-8')
+      if (!existsSync(systemDefaultAuthPath)) {
+        const snapshot = this.readSystemDefaultSnapshot(this.getSystemDefaultSnapshotPath())
+        const mirroredSystemDefaultAuth =
+          this.lastWrittenAuthJson ?? (snapshot?.authJson !== null ? snapshot?.authJson : null)
+        if (mirroredSystemDefaultAuth !== null && runtimeAuth === mirroredSystemDefaultAuth) {
+          // Why: when the mirrored ~/.codex auth disappears, Orca should treat
+          // that as an external logout for unmanaged sessions instead of
+          // leaving the stale mirrored runtime auth behind after restart.
+          rmSync(runtimeAuthPath, { force: true })
+          this.captureSystemDefaultSnapshot({ force: true })
+          this.lastWrittenAuthJson = null
+        }
+        return
+      }
+      const systemDefaultAuth = readFileSync(systemDefaultAuthPath, 'utf-8')
+      if (runtimeAuth !== systemDefaultAuth) {
+        const snapshot = this.readSystemDefaultSnapshot(this.getSystemDefaultSnapshotPath())
+        const mirroredSystemDefaultAuth =
+          this.lastWrittenAuthJson ?? (snapshot?.authJson !== null ? snapshot?.authJson : null)
+        if (mirroredSystemDefaultAuth !== null && systemDefaultAuth === mirroredSystemDefaultAuth) {
+          // Why: system-default Codex now refreshes tokens inside Orca's
+          // runtime CODEX_HOME. Read that refresh back to ~/.codex so the next
+          // sync does not overwrite fresh runtime credentials with stale ones.
+          this.writeSystemDefaultAuth(runtimeAuth)
+          this.captureSystemDefaultSnapshot({ force: true })
+          this.lastWrittenAuthJson = runtimeAuth
+          return
+        }
+        // Why: the unmanaged path used to read ~/.codex directly. Mirror later
+        // external logins/logouts into Orca's runtime home so ordinary Orca
+        // Codex sessions keep matching the user's current system-default state.
+        this.captureSystemDefaultSnapshot({ force: true })
+        this.writeRuntimeAuth(systemDefaultAuth)
+      }
+    } catch (error) {
+      console.warn('[codex-runtime-home] Failed to sync system-default auth:', error)
+    }
+  }
+
+  private restoreSystemDefaultSnapshot(options: { detectExternalLogin: boolean }): void {
     const snapshotPath = this.getSystemDefaultSnapshotPath()
-    if (!existsSync(snapshotPath)) {
-      rmSync(this.getRuntimeAuthPath(), { force: true })
+    const runtimeAuthPath = this.getRuntimeAuthPath()
+    const systemDefaultAuthPath = join(getSystemCodexHomePath(), 'auth.json')
+    if (options.detectExternalLogin && !existsSync(runtimeAuthPath)) {
+      // Why: once Orca owns the runtime CODEX_HOME, deleting auth.json there is
+      // a local logout signal for Orca-launched Codex sessions, not a reason to
+      // rewrite the user's real ~/.codex snapshot back into place.
+      this.persistRuntimeLogoutMarker()
       this.lastWrittenAuthJson = null
       return
+    }
+
+    if (existsSync(systemDefaultAuthPath)) {
+      const systemDefaultAuth = readFileSync(systemDefaultAuthPath, 'utf-8')
+      this.captureSystemDefaultSnapshot({ force: true })
+      this.writeRuntimeAuth(systemDefaultAuth)
+      return
+    }
+
+    if (!existsSync(snapshotPath)) {
+      this.captureSystemDefaultSnapshot({ force: true })
     }
 
     const snapshot = this.readSystemDefaultSnapshot(snapshotPath)
     if (!snapshot) {
       console.warn('[codex-runtime-home] Ignoring invalid system-default auth snapshot')
       rmSync(snapshotPath, { force: true })
-      rmSync(this.getRuntimeAuthPath(), { force: true })
-      this.lastWrittenAuthJson = null
+      this.captureSystemDefaultSnapshot({ force: true })
+      const refreshedSnapshot = this.readSystemDefaultSnapshot(snapshotPath)
+      if (!refreshedSnapshot) {
+        rmSync(runtimeAuthPath, { force: true })
+        this.lastWrittenAuthJson = null
+        return
+      }
+      if (refreshedSnapshot.authJson === null) {
+        rmSync(runtimeAuthPath, { force: true })
+        this.lastWrittenAuthJson = null
+        return
+      }
+      this.writeRuntimeAuth(refreshedSnapshot.authJson)
       return
     }
     if (snapshot.authJson === null) {
-      rmSync(this.getRuntimeAuthPath(), { force: true })
+      rmSync(runtimeAuthPath, { force: true })
       this.lastWrittenAuthJson = null
       return
     }
     this.writeRuntimeAuth(snapshot.authJson)
   }
 
-  // Why: mirrors ClaudeRuntimeAuthService.detectExternalLoginAndUpdateSnapshot().
-  // If the runtime auth.json differs from what Orca last wrote, something
-  // external changed it. That external state should become the new system
-  // default rather than being overwritten by a potentially stale snapshot.
-  private detectExternalLoginAndUpdateSnapshot(): boolean {
-    if (this.lastWrittenAuthJson === null) {
-      return false
-    }
+  private writeSystemDefaultAuth(contents: string): void {
+    const systemDefaultAuthPath = join(getSystemCodexHomePath(), 'auth.json')
+    mkdirSync(dirname(systemDefaultAuthPath), { recursive: true })
+    writeFileAtomically(systemDefaultAuthPath, contents, { mode: 0o600 })
+    this.ensureOwnerOnlyMode(systemDefaultAuthPath)
+  }
 
-    const runtimeAuthPath = this.getRuntimeAuthPath()
-    if (!existsSync(runtimeAuthPath)) {
-      const snapshotPath = this.getSystemDefaultSnapshotPath()
-      rmSync(snapshotPath, { force: true })
-      this.lastWrittenAuthJson = null
-      return true
-    }
-
-    try {
-      const currentAuth = readFileSync(runtimeAuthPath, 'utf-8')
-      if (currentAuth === this.lastWrittenAuthJson) {
-        return false
-      }
-    } catch {
-      return false
-    }
-
-    const snapshotPath = this.getSystemDefaultSnapshotPath()
-    rmSync(snapshotPath, { force: true })
-    this.lastWrittenAuthJson = null
-    return true
+  private readSystemDefaultAuth(): string | null {
+    const systemDefaultAuthPath = join(getSystemCodexHomePath(), 'auth.json')
+    return existsSync(systemDefaultAuthPath) ? readFileSync(systemDefaultAuthPath, 'utf-8') : null
   }
 
   private writeRuntimeAuth(contents: string): void {
     // Why: auth.json contains sensitive credentials. Restrict to owner-only
     // so other users on a shared Linux/macOS machine cannot read it.
+    this.clearRuntimeLogoutMarker()
     if (this.fileContentsEqual(this.getRuntimeAuthPath(), contents)) {
       this.ensureOwnerOnlyMode(this.getRuntimeAuthPath())
       this.lastWrittenAuthJson = contents
@@ -717,6 +787,58 @@ export class CodexRuntimeHomeService {
     } catch {
       /* Best effort: the next atomic write will set the restrictive mode. */
     }
+  }
+
+  private runtimeLogoutMarkerStillApplies(): boolean {
+    const marker = this.readRuntimeLogoutMarker()
+    if (!marker) {
+      return false
+    }
+    if (this.readSystemDefaultAuth() === marker.systemDefaultAuthJson) {
+      return true
+    }
+    this.clearRuntimeLogoutMarker()
+    return false
+  }
+
+  private persistRuntimeLogoutMarker(systemDefaultAuthJson = this.readSystemDefaultAuth()): void {
+    const marker: CodexRuntimeLogoutMarker = {
+      systemDefaultAuthJson,
+      loggedOutAt: Date.now()
+    }
+    writeFileAtomically(this.getRuntimeLogoutMarkerPath(), `${JSON.stringify(marker, null, 2)}\n`, {
+      mode: 0o600
+    })
+  }
+
+  private readRuntimeLogoutMarker(): CodexRuntimeLogoutMarker | null {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(readFileSync(this.getRuntimeLogoutMarkerPath(), 'utf-8')) as unknown
+    } catch {
+      return null
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      !('systemDefaultAuthJson' in parsed) ||
+      !('loggedOutAt' in parsed)
+    ) {
+      return null
+    }
+    const marker = parsed as { systemDefaultAuthJson: unknown; loggedOutAt: unknown }
+    if (
+      (marker.systemDefaultAuthJson !== null && typeof marker.systemDefaultAuthJson !== 'string') ||
+      typeof marker.loggedOutAt !== 'number'
+    ) {
+      return null
+    }
+    return marker as CodexRuntimeLogoutMarker
+  }
+
+  private clearRuntimeLogoutMarker(): void {
+    rmSync(this.getRuntimeLogoutMarkerPath(), { force: true })
   }
 
   private readSystemDefaultSnapshot(snapshotPath: string): CodexSystemDefaultSnapshot | null {

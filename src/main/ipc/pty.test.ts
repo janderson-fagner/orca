@@ -666,13 +666,13 @@ describe('registerPtyHandlers', () => {
       expect(env.PATH).toContain('/tmp/orca-user-data/orca-terminal-attribution/posix')
     })
 
-    it('leaves ambient CODEX_HOME untouched when system default is selected', async () => {
+    it('overrides ambient CODEX_HOME with the Orca-managed home for system default', async () => {
       const env = await spawnAndGetEnv(
         undefined,
         { CODEX_HOME: '/tmp/system-codex-home' },
-        () => null
+        () => '/tmp/orca-codex-home'
       )
-      expect(env.CODEX_HOME).toBe('/tmp/system-codex-home')
+      expect(env.CODEX_HOME).toBe('/tmp/orca-codex-home')
     })
 
     describe('daemon-active provider (parity with LocalPtyProvider)', () => {

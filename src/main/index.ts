@@ -38,7 +38,8 @@ import {
   installDevParentDisconnectQuit,
   installDevParentWatchdog,
   installUncaughtPipeErrorGuard,
-  patchPackagedProcessPath
+  patchPackagedProcessPath,
+  shouldInstallManagedHooks
 } from './startup/configure-process'
 import { startFirstWindowStartupServices } from './startup/first-window-startup-services'
 import { getDevInstanceIdentity } from './startup/dev-instance-identity'
@@ -315,10 +316,7 @@ function openMainWindow(): BrowserWindow {
     window.webContents.id,
     automations,
     {
-      prepareForCodexLaunch: () =>
-        store!.getSettings().activeCodexManagedAccountId
-          ? codexRuntimeHome!.prepareForCodexLaunch()
-          : null,
+      prepareForCodexLaunch: () => codexRuntimeHome!.prepareForCodexLaunch(),
       prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
     },
     agentAwakeService ?? undefined,
@@ -330,10 +328,7 @@ function openMainWindow(): BrowserWindow {
     window,
     store,
     runtime,
-    () =>
-      store!.getSettings().activeCodexManagedAccountId
-        ? codexRuntimeHome!.prepareForCodexLaunch()
-        : null,
+    () => codexRuntimeHome!.prepareForCodexLaunch(),
     () => claudeRuntimeAuth!.prepareForClaudeLaunch()
   )
   rateLimits.attach(window)
@@ -792,10 +787,10 @@ app.whenReady().then(async () => {
   runtimeService.setAutomationService(automations)
   runtimeService.setAccountServices({ claudeAccounts, codexAccounts, rateLimits })
   runtimeService.setCommitMessageAgentEnvironmentResolvers({
-    prepareForCodexLaunch: () =>
-      store!.getSettings().activeCodexManagedAccountId
-        ? codexRuntimeHome!.prepareForCodexLaunch()
-        : null,
+    // Why: local Codex hooks and auth now live in Orca's managed runtime home
+    // even for the system-default path, so every Orca-launched Codex process
+    // must resolve CODEX_HOME through the runtime-home service.
+    prepareForCodexLaunch: () => codexRuntimeHome!.prepareForCodexLaunch(),
     prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
   })
   disposeFeatureWallFirstAgentTour = registerFeatureWallFirstAgentTour({
@@ -811,8 +806,8 @@ app.whenReady().then(async () => {
     })
   )
   nativeTheme.themeSource = store.getSettings().theme ?? 'system'
-  // Why: managed hook installation mutates user-global agent config. Each
-  // installer runs inside its own try/catch so a malformed local config
+  // Why: most managed hook installers still mutate user-global agent config.
+  // Each installer runs inside its own try/catch so a malformed local config
   // (e.g. corrupted ~/.claude/settings.json) cannot brick Orca startup.
   // The agent label travels with each installer so the catch can attribute
   // the failure in the `agent_hook_install_failed` telemetry event.
@@ -826,7 +821,9 @@ app.whenReady().then(async () => {
     ['copilot', () => copilotHookService.install()],
     ['hermes', () => hermesHookService.install()]
   ] as const
-  runManagedHookInstallers(managedHookInstallers)
+  if (shouldInstallManagedHooks(is.dev)) {
+    runManagedHookInstallers(managedHookInstallers)
+  }
 
   app.on('child-process-gone', (_event, details) => {
     recordProcessGoneCrash('child', details.type, details.reason, details.exitCode ?? null, {

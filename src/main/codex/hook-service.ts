@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: getStatus + install + remove all share the managed-command and trust-key derivation. Splitting would hide that the three operations must agree on group index, event label, and command bytes. */
-import { homedir } from 'os'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { SFTPWrapper } from 'ssh2'
 import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared/agent-hook-types'
@@ -33,6 +33,8 @@ import {
   type CodexHookTrustState,
   type CodexTrustEntry
 } from './config-toml-trust'
+import { writeFileAtomically } from '../codex-accounts/fs-utils'
+import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from './codex-home-paths'
 
 // Why: PreToolUse/PostToolUse give the dashboard a live readout of the
 // in-flight tool (name + input preview) between UserPromptSubmit and Stop.
@@ -49,11 +51,23 @@ const CODEX_EVENTS = [
 ] as const
 
 function getConfigPath(): string {
-  return join(homedir(), '.codex', 'hooks.json')
+  return join(getOrcaManagedCodexHomePath(), 'hooks.json')
 }
 
 function getCodexConfigTomlPath(): string {
-  return join(homedir(), '.codex', 'config.toml')
+  return join(getOrcaManagedCodexHomePath(), 'config.toml')
+}
+
+function syncSystemConfigIntoManagedCodexHome(): void {
+  const systemConfigPath = join(getSystemCodexHomePath(), 'config.toml')
+  const runtimeConfigPath = getCodexConfigTomlPath()
+  if (!existsSync(systemConfigPath) || existsSync(runtimeConfigPath)) {
+    return
+  }
+  // Why: Orca-launched Codex now reads the Orca-owned runtime CODEX_HOME.
+  // Seed once from the user's real Codex config before appending Orca hook
+  // trust, but never overwrite runtime-only edits Codex made later.
+  writeFileAtomically(runtimeConfigPath, readFileSync(systemConfigPath, 'utf-8'))
 }
 
 // Why: Codex's hash key uses the snake_case event label (see
@@ -326,6 +340,7 @@ export class CodexHookService {
     // pointing at a hook that doesn't exist. Surface failures — without this,
     // getStatus would report green for a hook Codex won't actually fire.
     try {
+      syncSystemConfigIntoManagedCodexHome()
       upsertHookTrustEntries(getCodexConfigTomlPath(), trustEntries)
     } catch (error) {
       return {
@@ -477,9 +492,8 @@ export class CodexHookService {
       const managedEventLabels = new Set<CodexEventLabel>(
         CODEX_EVENTS.map((event) => CODEX_EVENT_LABEL[event])
       )
-      // Why: only drop entries WE wrote. configPath (~/.codex/hooks.json) is
-      // shared with Codex CLI, so user-approved trust entries for non-Orca
-      // commands live in the same `[hooks.state.*]` namespace. Match by hash
+      // Why: only drop entries WE wrote. The same config.toml can contain
+      // user-approved trust entries for non-Orca commands, so match by hash
       // equivalence to our managed command — a sourcePath-only filter would
       // wipe the user's manually-approved entries.
       const ourKeys: string[] = []

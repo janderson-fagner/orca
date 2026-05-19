@@ -1,11 +1,11 @@
 /* eslint-disable max-lines -- Why: Codex discovery, incremental parsing, attribution, and aggregation all depend on the same event-normalization rules. Keeping them together makes the duplicate-snapshot logic easier to audit when usage totals look wrong. */
-import { homedir } from 'os'
 import { basename, join, win32, posix } from 'path'
 import { createReadStream } from 'fs'
 import { realpath, readdir, stat } from 'fs/promises'
 import { createInterface } from 'readline'
 import type { Repo } from '../../shared/types'
 import { areWorktreePathsEqual } from '../ipc/worktree-logic'
+import { getOrcaManagedCodexHomePath } from '../codex/codex-home-paths'
 import type {
   CodexUsageAttributedEvent,
   CodexUsageDailyAggregate,
@@ -51,7 +51,6 @@ type CodexUsageDeltaResolution =
   | { kind: 'event'; delta: CodexUsageRawUsage; nextTotals: CodexUsageRawUsage | null }
   | { kind: 'baseline'; nextTotals: CodexUsageRawUsage }
 
-const DEFAULT_CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
 const YIELD_EVERY_FILES = 10
 
 function ensureNumber(value: unknown): number {
@@ -112,7 +111,10 @@ export function getCodexSessionsDirectory(): string {
   if (codexHome) {
     return join(codexHome, 'sessions')
   }
-  return DEFAULT_CODEX_SESSIONS_DIR
+  // Why: Orca-launched Codex processes receive an Orca-owned CODEX_HOME, so
+  // the main-process usage scanner must follow that runtime home instead of
+  // the user's ambient ~/.codex directory.
+  return join(getOrcaManagedCodexHomePath(), 'sessions')
 }
 
 export async function listCodexSessionFiles(): Promise<string[]> {
