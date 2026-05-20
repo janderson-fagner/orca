@@ -6,6 +6,8 @@ import hostedGitInfo from 'hosted-git-info'
 import { gitExecFileSync, gitExecFileAsync } from './runner'
 import type { BaseRefSearchResult } from '../../shared/types'
 
+const GH_LOGIN_TIMEOUT_MS = 1500
+
 /**
  * Ordered probe list used to resolve a repo's default base ref when no
  * explicit origin/HEAD symbolic-ref is set. `returnAs` is the short-name
@@ -124,7 +126,8 @@ function getGhLogin(): string {
   try {
     const apiLogin = execSync('gh api user -q .login', {
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: GH_LOGIN_TIMEOUT_MS
     }).trim()
     if (apiLogin) {
       cachedGhLogin = normalizeUsername(apiLogin)
@@ -140,7 +143,8 @@ function getGhLogin(): string {
     const output = execSync('gh auth status 2>&1', {
       encoding: 'utf-8',
       shell: process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : '/bin/bash',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: GH_LOGIN_TIMEOUT_MS
     })
 
     const activeAccountMatch = output.match(
@@ -158,7 +162,9 @@ function getGhLogin(): string {
     }
     return login
   } catch {
-    // Don't cache empty results on failure — allow retry on next call
+    // Why: broken tokens/keychains can block the Electron main process.
+    // Keep the fallback best-effort for this app session.
+    cachedGhLogin = ''
     return ''
   }
 }
@@ -170,8 +176,10 @@ export function getGitUsername(path: string): string {
   return normalizeUsername(
     getGitConfigValue(path, 'github.user') ||
       getGitConfigValue(path, 'user.username') ||
-      getGhLogin() ||
+      // Why: GitHub CLI login can touch network/keychain state. A repo-local
+      // email is already enough for the branch prefix and keeps repo add fast.
       getGitConfigValue(path, 'user.email').split('@')[0] ||
+      getGhLogin() ||
       getGitConfigValue(path, 'user.name')
   )
 }
