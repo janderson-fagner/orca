@@ -5,6 +5,7 @@ import { useAppStore } from '@/store'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SelectedTextCopyMenu } from '@/components/SelectedTextCopyMenu'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import {
   addressForPort,
@@ -16,7 +17,6 @@ import {
 } from '@/lib/workspace-port-actions'
 import type { WorkspacePort } from '../../../../shared/workspace-ports'
 import { WORKTREE_NATIVE_CONTEXT_MENU_ATTR } from './WorktreeContextMenu'
-import { SelectedTextCopyMenu } from './SelectedTextCopyMenu'
 
 type WorktreeCardPortsProps = {
   ports: WorkspacePort[]

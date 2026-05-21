@@ -9,10 +9,10 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { CircleDot, ExternalLink, GitMerge, MonitorUp, Pencil, StickyNote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LinearIcon } from '@/components/icons/LinearIcon'
+import { SelectedTextCopyMenu } from '@/components/SelectedTextCopyMenu'
 import CommentMarkdown from './CommentMarkdown'
 import { PullRequestIcon } from './WorktreeCardHelpers'
 import { WORKTREE_NATIVE_CONTEXT_MENU_ATTR } from './WorktreeContextMenu'
-import { SelectedTextCopyMenu } from './SelectedTextCopyMenu'
 import {
   IssueStateBadge,
   LinearStateBadge,
