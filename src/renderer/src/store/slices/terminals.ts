@@ -11,6 +11,7 @@ import type {
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { isValidHostTerminalTabId, isValidTerminalTabId } from '../../../../shared/terminal-tab-id'
 import { getRepoIdFromWorktreeId, splitWorktreeId } from '../../../../shared/worktree-id'
+import { isWslUncPath } from '../../../../shared/wsl-paths'
 import type { AgentStartedTelemetry } from '../../lib/worktree-activation'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { clearTransientTerminalState, emptyLayoutSnapshot } from './terminal-helpers'
@@ -73,7 +74,8 @@ function isWindowsRendererRuntime(): boolean {
 function resolveCreatedTabShellOverride(
   explicitShellOverride: string | undefined,
   defaultWindowsShell: string | undefined,
-  isRemoteWorktree: boolean
+  isRemoteWorktree: boolean,
+  isWslWorktree: boolean
 ): string | undefined {
   if (isRemoteWorktree) {
     return undefined
@@ -82,9 +84,22 @@ function resolveCreatedTabShellOverride(
     return explicitShellOverride
   }
   if (isWindowsRendererRuntime()) {
+    if (isWslWorktree) {
+      return 'wsl.exe'
+    }
     return defaultWindowsShell
   }
   return undefined
+}
+
+function worktreeUsesWslPath(
+  state: Pick<AppState, 'worktreesByRepo'>,
+  worktreeId: string
+): boolean {
+  const worktree = Object.values(state.worktreesByRepo)
+    .flat()
+    .find((entry) => entry.id === worktreeId)
+  return worktree ? isWslUncPath(worktree.path) : false
 }
 
 function worktreeUsesRemoteConnection(
@@ -435,7 +450,11 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         s.settings?.terminalWindowsShell,
         // Why: SSH PTYs ignore local Windows shell selection; persisting a
         // local shell icon would mislabel a remote terminal.
-        worktreeUsesRemoteConnection(s, worktreeId)
+        worktreeUsesRemoteConnection(s, worktreeId),
+        // Why: WSL UNC worktrees are repo-scoped WSL environments. New default
+        // terminals should enter that distro even when the global Windows shell
+        // preference is PowerShell or cmd.exe.
+        worktreeUsesWslPath(s, worktreeId)
       )
       tab = {
         id,
@@ -1573,7 +1592,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
       // Only SSH repos need this: local worktrees are persisted and a missing
       // local worktree genuinely means it was deleted.
       const sshRepoIds = new Set(s.repos.filter((r) => r.connectionId).map((r) => r.id))
-      // Why: the Floating Terminal is intentionally not a repo worktree, but
+      // Why: the Floating Workspace is intentionally not a repo worktree, but
       // its tabs still use the normal terminal session pipeline so daemon PTYs
       // can survive app restart just like workspace terminals.
       validWorktreeIds.add(FLOATING_TERMINAL_WORKTREE_ID)

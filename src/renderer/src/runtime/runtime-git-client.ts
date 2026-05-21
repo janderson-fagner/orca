@@ -11,6 +11,11 @@ import type {
   GitUpstreamStatus,
   GlobalSettings
 } from '../../../shared/types'
+import type {
+  CommitMessageAgentCapability,
+  CommitMessageModelCapability
+} from '../../../shared/commit-message-agent-spec'
+import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../shared/commit-message-host-key'
 import type { GitHistoryOptions, GitHistoryResult } from '../../../shared/git-history'
 import { callRuntimeRpc, getActiveRuntimeTarget } from './runtime-rpc-client'
 
@@ -23,11 +28,21 @@ export type RuntimeGeneratePullRequestFieldsResult =
       success: true
       fields: { base: string; title: string; body: string; draft: boolean }
       agentLabel?: string
+      branchChangedByPreparation?: boolean
     }
-  | { success: false; error: string; canceled?: boolean }
+  | { success: false; error: string; canceled?: boolean; branchChangedByPreparation?: boolean }
 
 type RuntimeGitSettings = Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> &
   Partial<Pick<GlobalSettings, 'commitMessageAi' | 'agentCmdOverrides' | 'enableGitHubAttribution'>>
+
+type RuntimeDiscoverCommitMessageModelsResult =
+  | {
+      success: true
+      capability: CommitMessageAgentCapability
+      models: CommitMessageModelCapability[]
+      defaultModelId: string
+    }
+  | { success: false; error: string }
 
 export type RuntimeGitContext = {
   settings: RuntimeGitSettings | null | undefined
@@ -37,13 +52,17 @@ export type RuntimeGitContext = {
 }
 
 function getRuntimeCommitMessageSettings(
-  settings: RuntimeGitSettings | null | undefined
+  settings: RuntimeGitSettings | null | undefined,
+  connectionId?: string
 ): Partial<
   Pick<GlobalSettings, 'commitMessageAi' | 'agentCmdOverrides' | 'enableGitHubAttribution'>
-> {
+> & {
+  commitMessageDiscoveryHostKey?: string
+} {
   if (!settings) {
     return {}
   }
+  const scope = getRuntimeGitScope(settings, connectionId)
   return {
     ...(settings.commitMessageAi !== undefined
       ? { commitMessageAi: settings.commitMessageAi }
@@ -53,14 +72,15 @@ function getRuntimeCommitMessageSettings(
       : {}),
     ...(settings.enableGitHubAttribution !== undefined
       ? { enableGitHubAttribution: settings.enableGitHubAttribution }
-      : {})
+      : {}),
+    commitMessageDiscoveryHostKey: getCommitMessageModelDiscoveryHostKeyForScope(scope)
   }
 }
 
 export function getRuntimeGitScope(
   settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
-  connectionId: string | undefined
-): string | undefined {
+  connectionId: string | null | undefined
+): string | null | undefined {
   const target = getActiveRuntimeTarget(settings)
   return target.kind === 'environment' ? `runtime:${target.environmentId}` : connectionId
 }
@@ -253,22 +273,28 @@ export async function pullRuntimeGit(context: RuntimeGitContext): Promise<void> 
 
 export async function pushRuntimeGit(
   context: RuntimeGitContext,
-  args: { publish?: boolean; pushTarget?: GitPushTarget } = {}
+  args: { publish?: boolean; pushTarget?: GitPushTarget; forceWithLease?: boolean } = {}
 ): Promise<void> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     await window.api.git.push({
       worktreePath: context.worktreePath,
-      publish: args.publish,
-      pushTarget: args.pushTarget,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
     })
     return
   }
   await callRuntimeRpc(
     target,
     'git.push',
-    { worktree: context.worktreeId, publish: args.publish, pushTarget: args.pushTarget },
+    {
+      worktree: context.worktreeId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
+    },
     { timeoutMs: 30_000 }
   )
 }
@@ -362,7 +388,33 @@ export async function generateRuntimeCommitMessage(
     'git.generateCommitMessage',
     {
       worktree: context.worktreeId,
-      ...getRuntimeCommitMessageSettings(context.settings)
+      ...getRuntimeCommitMessageSettings(context.settings, context.connectionId)
+    },
+    { timeoutMs: 75_000 }
+  )
+}
+
+export async function discoverRuntimeCommitMessageModels(
+  context: RuntimeGitContext,
+  agentId: string
+): Promise<RuntimeDiscoverCommitMessageModelsResult> {
+  const target = getActiveRuntimeTarget(context.settings)
+  if (target.kind === 'local' || !context.worktreeId) {
+    return window.api.git.discoverCommitMessageModels({
+      agentId,
+      worktreePath: context.worktreePath,
+      connectionId: context.connectionId
+    }) as Promise<RuntimeDiscoverCommitMessageModelsResult>
+  }
+  return callRuntimeRpc<RuntimeDiscoverCommitMessageModelsResult>(
+    target,
+    'git.discoverCommitMessageModels',
+    {
+      worktree: context.worktreeId,
+      agentId,
+      ...(context.settings?.agentCmdOverrides
+        ? { agentCmdOverrides: context.settings.agentCmdOverrides }
+        : {})
     },
     { timeoutMs: 75_000 }
   )
@@ -405,7 +457,7 @@ export async function generateRuntimePullRequestFields(
     {
       worktree: context.worktreeId,
       ...input,
-      ...getRuntimeCommitMessageSettings(context.settings)
+      ...getRuntimeCommitMessageSettings(context.settings, context.connectionId)
     },
     { timeoutMs: 75_000 }
   )

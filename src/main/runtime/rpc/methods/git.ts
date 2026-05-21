@@ -8,6 +8,7 @@ import {
   GitCommit,
   GitCommitCompare,
   GitCommitDiff,
+  GitDiscoverCommitMessageModels,
   GitDiff,
   GitFilePath,
   GitGenerateCommitMessage,
@@ -90,7 +91,12 @@ export const GIT_METHODS: RpcMethod[] = [
     name: 'git.push',
     params: GitPush,
     handler: async (params, { runtime }) =>
-      runtime.pushRuntimeGit(params.worktree, params.publish, params.pushTarget as never)
+      runtime.pushRuntimeGit(
+        params.worktree,
+        params.publish,
+        params.pushTarget as never,
+        params.forceWithLease
+      )
   }),
   defineMethod({
     name: 'git.branchDiff',
@@ -127,7 +133,8 @@ export const GIT_METHODS: RpcMethod[] = [
       if (
         params.commitMessageAi === undefined &&
         params.agentCmdOverrides === undefined &&
-        params.enableGitHubAttribution === undefined
+        params.enableGitHubAttribution === undefined &&
+        params.commitMessageDiscoveryHostKey === undefined
       ) {
         return runtime.generateRuntimeCommitMessage(params.worktree)
       }
@@ -142,9 +149,26 @@ export const GIT_METHODS: RpcMethod[] = [
           : {}),
         ...(params.enableGitHubAttribution !== undefined
           ? { enableGitHubAttribution: params.enableGitHubAttribution }
+          : {}),
+        ...(params.commitMessageDiscoveryHostKey !== undefined
+          ? { commitMessageDiscoveryHostKey: params.commitMessageDiscoveryHostKey }
           : {})
       })
     }
+  }),
+  defineMethod({
+    name: 'git.discoverCommitMessageModels',
+    params: GitDiscoverCommitMessageModels,
+    handler: async (params, { runtime }) =>
+      runtime.discoverRuntimeCommitMessageModels(
+        params.worktree,
+        params.agentId,
+        params.agentCmdOverrides !== undefined
+          ? {
+              agentCmdOverrides: params.agentCmdOverrides as GlobalSettings['agentCmdOverrides']
+            }
+          : {}
+      )
   }),
   defineMethod({
     name: 'git.cancelGenerateCommitMessage',
@@ -165,7 +189,8 @@ export const GIT_METHODS: RpcMethod[] = [
       if (
         params.commitMessageAi === undefined &&
         params.agentCmdOverrides === undefined &&
-        params.enableGitHubAttribution === undefined
+        params.enableGitHubAttribution === undefined &&
+        params.commitMessageDiscoveryHostKey === undefined
       ) {
         return runtime.generateRuntimePullRequestFields(params.worktree, input)
       }
@@ -180,6 +205,9 @@ export const GIT_METHODS: RpcMethod[] = [
           : {}),
         ...(params.enableGitHubAttribution !== undefined
           ? { enableGitHubAttribution: params.enableGitHubAttribution }
+          : {}),
+        ...(params.commitMessageDiscoveryHostKey !== undefined
+          ? { commitMessageDiscoveryHostKey: params.commitMessageDiscoveryHostKey }
           : {})
       })
     }

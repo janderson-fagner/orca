@@ -1,6 +1,12 @@
+/* eslint-disable max-lines -- Why: this dropdown state machine keeps every action row in one table so priority and disabled-state regressions stay visible in tests. */
 // Why: split from source-control-primary-action because the primary and dropdown are independent derivations with different priority ladders; together they exceed the max-lines budget and tangle unrelated concerns.
 
 import type { PrimaryActionInputs } from './source-control-primary-action'
+import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
+
+export type DropdownActionInputs = PrimaryActionInputs & {
+  isPullRequestOperationActive?: boolean
+}
 
 export type DropdownActionKind =
   | 'commit'
@@ -49,12 +55,20 @@ function formatSyncLabel(base: string, ahead: number, behind: number): string {
   return `${base} (↓${behind} ↑${ahead})`
 }
 
+function formatForcePushTitle(branchCommitsAhead: number | undefined, upstreamName?: string) {
+  const countText =
+    branchCommitsAhead && branchCommitsAhead > 0
+      ? `${branchCommitsAhead} branch commit${branchCommitsAhead === 1 ? '' : 's'}`
+      : 'this branch'
+  return `Remote only has older copies of local commits. Force push ${countText} with lease to update ${upstreamName ?? 'the remote branch'}.`
+}
+
 /**
  * Resolve the chevron dropdown items. Every item is always rendered so the
  * menu shape stays stable across states; inapplicable rows are disabled
  * with a tooltip reason rather than hidden.
  */
-export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry[] {
+export function resolveDropdownItems(inputs: DropdownActionInputs): DropdownEntry[] {
   const {
     stagedCount,
     hasPartiallyStagedChanges,
@@ -66,7 +80,8 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     prState,
     isPRStateLoading,
     hostedReviewCreation,
-    branchCommitsAhead
+    branchCommitsAhead,
+    isPullRequestOperationActive = false
   } = inputs
 
   const hasStaged = stagedCount > 0
@@ -84,11 +99,15 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
   const publishBlockedByNoBranchCommits = !hasUpstream && branchCommitsAhead === 0
   const ahead = upstreamStatus?.ahead ?? 0
   const behind = upstreamStatus?.behind ?? 0
+  const shouldForcePushWithLease = shouldForcePushWithLeaseForUpstream(upstreamStatus)
+  const pushLabelCount =
+    shouldForcePushWithLease && branchCommitsAhead !== undefined ? branchCommitsAhead : ahead
+  const forcePushTitle = formatForcePushTitle(branchCommitsAhead, upstreamStatus?.upstreamName)
 
   // Why: any in-flight commit or remote operation should lock the whole menu.
   // A running push shouldn't let a second pull/sync click queue up behind it
   // on a stale status snapshot.
-  const globalBusy = isCommitting || isRemoteOperationActive
+  const globalBusy = isCommitting || isRemoteOperationActive || isPullRequestOperationActive
 
   const commitDisabledReason = (() => {
     if (hasUnresolvedConflicts) {
@@ -128,15 +147,21 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
         ? 'PR is already merged'
         : !hasUpstream
           ? 'Publish the branch first to push commits'
-          : (commitDisabledReason ?? 'Commit staged changes and push')
+          : (commitDisabledReason ??
+            (shouldForcePushWithLease
+              ? 'Commit staged changes and force push with lease'
+              : behind > 0
+                ? 'Use Commit & Sync to pull remote changes before pushing'
+                : 'Commit staged changes and push'))
   const commitPushItem: DropdownItem = {
     kind: 'commit_push',
-    label: 'Commit & Push',
+    label: shouldForcePushWithLease ? 'Commit & Force Push' : 'Commit & Push',
     title: commitPushTitle,
     disabled:
       globalBusy ||
       upstreamLoading ||
       !hasUpstream ||
+      (behind > 0 && !shouldForcePushWithLease) ||
       publishBlockedByPRLoading ||
       publishBlockedByMergedPR ||
       commitDisabledReason !== null
@@ -158,6 +183,12 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
       // nonexistent compound action.
       return 'Publish the branch first to sync commits'
     }
+    if (shouldForcePushWithLease) {
+      return (
+        commitDisabledReason ??
+        'Use Commit & Force Push — remote only has older copies of local commits'
+      )
+    }
     if (behind === 0) {
       return 'Nothing to pull — use Commit & Push instead'
     }
@@ -168,12 +199,17 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     label: 'Commit & Sync',
     title: commitSyncTitle,
     disabled:
-      globalBusy || upstreamLoading || !hasUpstream || behind === 0 || commitDisabledReason !== null
+      globalBusy ||
+      upstreamLoading ||
+      !hasUpstream ||
+      shouldForcePushWithLease ||
+      behind === 0 ||
+      commitDisabledReason !== null
   }
 
   const pushItem: DropdownItem = {
     kind: 'push',
-    label: formatCountLabel('Push', ahead),
+    label: formatCountLabel(shouldForcePushWithLease ? 'Force Push' : 'Push', pushLabelCount),
     title: upstreamLoading
       ? 'Checking branch status…'
       : publishBlockedByPRLoading
@@ -182,10 +218,19 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
           ? 'PR is already merged'
           : !hasUpstream
             ? 'Publish the branch first to push commits'
-            : ahead === 0
-              ? 'Nothing to push'
-              : describePushCount(ahead),
-    disabled: globalBusy || upstreamLoading || !hasUpstream || ahead === 0
+            : shouldForcePushWithLease
+              ? forcePushTitle
+              : behind > 0 && ahead > 0
+                ? 'Sync first to pull remote changes before pushing'
+                : ahead === 0
+                  ? 'Nothing to push'
+                  : describePushCount(ahead),
+    disabled:
+      globalBusy ||
+      upstreamLoading ||
+      !hasUpstream ||
+      ahead === 0 ||
+      (behind > 0 && !shouldForcePushWithLease)
   }
 
   const pullItem: DropdownItem = {
@@ -199,10 +244,13 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
           ? 'PR is already merged'
           : !hasUpstream
             ? 'Publish the branch first to pull commits'
-            : behind === 0
-              ? 'Nothing to pull'
-              : describePullCount(behind),
-    disabled: globalBusy || upstreamLoading || !hasUpstream || behind === 0
+            : shouldForcePushWithLease
+              ? 'Nothing new to pull — remote only has older copies of local commits'
+              : behind === 0
+                ? 'Nothing to pull'
+                : describePullCount(behind),
+    disabled:
+      globalBusy || upstreamLoading || !hasUpstream || behind === 0 || shouldForcePushWithLease
   }
 
   const syncItem: DropdownItem = {
@@ -216,10 +264,17 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
           ? 'PR is already merged'
           : !hasUpstream
             ? 'Publish the branch first to sync commits'
-            : ahead === 0 && behind === 0
-              ? 'Branch is up to date'
-              : describeSyncCounts(ahead, behind),
-    disabled: globalBusy || upstreamLoading || !hasUpstream || (ahead === 0 && behind === 0)
+            : shouldForcePushWithLease
+              ? 'Use Force Push — remote only has older copies of local commits'
+              : ahead === 0 && behind === 0
+                ? 'Branch is up to date'
+                : describeSyncCounts(ahead, behind),
+    disabled:
+      globalBusy ||
+      upstreamLoading ||
+      !hasUpstream ||
+      shouldForcePushWithLease ||
+      (ahead === 0 && behind === 0)
   }
 
   const fetchItem: DropdownItem = {
@@ -270,7 +325,7 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
       case 'needs_push':
         return 'Push first'
       case 'needs_sync':
-        return 'Sync first'
+        return shouldForcePushWithLease ? 'Force Push first' : 'Sync first'
       case 'auth_required':
         return 'Run gh auth login in this environment'
       case 'unsupported_provider':
@@ -298,16 +353,21 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     !globalBusy &&
     !upstreamLoading &&
     hostedReviewCreation?.provider === 'github' &&
-    hostedReviewCreation.blockedReason === 'needs_push'
+    (hostedReviewCreation.blockedReason === 'needs_push' ||
+      (hostedReviewCreation.blockedReason === 'needs_sync' && shouldForcePushWithLease))
   const pushCreatePRItem: DropdownItem = {
     kind: 'push_create_pr',
-    label: 'Push & Create PR',
-    title: canPushAndCreate ? 'Push local commits, then create a pull request' : createBlockedHint,
+    label: shouldForcePushWithLease ? 'Force Push before PR' : 'Push before PR',
+    title: canPushAndCreate
+      ? shouldForcePushWithLease
+        ? 'Force push with lease before creating a pull request'
+        : 'Push local commits before creating a pull request'
+      : createBlockedHint,
     hint: canPushAndCreate ? undefined : createBlockedHint,
     disabled: !canPushAndCreate
   }
 
-  return [
+  const entries: DropdownEntry[] = [
     commitItem,
     commitPushItem,
     commitSyncItem,
@@ -320,4 +380,16 @@ export function resolveDropdownItems(inputs: PrimaryActionInputs): DropdownEntry
     fetchItem,
     publishItem
   ]
+  if (!isPullRequestOperationActive) {
+    return entries
+  }
+  return entries.map((entry) =>
+    entry.kind === 'separator'
+      ? entry
+      : {
+          ...entry,
+          title: 'Pull request operation in progress…',
+          disabled: true
+        }
+  )
 }

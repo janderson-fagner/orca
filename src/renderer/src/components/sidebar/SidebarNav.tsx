@@ -7,17 +7,14 @@ import { isGitRepoKind } from '../../../../shared/repo-kind'
 import type { GlobalSettings } from '../../../../shared/types'
 import { getTaskPresetQuery, PER_REPO_FETCH_LIMIT } from '@/lib/new-workspace'
 import { LinearIcon } from '@/components/icons/LinearIcon'
-import { migrationUnsupportedToAgentStatusEntry } from '@/lib/migration-unsupported-agent-entry'
 import {
-  filterAvailableTaskProviders,
   normalizeVisibleTaskProviders,
+  restoreAvailableDefaultTaskProvider,
   resolveVisibleTaskProvider
 } from '../../../../shared/task-providers'
+import { useActivityUnreadCount } from '@/components/activity/useActivityUnreadCount'
 
 const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
-// Why: the sidebar resize handle keeps a wide edge target, but primary nav
-// rows under that strip should remain clickable when their bounds overlap.
-const SIDEBAR_NAV_HIT_TARGET_CLASS = 'relative z-20'
 
 export function shouldShowAgentsButton(
   settings: Pick<GlobalSettings, 'experimentalActivity'> | null | undefined
@@ -52,11 +49,20 @@ const SidebarNav = React.memo(function SidebarNav() {
   )
   const visibleTaskProviders = React.useMemo(
     () =>
-      filterAvailableTaskProviders(preferredVisibleTaskProviders, {
-        gitlabInstalled: preflightStatus?.glab?.installed === true,
-        linearConnected: linearStatus.connected === true
-      }),
-    [linearStatus.connected, preferredVisibleTaskProviders, preflightStatus?.glab?.installed]
+      restoreAvailableDefaultTaskProvider(
+        preferredVisibleTaskProviders,
+        {
+          gitlabInstalled: preflightStatus?.glab?.installed === true,
+          linearConnected: linearStatus.connected === true
+        },
+        defaultTaskSource
+      ),
+    [
+      defaultTaskSource,
+      linearStatus.connected,
+      preferredVisibleTaskProviders,
+      preflightStatus?.glab?.installed
+    ]
   )
   const resolvedDefaultTaskSource = React.useMemo(
     () => resolveVisibleTaskProvider(defaultTaskSource, visibleTaskProviders),
@@ -110,42 +116,7 @@ const SidebarNav = React.memo(function SidebarNav() {
   const tasksActive = activeView === 'tasks'
   const automationsActive = activeView === 'automations'
   const activityActive = activeView === 'activity'
-  const activityUnreadCount = useAppStore((s) => {
-    let count = 0
-    for (const worktrees of Object.values(s.worktreesByRepo)) {
-      for (const worktree of worktrees) {
-        if (worktree.createdAt && worktree.isUnread) {
-          count += 1
-        }
-      }
-    }
-    for (const [paneKey, entry] of Object.entries(s.agentStatusByPaneKey)) {
-      if (entry.state !== 'done' && entry.state !== 'blocked' && entry.state !== 'waiting') {
-        continue
-      }
-      if ((s.acknowledgedAgentsByPaneKey[paneKey] ?? 0) < entry.stateStartedAt) {
-        count += 1
-      }
-    }
-    for (const [paneKey, retained] of Object.entries(s.retainedAgentsByPaneKey)) {
-      if (retained.entry.state !== 'done') {
-        continue
-      }
-      if ((s.acknowledgedAgentsByPaneKey[paneKey] ?? 0) < retained.entry.stateStartedAt) {
-        count += 1
-      }
-    }
-    for (const unsupported of Object.values(s.migrationUnsupportedByPtyId)) {
-      const entry = migrationUnsupportedToAgentStatusEntry(unsupported)
-      if (!entry) {
-        continue
-      }
-      if ((s.acknowledgedAgentsByPaneKey[entry.paneKey] ?? 0) < entry.stateStartedAt) {
-        count += 1
-      }
-    }
-    return count
-  })
+  const activityUnreadCount = useActivityUnreadCount(showAgentsButton, 'sidebar-badge')
 
   return (
     <div className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
@@ -163,7 +134,6 @@ const SidebarNav = React.memo(function SidebarNav() {
           disabled={!canBrowseTasks}
           aria-current={tasksActive ? 'page' : undefined}
           className={cn(
-            SIDEBAR_NAV_HIT_TARGET_CLASS,
             'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
             tasksActive
               ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -236,7 +206,6 @@ const SidebarNav = React.memo(function SidebarNav() {
         onClick={openAutomationsPage}
         aria-current={automationsActive ? 'page' : undefined}
         className={cn(
-          SIDEBAR_NAV_HIT_TARGET_CLASS,
           'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
           automationsActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -255,7 +224,6 @@ const SidebarNav = React.memo(function SidebarNav() {
           onClick={openActivityPage}
           aria-current={activityActive ? 'page' : undefined}
           className={cn(
-            SIDEBAR_NAV_HIT_TARGET_CLASS,
             'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight transition-colors',
             activityActive
               ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -278,7 +246,7 @@ const SidebarNav = React.memo(function SidebarNav() {
         type="button"
         onClick={() => openModal('worktree-palette')}
         aria-label="Search worktrees and browser tabs"
-        className={`${SIDEBAR_NAV_HIT_TARGET_CLASS} group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight text-sidebar-foreground/60 transition-colors hover:bg-sidebar-foreground/8`}
+        className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium tracking-tight text-sidebar-foreground/60 transition-colors hover:bg-sidebar-foreground/8"
       >
         <Search className="size-4 shrink-0 text-sidebar-foreground/30" strokeWidth={1.75} />
         <span className="flex-1">Search</span>

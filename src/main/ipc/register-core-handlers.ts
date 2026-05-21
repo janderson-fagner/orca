@@ -30,8 +30,10 @@ import { registerComputerUsePermissionHandlers } from './computer-use-permission
 import { setTrustedBrowserRendererWebContentsId, setAgentBrowserBridgeRef } from './browser'
 import { registerSessionHandlers } from './session'
 import { registerSettingsHandlers } from './settings'
+import { registerDiagnosticsHandlers } from './diagnostics'
 import { registerSkillsHandlers } from './skills'
 import { registerWorkspaceSpaceHandlers } from './workspace-space'
+import { registerWorkspacePortHandlers } from './workspace-ports'
 import { registerAutomationHandlers } from './automations'
 import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
@@ -86,7 +88,7 @@ export function registerCoreHandlers(
   }
   registered = true
 
-  registerAppHandlers()
+  registerAppHandlers(store)
   registerCliHandlers()
   registerPreflightHandlers()
   registerClaudeUsageHandlers(claudeUsage)
@@ -112,6 +114,11 @@ export function registerCoreHandlers(
   registerNotebookHandlers(store)
   registerOnboardingHandlers(store)
   registerDeveloperPermissionHandlers()
+  // Why: diagnostics handlers are wired alongside telemetry but the two
+  // lanes never share a code path — `ipc/diagnostics.ts` imports only from
+  // `src/main/observability/`, never from `src/main/telemetry/`. Order is
+  // not load-bearing; both register independent ipcMain channels.
+  registerDiagnosticsHandlers()
   registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store)
@@ -131,6 +138,7 @@ export function registerCoreHandlers(
   registerSessionHandlers(store)
   registerUIHandlers(store)
   registerWorkspaceSpaceHandlers(store)
+  registerWorkspacePortHandlers(store)
   if (commitMessageAgentEnv) {
     registerFilesystemHandlers(store, commitMessageAgentEnv)
   } else {

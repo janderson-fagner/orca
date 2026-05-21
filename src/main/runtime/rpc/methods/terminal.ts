@@ -109,7 +109,7 @@ function createTerminalOutputBatcher(onFlush: (data: string) => void): {
         return
       }
       if (!timer) {
-        // Why: Paseo coalesces terminal stream output before crossing the
+        // Why: terminal stream output should be coalesced before crossing the
         // network. Desktop runtime subscribers need the same burst boundary.
         timer = setTimeout(flush, TERMINAL_OUTPUT_FLUSH_MS)
         if (typeof timer.unref === 'function') {
@@ -272,7 +272,8 @@ const TerminalRead = TerminalHandle.extend({
           message: 'Cursor must be a non-negative integer'
         })
     )
-    .optional()
+    .optional(),
+  limit: OptionalFiniteNumber
 })
 
 // Why: the legacy handler allowed `title: string | null` and rejected every
@@ -472,7 +473,10 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
     name: 'terminal.read',
     params: TerminalRead,
     handler: async (params, { runtime }) => ({
-      terminal: await runtime.readTerminal(params.terminal, { cursor: params.cursor })
+      terminal: await runtime.readTerminal(params.terminal, {
+        cursor: params.cursor,
+        limit: params.limit
+      })
     })
   }),
   defineMethod({
@@ -673,9 +677,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
     }
   }),
   // Why: desktop remote sessions can have dozens of panes. One streaming RPC
-  // owns the binary socket and routes terminal slots by streamId, mirroring
-  // Paseo's slot-based terminal data plane while keeping legacy subscribe as
-  // the compatibility fallback.
+  // owns the binary socket and routes terminal slots by streamId while keeping
+  // legacy subscribe as the compatibility fallback.
   defineStreamingMethod({
     name: 'terminal.multiplex',
     params: TerminalMultiplex,

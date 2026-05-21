@@ -2,7 +2,16 @@
 migration, mutation, and flush behavior in one file so schema changes are
 reviewed against the full storage contract instead of being scattered. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync, existsSync } from 'fs'
+import {
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  mkdtempSync,
+  mkdirSync,
+  existsSync,
+  realpathSync,
+  symlinkSync
+} from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type { Repo, TerminalTab, WorktreeLineage, WorkspaceSessionState } from '../shared/types'
@@ -84,6 +93,10 @@ function writeDataFile(data: unknown): void {
 
 function readDataFile(): unknown {
   return JSON.parse(readFileSync(dataFile(), 'utf-8'))
+}
+
+function symlinkDirectorySync(target: string, linkPath: string): void {
+  symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
 function collectPropertyPaths(value: unknown, property: string, prefix = ''): string[] {
@@ -227,13 +240,14 @@ describe('Store', () => {
     expect(settings.floatingTerminalEnabled).toBe(true)
     expect(settings.floatingTerminalDefaultedForAllUsers).toBe(true)
     expect(settings.notifications.customSoundPath).toBeNull()
+    expect(settings.notifications.customSoundVolume).toBe(100)
   })
 
   it('returns default UI state when no data file exists', async () => {
     const store = await createStore()
     const ui = store.getUI()
     expect(ui.sidebarWidth).toBe(280)
-    expect(ui.groupBy).toBe('repo')
+    expect(ui.groupBy).toBe('workspace-status')
     expect(ui.lastActiveRepoId).toBeNull()
     expect(ui.dismissedUpdateVersion).toBeNull()
     expect(ui.lastUpdateCheckAt).toBeNull()
@@ -285,6 +299,69 @@ describe('Store', () => {
     expect(repos).toHaveLength(1)
     expect(repos[0].id).toBe('r1')
     expect(repos[0].gitUsername).toBe('testuser')
+  })
+
+  it('normalizes legacy remote workspace sync fields on SSH targets', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {},
+      sshTargets: [
+        {
+          id: 'ssh-disabled-legacy-grace',
+          label: 'Disabled legacy grace',
+          host: 'disabled.example.com',
+          port: 22,
+          username: 'dev',
+          remoteWorkspaceSyncEnabled: false,
+          remoteWorkspaceSyncGracePeriodSeconds: 0
+        },
+        {
+          id: 'ssh-enabled-legacy-grace',
+          label: 'Enabled legacy grace',
+          host: 'enabled.example.com',
+          port: 22,
+          username: 'dev',
+          remoteWorkspaceSyncEnabled: true,
+          remoteWorkspaceSyncGracePeriodSeconds: 0
+        },
+        {
+          id: 'ssh-new-grace-period-wins',
+          label: 'New grace period',
+          host: 'new.example.com',
+          port: 22,
+          username: 'dev',
+          relayGracePeriodSeconds: 120,
+          remoteWorkspaceSyncEnabled: true,
+          remoteWorkspaceSyncGracePeriodSeconds: 0
+        }
+      ]
+    })
+
+    const store = await createStore()
+    const targets = store.getSshTargets()
+
+    expect(targets[0]).not.toHaveProperty('relayGracePeriodSeconds')
+    expect(targets[1].relayGracePeriodSeconds).toBe(0)
+    expect(targets[2].relayGracePeriodSeconds).toBe(120)
+    for (const target of targets) {
+      expect(target).not.toHaveProperty('remoteWorkspaceSyncEnabled')
+      expect(target).not.toHaveProperty('remoteWorkspaceSyncGracePeriodSeconds')
+    }
+
+    store.flush()
+    const persisted = readDataFile() as { sshTargets?: Record<string, unknown>[] }
+    expect(persisted.sshTargets?.[0]).not.toHaveProperty('relayGracePeriodSeconds')
+    expect(persisted.sshTargets?.[1]?.relayGracePeriodSeconds).toBe(0)
+    expect(persisted.sshTargets?.[2]?.relayGracePeriodSeconds).toBe(120)
+    for (const target of persisted.sshTargets ?? []) {
+      expect(target).not.toHaveProperty('remoteWorkspaceSyncEnabled')
+      expect(target).not.toHaveProperty('remoteWorkspaceSyncGracePeriodSeconds')
+    }
   })
 
   it('drops malformed migration-unsupported PTY entries on load', async () => {
@@ -455,6 +532,47 @@ describe('Store', () => {
     store.flush()
     const persisted = readDataFile() as { automations: { baseBranch: string | null }[] }
     expect(persisted.automations[0].baseBranch).toBeNull()
+  })
+
+  it('persists session reuse only for existing-workspace automations', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+
+    const existingWorkspace = store.createAutomation({
+      name: 'Digest',
+      prompt: 'Summarize changes',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'existing',
+      workspaceId: 'wt1',
+      reuseSession: true,
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+    const newPerRun = store.createAutomation({
+      name: 'Fresh',
+      prompt: 'Run checks',
+      agentId: 'claude',
+      projectId: 'r1',
+      workspaceMode: 'new_per_run',
+      reuseSession: true,
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+
+    expect(existingWorkspace.reuseSession).toBe(true)
+    expect(newPerRun.reuseSession).toBe(false)
+    expect(
+      store.updateAutomation(existingWorkspace.id, { workspaceMode: 'new_per_run' }).reuseSession
+    ).toBe(false)
+
+    const persisted = readDataFile() as { automations: Record<string, unknown>[] }
+    delete persisted.automations[0].reuseSession
+    writeDataFile(persisted)
+    const reloaded = await createStore()
+    expect(reloaded.listAutomations()[0].reuseSession).toBe(false)
   })
 
   it('numbers automation run titles per automation', async () => {
@@ -638,6 +756,38 @@ describe('Store', () => {
     expect(store.getSettings().visibleTaskProviders).toEqual(['gitlab'])
   })
 
+  it('repairs drifted task provider defaults on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { visibleTaskProviders: ['linear'], defaultTaskSource: 'github' },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().defaultTaskSource).toBe('github')
+    expect(store.getSettings().visibleTaskProviders).toEqual(['github', 'linear'])
+  })
+
+  it('normalizes invalid task provider defaults on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: { visibleTaskProviders: ['gitlab'], defaultTaskSource: 'jira' as never },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().defaultTaskSource).toBe('gitlab')
+    expect(store.getSettings().visibleTaskProviders).toEqual(['gitlab'])
+  })
+
   it('normalizes persisted open-in applications on load', async () => {
     writeDataFile({
       schemaVersion: 1,
@@ -698,6 +848,193 @@ describe('Store', () => {
     expect(store.getSettings().floatingTerminalDefaultedForAllUsers).toBe(true)
   })
 
+  it('seeds trusted floating workspace directories from legacy explicit cwd values', async () => {
+    const legacyFloatingCwd = join(testState.dir, 'legacy-floating-cwd')
+    mkdirSync(legacyFloatingCwd)
+    const canonicalLegacyFloatingCwd = realpathSync(legacyFloatingCwd)
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalCwd: legacyFloatingCwd
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalCwd).toBe(legacyFloatingCwd)
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([canonicalLegacyFloatingCwd])
+    store.flush()
+    expect(
+      (readDataFile() as { settings?: { floatingTerminalTrustedCwds?: string[] } }).settings
+        ?.floatingTerminalTrustedCwds
+    ).toEqual([canonicalLegacyFloatingCwd])
+  })
+
+  it('persists the floating cwd migration marker when a legacy explicit cwd is unavailable', async () => {
+    const unavailableLegacyFloatingCwd = join(testState.dir, 'missing-floating-cwd')
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalCwd: unavailableLegacyFloatingCwd
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalCwd).toBe(unavailableLegacyFloatingCwd)
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([])
+    store.flush()
+    expect(
+      (readDataFile() as { settings?: { floatingTerminalCwdMigratedToAppWorkspace?: boolean } })
+        .settings?.floatingTerminalCwdMigratedToAppWorkspace
+    ).toBe(true)
+  })
+
+  it('does not seed trusted floating workspace directories after the cwd migration has run', async () => {
+    const postMigrationCwd = join(testState.dir, 'post-migration-cwd')
+    mkdirSync(postMigrationCwd)
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalCwd: postMigrationCwd,
+        floatingTerminalCwdMigratedToAppWorkspace: true
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalCwd).toBe(postMigrationCwd)
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([])
+  })
+
+  it('restores migrated blank floating terminal cwd settings to home shorthand', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalCwd: '',
+        floatingTerminalCwdMigratedToAppWorkspace: true
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalCwd).toBe('~')
+  })
+
+  it('preserves legacy home shorthand as the floating terminal cwd', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalCwd: '~'
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalCwd).toBe('~')
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([])
+  })
+
+  it('canonicalizes persisted floating workspace trust paths on load', async () => {
+    const trustedTarget = join(testState.dir, 'trusted-target')
+    const trustedLink = join(testState.dir, 'trusted-link')
+    mkdirSync(trustedTarget)
+    symlinkDirectorySync(trustedTarget, trustedLink)
+    const canonicalTrustedTarget = realpathSync(trustedTarget)
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalTrustedCwds: [trustedLink]
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([canonicalTrustedTarget])
+    store.flush()
+    expect(
+      (readDataFile() as { settings?: { floatingTerminalTrustedCwds?: string[] } }).settings
+        ?.floatingTerminalTrustedCwds
+    ).toEqual([canonicalTrustedTarget])
+  })
+
+  it('preserves temporarily unavailable floating workspace trust paths on load', async () => {
+    const unavailableTrustedPath = join(testState.dir, 'offline-drive', 'notes')
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalTrustedCwds: [unavailableTrustedPath]
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([unavailableTrustedPath])
+    store.flush()
+    expect(
+      (readDataFile() as { settings?: { floatingTerminalTrustedCwds?: string[] } }).settings
+        ?.floatingTerminalTrustedCwds
+    ).toEqual([unavailableTrustedPath])
+  })
+
+  it('drops blank floating workspace trust paths on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        floatingTerminalTrustedCwds: ['', '   ']
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().floatingTerminalTrustedCwds).toEqual([])
+    store.flush()
+    expect(
+      (readDataFile() as { settings?: { floatingTerminalTrustedCwds?: string[] } }).settings
+        ?.floatingTerminalTrustedCwds
+    ).toEqual([])
+  })
+
   it('preserves custom notification sound paths from persisted settings', async () => {
     writeDataFile({
       schemaVersion: 1,
@@ -719,8 +1056,47 @@ describe('Store', () => {
       agentTaskComplete: true,
       terminalBell: false,
       suppressWhenFocused: true,
-      customSoundPath: '/Users/kaylee/Downloads/Note_block_pling.ogg'
+      customSoundPath: '/Users/kaylee/Downloads/Note_block_pling.ogg',
+      customSoundVolume: 100
     })
+  })
+
+  it('clamps notification custom sound volume from persisted settings', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        notifications: {
+          customSoundVolume: 250
+        }
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().notifications.customSoundVolume).toBe(100)
+  })
+
+  it('defaults invalid notification custom sound volume from persisted settings', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        notifications: {
+          customSoundVolume: Number.NaN
+        }
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getSettings().notifications.customSoundVolume).toBe(100)
   })
 
   it('preserves editorAutoSaveDelayMs when set in persisted data', async () => {
@@ -960,6 +1336,20 @@ describe('Store', () => {
     ])
   })
 
+  it('updateSettings deep-merges and clamps notification custom sound volume', async () => {
+    const store = await createStore()
+    const updated = store.updateSettings({
+      notifications: {
+        ...store.getSettings().notifications,
+        customSoundVolume: -20
+      }
+    })
+
+    expect(updated.notifications.customSoundVolume).toBe(0)
+    expect(updated.notifications.enabled).toBe(true)
+    expect(updated.notifications.customSoundPath).toBeNull()
+  })
+
   it('updateSettings toggles editorAutoSave', async () => {
     const store = await createStore()
     expect(store.getSettings().editorAutoSave).toBe(false)
@@ -1116,7 +1506,7 @@ describe('Store', () => {
     store.updateUI({ sidebarWidth: 400 })
     const ui = store.getUI()
     expect(ui.sidebarWidth).toBe(400)
-    expect(ui.groupBy).toBe('repo') // default preserved
+    expect(ui.groupBy).toBe('workspace-status') // default preserved
     expect(ui.dismissedUpdateVersion).toBeNull()
   })
 

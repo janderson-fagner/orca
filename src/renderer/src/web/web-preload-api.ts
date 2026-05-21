@@ -82,9 +82,13 @@ function createWebPreloadApi(): Partial<PreloadApi> {
         }),
       getFeatureWallAssetBaseUrl: () => Promise.resolve('/'),
       relaunch: () => Promise.resolve(window.location.reload()),
+      reload: () => Promise.resolve(window.location.reload()),
       getKeyboardInputSourceId: () => Promise.resolve(null),
       setUnreadDockBadgeCount: () => Promise.resolve(),
-      getFloatingTerminalCwd: () => Promise.resolve('~')
+      getFloatingTerminalCwd: () => Promise.resolve(''),
+      getFloatingMarkdownDirectory: () => Promise.resolve(''),
+      pickFloatingMarkdownDocument: () => Promise.resolve(null),
+      pickFloatingWorkspaceDirectory: () => Promise.resolve(null)
     },
     e2e: {
       getConfig: () => createE2EConfig({})
@@ -105,9 +109,34 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     ui: createWebUiApi(),
     crashReports: {
       getLatestPending: () => Promise.resolve(null),
+      getLatestReport: () => Promise.resolve(null),
       dismiss: () => Promise.resolve(null),
-      copyLatestDiagnostics: () => Promise.resolve({ ok: false, error: 'Unavailable on web.' }),
-      submit: () => Promise.resolve({ ok: false, status: null, error: 'Unavailable on web.' })
+      submit: () =>
+        Promise.resolve({
+          ok: false,
+          status: null,
+          error: 'Unavailable on web.'
+        }),
+      copyLatestDiagnostics: () => Promise.resolve({ ok: false, error: 'Unavailable on web.' })
+    },
+    diagnostics: {
+      getStatus: () =>
+        Promise.resolve({
+          localFileEnabled: false,
+          otlpEnabled: false,
+          bundleEnabled: false,
+          otlpStatus: 'Unavailable on web',
+          traceFilePath: '',
+          traceFamilySize: 0
+        }),
+      openTraceFolder: () => Promise.resolve(),
+      clearTraces: () => Promise.resolve(),
+      collectBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
+      openBundlePreview: () =>
+        Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
+      discardBundlePreview: () => Promise.resolve(),
+      uploadBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.')),
+      deleteBundle: () => Promise.reject(new Error('Diagnostic bundles are unavailable on web.'))
     },
     session: {
       get: () => Promise.resolve(getStoredWorkspaceSession()),
@@ -190,6 +219,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     agentStatus: {
       onSet: () => noopUnsubscribe,
       getSnapshot: () => Promise.resolve([]),
+      inferInterrupt: () => Promise.resolve(false),
       onMigrationUnsupported: () => noopUnsubscribe,
       onMigrationUnsupportedClear: () => noopUnsubscribe,
       getMigrationUnsupportedSnapshot: () => Promise.resolve([]),
@@ -345,11 +375,14 @@ function createWorktreesApi(): NonNullable<Partial<PreloadApi>['worktrees']> {
         branchNameOverride: args.branchNameOverride,
         linkedIssue: args.linkedIssue,
         linkedPR: args.linkedPR,
+        linkedLinearIssue: args.linkedLinearIssue,
         displayName: args.displayName,
         sparseCheckout: args.sparseCheckout,
         pushTarget: args.pushTarget,
         setupDecision: args.setupDecision,
-        createdWithAgent: args.createdWithAgent
+        createdWithAgent: args.createdWithAgent,
+        workspaceStatus: args.workspaceStatus,
+        manualOrder: args.manualOrder
       })
     },
     resolvePrBase: async ({ repoId, prNumber, headRefName, isCrossRepository }) =>
@@ -586,6 +619,10 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
       success: false,
       error: 'Commit message generation is unavailable in the web client.'
     }),
+    discoverCommitMessageModels: async () => ({
+      success: false,
+      error: 'Commit message model discovery is unavailable in the web client.'
+    }),
     cancelGenerateCommitMessage: () => Promise.resolve(),
     generatePullRequestFields: async () => ({
       success: false,
@@ -682,6 +719,21 @@ function createGitHubApi(): NonNullable<Partial<PreloadApi>['gh']> {
     viewer: () => Promise.resolve(null),
     repoSlug: direct('github.repoSlug'),
     prForBranch: direct('github.prForBranch'),
+    refreshPRNow: async ({ candidate }) => {
+      const pr = await callRuntimeResult('github.prForBranch', {
+        repo: candidate.repoId || candidate.repoPath,
+        repoPath: candidate.repoPath,
+        branch: candidate.branch,
+        linkedPRNumber: candidate.linkedPRNumber ?? null,
+        fallbackPRNumber: candidate.fallbackPRNumber ?? null
+      })
+      return pr
+        ? { kind: 'found', pr, fetchedAt: Date.now() }
+        : { kind: 'no-pr', fetchedAt: Date.now() }
+    },
+    enqueuePRRefresh: () => Promise.resolve(false),
+    reportVisiblePRRefreshCandidates: () => Promise.resolve(false),
+    onPRRefreshEvent: () => noopUnsubscribe,
     issue: direct('github.issue'),
     workItem: direct('github.workItem'),
     workItemByOwnerRepo: direct('github.workItemByOwnerRepo'),
@@ -692,6 +744,7 @@ function createGitHubApi(): NonNullable<Partial<PreloadApi>['gh']> {
     countWorkItems: direct('github.countWorkItems'),
     listWorkItems: direct('github.listWorkItems'),
     prChecks: direct('github.prChecks'),
+    prCheckDetails: direct('github.prCheckDetails'),
     rerunPRChecks: direct('github.rerunPRChecks'),
     prComments: direct('github.prComments'),
     resolveReviewThread: direct('github.resolveReviewThread'),
@@ -700,6 +753,7 @@ function createGitHubApi(): NonNullable<Partial<PreloadApi>['gh']> {
     mergePR: direct('github.mergePR'),
     updatePRState: direct('github.updatePRState'),
     requestPRReviewers: direct('github.requestPRReviewers'),
+    removePRReviewers: direct('github.removePRReviewers'),
     updateIssue: direct('github.updateIssue'),
     addIssueComment: direct('github.addIssueComment'),
     addPRReviewCommentReply: direct('github.addPRReviewCommentReply'),
@@ -741,6 +795,8 @@ function createRuntimeNamespaceApi(prefix: string): never {
 function createHooksApi(): NonNullable<Partial<PreloadApi>['hooks']> {
   return {
     check: async ({ repoId }) => callRuntimeResult('repo.hooksCheck', { repo: repoId }),
+    inspectSetupScriptImports: async ({ repoId }) =>
+      callRuntimeResult('repo.setupScriptImports', { repo: repoId }),
     createIssueCommandRunner: async () => ({ launched: false }) as never,
     readIssueCommand: async ({ repoId }) =>
       callRuntimeResult('repo.issueCommandRead', { repo: repoId }),
@@ -834,6 +890,7 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onFocusTerminal: () => noopUnsubscribe,
     onFocusEditorTab: () => noopUnsubscribe,
     onCloseSessionTab: () => noopUnsubscribe,
+    onMoveSessionTab: () => noopUnsubscribe,
     onOpenFileFromMobile: () => noopUnsubscribe,
     onOpenDiffFromMobile: () => noopUnsubscribe,
     onMobileMarkdownRequest: () => noopUnsubscribe,
@@ -928,13 +985,25 @@ function createCliApi(): NonNullable<Partial<PreloadApi>['cli']> {
   return {
     getInstallStatus: () => Promise.resolve(status),
     install: () => Promise.resolve(status),
-    remove: () => Promise.resolve(status)
+    remove: () => Promise.resolve(status),
+    getWslInstallStatus: () => Promise.resolve(status),
+    installWsl: () => Promise.resolve(status),
+    removeWsl: () => Promise.resolve(status)
   } as NonNullable<Partial<PreloadApi>['cli']>
 }
 
 function createAgentHooksApi(): NonNullable<Partial<PreloadApi>['agentHooks']> {
   const status = (
-    agent: 'claude' | 'codex' | 'gemini' | 'cursor' | 'droid' | 'grok' | 'copilot' | 'hermes'
+    agent:
+      | 'claude'
+      | 'codex'
+      | 'gemini'
+      | 'antigravity'
+      | 'cursor'
+      | 'droid'
+      | 'grok'
+      | 'copilot'
+      | 'hermes'
   ) =>
     Promise.resolve({
       agent,
@@ -947,6 +1016,7 @@ function createAgentHooksApi(): NonNullable<Partial<PreloadApi>['agentHooks']> {
     claudeStatus: () => status('claude'),
     codexStatus: () => status('codex'),
     geminiStatus: () => status('gemini'),
+    antigravityStatus: () => status('antigravity'),
     cursorStatus: () => status('cursor'),
     droidStatus: () => status('droid'),
     grokStatus: () => status('grok'),
@@ -1072,6 +1142,7 @@ function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
   return {
     spawn: () => Promise.reject(new Error('Local PTYs are unavailable in the web client.')),
     write: () => {},
+    writeAccepted: () => Promise.resolve(false),
     resize: () => {},
     reportGeometry: () => {},
     signal: () => {},
@@ -1111,6 +1182,7 @@ function createSshApi(): NonNullable<Partial<PreloadApi>['ssh']> {
     connect: () => Promise.resolve(null),
     disconnect: () => Promise.resolve(),
     terminateSessions: () => Promise.resolve(),
+    resetRelay: () => Promise.resolve(),
     getState: () => Promise.resolve(null),
     needsPassphrasePrompt: () => Promise.resolve(false),
     testConnection: () =>

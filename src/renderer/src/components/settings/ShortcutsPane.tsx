@@ -38,13 +38,13 @@ const SHORTCUT_GROUP_DEFINITIONS: ShortcutGroupDefinition[] = [
         keys: ({ mod }) => [mod, 'P']
       },
       {
-        action: 'Switch worktree',
-        searchKeywords: ['shortcut', 'global', 'worktree', 'switch', 'jump'],
+        action: 'Switch workspace',
+        searchKeywords: ['shortcut', 'global', 'workspace', 'worktree', 'switch', 'jump'],
         keys: ({ mod, shift }) => (mod === '⌘' ? [mod, 'J'] : [mod, shift, 'J'])
       },
       {
-        action: 'Create worktree',
-        searchKeywords: ['shortcut', 'global', 'worktree'],
+        action: 'Create workspace',
+        searchKeywords: ['shortcut', 'global', 'workspace', 'worktree'],
         keys: ({ mod }) => [mod, 'N']
       },
       {
@@ -58,13 +58,13 @@ const SHORTCUT_GROUP_DEFINITIONS: ShortcutGroupDefinition[] = [
         keys: ({ mod }) => [mod, 'L']
       },
       {
-        action: 'Move up worktree',
-        searchKeywords: ['shortcut', 'global', 'worktree', 'move'],
+        action: 'Move up workspace',
+        searchKeywords: ['shortcut', 'global', 'workspace', 'worktree', 'move'],
         keys: ({ mod, shift }) => [mod, shift, '↑']
       },
       {
-        action: 'Move down worktree',
-        searchKeywords: ['shortcut', 'global', 'worktree', 'move'],
+        action: 'Move down workspace',
+        searchKeywords: ['shortcut', 'global', 'workspace', 'worktree', 'move'],
         keys: ({ mod, shift }) => [mod, shift, '↓']
       },
       {

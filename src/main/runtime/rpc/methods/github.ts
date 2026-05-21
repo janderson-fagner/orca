@@ -46,7 +46,8 @@ const SlugAssignableUsers = SlugRepo.extend({
 
 const PrForBranch = RepoSelector.extend({
   branch: requiredString('Missing branch'),
-  linkedPRNumber: z.number().int().positive().nullable().optional()
+  linkedPRNumber: z.number().int().positive().nullable().optional(),
+  fallbackPRNumber: z.number().int().positive().nullable().optional()
 })
 
 const Issue = RepoSelector.extend({
@@ -61,6 +62,14 @@ const PullRequest = RepoSelector.extend({
 
 const PullRequestChecks = PullRequest.extend({
   headSha: OptionalString
+})
+
+const PullRequestCheckDetails = RepoSelector.extend({
+  checkRunId: z.number().int().positive().optional(),
+  workflowRunId: z.number().int().positive().optional(),
+  checkName: OptionalString,
+  url: OptionalString.nullable().optional(),
+  prRepo: SlugRepo.nullable().optional()
 })
 
 const RerunPullRequestChecks = PullRequest.extend({
@@ -108,6 +117,11 @@ const UpdatePrState = RepoSelector.extend({
 })
 
 const RequestPrReviewers = RepoSelector.extend({
+  prNumber: z.number().int().positive(),
+  reviewers: z.array(z.string()).min(1)
+})
+
+const RemovePrReviewers = RepoSelector.extend({
   prNumber: z.number().int().positive(),
   reviewers: z.array(z.string()).min(1)
 })
@@ -300,7 +314,12 @@ export const GITHUB_METHODS: RpcMethod[] = [
     name: 'github.prForBranch',
     params: PrForBranch,
     handler: async (params, { runtime }) =>
-      runtime.getRepoPRForBranch(params.repo, params.branch, params.linkedPRNumber)
+      runtime.getRepoPRForBranch(
+        params.repo,
+        params.branch,
+        params.linkedPRNumber,
+        params.fallbackPRNumber
+      )
   }),
   defineMethod({
     name: 'github.issue',
@@ -313,6 +332,18 @@ export const GITHUB_METHODS: RpcMethod[] = [
     handler: async (params, { runtime }) =>
       runtime.getRepoPRChecks(params.repo, params.prNumber, params.headSha, params.prRepo ?? null, {
         noCache: params.noCache
+      })
+  }),
+  defineMethod({
+    name: 'github.prCheckDetails',
+    params: PullRequestCheckDetails,
+    handler: async (params, { runtime }) =>
+      runtime.getRepoPRCheckDetails(params.repo, {
+        checkRunId: params.checkRunId,
+        workflowRunId: params.workflowRunId,
+        checkName: params.checkName,
+        url: params.url,
+        prRepo: params.prRepo ?? null
       })
   }),
   defineMethod({
@@ -384,6 +415,12 @@ export const GITHUB_METHODS: RpcMethod[] = [
     params: RequestPrReviewers,
     handler: async (params, { runtime }) =>
       runtime.requestRepoPRReviewers(params.repo, params.prNumber, params.reviewers)
+  }),
+  defineMethod({
+    name: 'github.removePRReviewers',
+    params: RemovePrReviewers,
+    handler: async (params, { runtime }) =>
+      runtime.removeRepoPRReviewers(params.repo, params.prNumber, params.reviewers)
   }),
   defineMethod({
     name: 'github.createIssue',

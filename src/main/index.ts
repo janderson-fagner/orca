@@ -19,6 +19,8 @@ import { killAllPty } from './ipc/pty'
 import { initDaemonPtyProvider, disconnectDaemon } from './daemon/daemon-init'
 import { closeAllWatchers } from './ipc/filesystem-watcher'
 import { registerCoreHandlers } from './ipc/register-core-handlers'
+import { initObservability, shutdownObservability } from './observability'
+import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
 import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce } from './telemetry/client'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
@@ -57,6 +59,7 @@ import { setMigrationUnsupportedPtyListener } from './agent-hooks/migration-unsu
 import { claudeHookService } from './claude/hook-service'
 import { codexHookService } from './codex/hook-service'
 import { geminiHookService } from './gemini/hook-service'
+import { antigravityHookService } from './antigravity/hook-service'
 import { cursorHookService } from './cursor/hook-service'
 import { droidHookService } from './droid/hook-service'
 import { grokHookService } from './grok/hook-service'
@@ -79,6 +82,11 @@ import {
   recordCrashBreadcrumb
 } from './crash-reporting/crash-breadcrumb-store'
 import { CrashReportStore } from './crash-reporting/crash-report-store'
+import {
+  shouldRecordProcessGoneCrash,
+  shouldRecoverRendererAfterProcessGone,
+  type ExpectedTeardownScope
+} from './crash-reporting/process-gone-classification'
 import { isCrashReportReason } from '../shared/crash-reporting'
 
 let mainWindow: BrowserWindow | null = null
@@ -106,8 +114,12 @@ let disposeFeatureWallFirstAgentTour: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
+let expectedRendererReload: { webContentsId: number; until: number } | null = null
 const isServeMode = process.argv.includes('--serve')
 const devInstanceIdentity = getDevInstanceIdentity(is.dev)
+const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
+  ? devInstanceIdentity.appUserModelId
+  : undefined
 
 installUncaughtPipeErrorGuard()
 // Why: propagate the Orca app version into `process.env` so PTY-env
@@ -157,6 +169,32 @@ function focusExistingWindow(): void {
   // openMainWindow() from whenReady(). No action needed here.
 }
 
+function markExpectedRendererReload(webContentsId: number, durationMs = 10_000): void {
+  expectedRendererReload = { webContentsId, until: Date.now() + durationMs }
+}
+
+function clearExpectedRendererReload(webContentsId?: number): void {
+  if (webContentsId === undefined || expectedRendererReload?.webContentsId === webContentsId) {
+    expectedRendererReload = null
+  }
+}
+
+function getExpectedTeardownScope(webContentsId?: number): ExpectedTeardownScope {
+  if (isQuitting || isQuittingForUpdate()) {
+    return 'app-shutdown'
+  }
+  if (!expectedRendererReload) {
+    return 'none'
+  }
+  if (Date.now() > expectedRendererReload.until) {
+    expectedRendererReload = null
+    return 'none'
+  }
+  return webContentsId !== undefined && expectedRendererReload.webContentsId === webContentsId
+    ? 'renderer-reload'
+    : 'none'
+}
+
 // Why: the lock must be acquired AFTER configureDevUserDataPath — Electron
 // derives the lock identity from the `userData` path, so this placement lets
 // dev (`orca-dev`) and packaged (`orca`) runs lock in separate namespaces
@@ -164,12 +202,11 @@ function focusExistingWindow(): void {
 //
 // Why skip in dev: engineers routinely run `pnpm dev` in parallel from
 // multiple worktrees while shipping features, and the lock makes the second
-// `pnpm dev` exit silently. In dev we accept that `orca-runtime.json` and
-// `endpoint.env` may race (the bundled `orca-dev` CLI / agent hooks route
-// to whichever instance wrote last). The dev build is not used for real
-// agent work, so that routing ambiguity is acceptable. Packaged Orca keeps
-// the lock to protect against the corruption documented in PR #1326 /
-// issue #1312.
+// `pnpm dev` exit silently. In dev we accept that `orca-runtime.json` may race
+// (the bundled `orca-dev` CLI routes to whichever instance wrote last). Agent
+// hook endpoint files are namespaced per dev instance when the hook server
+// starts below. Packaged Orca keeps the lock to protect against the corruption
+// documented in PR #1326 / issue #1312.
 const hasSingleInstanceLock =
   is.dev && !isServeMode ? true : acquireSingleInstanceLock(app, focusExistingWindow)
 if (!hasSingleInstanceLock) {
@@ -271,13 +308,32 @@ function openMainWindow(): BrowserWindow {
     getIsQuitting: () => isQuitting,
     onQuitAborted: () => {
       isQuitting = false
+      clearExpectedRendererReload()
     },
-    onRendererProcessGone: (details) => {
-      recordProcessGoneCrash('renderer', 'renderer', details.reason, details.exitCode ?? null, {
-        processType: 'renderer'
-      })
+    onRendererProcessGone: (details, webContentsId) => {
+      recordProcessGoneCrash(
+        'renderer',
+        'renderer',
+        details.reason,
+        details.exitCode ?? null,
+        {
+          processType: 'renderer'
+        },
+        webContentsId
+      )
     },
-    shouldRecoverRenderer: () => !isQuitting && !isQuittingForUpdate(),
+    shouldRecordRendererCrash: (details, webContentsId) =>
+      shouldRecordProcessGoneCrash({
+        source: 'renderer',
+        reason: details.reason,
+        exitCode: details.exitCode ?? null,
+        expectedTeardown: getExpectedTeardownScope(webContentsId)
+      }),
+    shouldRecoverRenderer: (details, webContentsId) =>
+      shouldRecoverRendererAfterProcessGone({
+        reason: details.reason,
+        expectedTeardown: getExpectedTeardownScope(webContentsId)
+      }),
     deferLoad: true,
     title: devInstanceIdentity.name
   })
@@ -287,7 +343,9 @@ function openMainWindow(): BrowserWindow {
   // `app_opened` to the first main-window load. Existing users in the
   // pending-banner cohort resolve through telemetry/client.ts; this load
   // path only fires once consent is already enabled.
+  const rendererWebContentsId = window.webContents.id
   const onFirstWindowLoad = (): void => {
+    clearExpectedRendererReload(rendererWebContentsId)
     recordCrashBreadcrumb('main_window_loaded')
     if (!store) {
       return
@@ -310,7 +368,7 @@ function openMainWindow(): BrowserWindow {
     codexAccounts,
     claudeAccounts,
     rateLimits,
-    window.webContents.id,
+    rendererWebContentsId,
     automations,
     {
       prepareForCodexLaunch: () =>
@@ -332,7 +390,15 @@ function openMainWindow(): BrowserWindow {
       store!.getSettings().activeCodexManagedAccountId
         ? codexRuntimeHome!.prepareForCodexLaunch()
         : null,
-    () => claudeRuntimeAuth!.prepareForClaudeLaunch()
+    () => claudeRuntimeAuth!.prepareForClaudeLaunch(),
+    {
+      onBeforeRendererReload: ({ ignoreCache, webContentsId }) => {
+        if (window.webContents.id === webContentsId) {
+          markExpectedRendererReload(webContentsId)
+        }
+        recordCrashBreadcrumb('renderer_reload_requested', { ignoreCache })
+      }
+    }
   )
   rateLimits.attach(window)
   rateLimits.start()
@@ -340,6 +406,7 @@ function openMainWindow(): BrowserWindow {
     if (mainWindow === window) {
       mainWindow = null
     }
+    clearExpectedRendererReload(rendererWebContentsId)
     automations?.setWebContents(null)
     // Why: detach the agent hook listener on window close so the server
     // never fires into a destroyed webContents during the gap before
@@ -425,9 +492,26 @@ function recordProcessGoneCrash(
   processType: string,
   reason: string,
   exitCode: number | null,
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
+  webContentsId?: number
 ): void {
   if (!crashReports || !isCrashReportReason(reason)) {
+    return
+  }
+  if (
+    !shouldRecordProcessGoneCrash({
+      source,
+      reason,
+      exitCode,
+      expectedTeardown: getExpectedTeardownScope(webContentsId)
+    })
+  ) {
+    recordCrashBreadcrumb('process_gone_suppressed', {
+      source,
+      processType,
+      reason,
+      exitCode
+    })
     return
   }
   const key = `${processType}:${reason}:${exitCode ?? 'null'}`
@@ -436,6 +520,25 @@ function recordProcessGoneCrash(
     return
   }
   recentCrashKeys.set(key, now)
+  const span = startSpan('electron.process_gone', {
+    attributes: {
+      'crash.source': source,
+      'crash.process_type': processType,
+      'crash.reason': reason,
+      ...(exitCode !== null ? { 'crash.exit_code': exitCode } : {}),
+      'app.version': app.getVersion(),
+      platform: process.platform,
+      osRelease: os.release(),
+      arch: process.arch,
+      electronVersion: process.versions.electron,
+      chromeVersion: process.versions.chrome,
+      details,
+      breadcrumbs: getCrashBreadcrumbSnapshot()
+    }
+  })
+  // Why: renderer/child crashes belong in the local trace lane so the
+  // diagnostic bundle has the same process-gone signal as the startup prompt.
+  span.fail(`${source} process gone: ${processType} ${reason} (${exitCode ?? 'unknown'})`)
   void crashReports
     .record({
       source,
@@ -745,6 +848,13 @@ app.whenReady().then(async () => {
   // the Store reference, seeds common props, and resets per-session burst
   // caps. Actual transport initialization is still gated by both flags.
   initTelemetry(store)
+  // Why: the error-tracking lane (telemetry-error-tracking.md) is its own
+  // composition root — independent of product telemetry — and must
+  // initialize before any IPC handler / runtime span is created so the
+  // tracer's active sink is populated at the moment the first span fires.
+  // Honors DO_NOT_TRACK / ORCA_TELEMETRY_DISABLED / ORCA_DIAGNOSTICS_DISABLED
+  // / CI internally; those gates do not need to be re-checked here.
+  initObservability()
   // Why: cohort-classifier reads the repo count synchronously at every emit
   // for cohort-extended events. The Store has been sync-loaded above, and
   // this init runs before any IPC handler is registered and before any
@@ -787,6 +897,7 @@ app.whenReady().then(async () => {
   })
   runtime = runtimeService
   automations = new AutomationService(store, { claudeUsage, codexUsage })
+  runtimeService.setAutomationService(automations)
   runtimeService.setAccountServices({ claudeAccounts, codexAccounts, rateLimits })
   runtimeService.setCommitMessageAgentEnvironmentResolvers({
     prepareForCodexLaunch: () =>
@@ -817,6 +928,7 @@ app.whenReady().then(async () => {
     ['claude', () => claudeHookService.install()],
     ['codex', () => codexHookService.install()],
     ['gemini', () => geminiHookService.install()],
+    ['antigravity', () => antigravityHookService.install()],
     ['cursor', () => cursorHookService.install()],
     ['droid', () => droidHookService.install()],
     ['grok', () => grokHookService.install()],
@@ -835,6 +947,12 @@ app.whenReady().then(async () => {
 
   registerAppMenu({
     onCheckForUpdates: (options) => checkForUpdatesFromMenu(options),
+    onBeforeReload: ({ ignoreCache, webContentsId }) => {
+      if (mainWindow?.webContents.id === webContentsId) {
+        markExpectedRendererReload(webContentsId)
+      }
+      recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
+    },
     onOpenSettings: () => {
       recordCrashBreadcrumb('settings_opened')
       mainWindow?.webContents.send('ui:openSettings')
@@ -941,7 +1059,9 @@ app.whenReady().then(async () => {
           env: app.isPackaged ? 'production' : 'development',
           // Why: hooks source this endpoint file at invocation time, so old PTY
           // env still reaches the current Orca process after an app restart.
-          userDataPath: app.getPath('userData')
+          // Dev uses a namespace because all worktrees share `orca-dev`.
+          userDataPath: app.getPath('userData'),
+          endpointNamespace: devAgentHookEndpointNamespace
         }),
       onDaemonError: (error) => {
         console.error('[daemon] Failed to start daemon PTY provider, falling back to local:', error)
@@ -1092,6 +1212,7 @@ app.on('will-quit', (e) => {
     // quit chain.
     Promise.allSettled([disconnectDaemon(), rpcStopAndClear, watcherShutdown])
       .then(() => shutdownTelemetry())
+      .then(() => shutdownObservability())
       .catch(() => {
         /* swallow — telemetry must never prevent app.quit() */
       })

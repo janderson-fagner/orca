@@ -56,8 +56,14 @@ import {
   FloatingTerminalToggleButton
 } from './components/floating-terminal/FloatingTerminalPanel'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
+import {
+  isFloatingWorkspacePanelFocused,
+  shouldMinimizeFloatingWorkspacePanelOnCloseShortcut
+} from '@/lib/floating-workspace-terminal-actions'
 import { DictationController } from './components/dictation/DictationController'
+import { WorkspacePortScanner } from './components/ports/WorkspacePortScanner'
 import { CrashReportDialog } from './components/crash-report/CrashReportDialog'
+import { ConfirmationDialogProvider } from './components/confirmation-dialog'
 import RecentTabSwitcher from './components/tab-bar/RecentTabSwitcher'
 import { useGitStatusPolling } from './components/right-sidebar/useGitStatusPolling'
 import { useEditorExternalWatch } from './hooks/useEditorExternalWatch'
@@ -91,12 +97,18 @@ import { applyDocumentTheme } from './lib/document-theme'
 import { isEditableTarget } from './lib/editable-target'
 import { getSelectedTextForFileSearch } from './lib/file-search-selection'
 import {
+  folderRelativePathToIncludeGlob,
+  selectedExplorerFolderRelativePath
+} from './components/right-sidebar/file-search-include-pattern'
+import { shouldShowWorktreeHistoryControls } from './lib/titlebar-worktree-history-controls'
+import {
   canGoBackWorktreeHistory,
   canGoForwardWorktreeHistory
 } from '@/store/slices/worktree-nav-history'
 import type { VirtualizedScrollAnchor } from './hooks/useVirtualizedScrollAnchor'
 import type { RemoteWorkspacePatchResult } from '../../shared/remote-workspace-types'
 import type { OnboardingState } from '../../shared/types'
+import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
 import { getFeatureTipsAppOpenDecision } from './components/feature-tips/feature-tip-startup-gate'
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -240,6 +252,8 @@ function App(): React.JSX.Element {
       fetchSettings: s.fetchSettings,
       initGitHubCache: s.initGitHubCache,
       refreshAllGitHub: s.refreshAllGitHub,
+      reportVisibleGitHubPRRefreshCandidates: s.reportVisibleGitHubPRRefreshCandidates,
+      bumpGitHubPRVisibleRefreshGeneration: s.bumpGitHubPRVisibleRefreshGeneration,
       hydrateWorkspaceSession: s.hydrateWorkspaceSession,
       hydrateTabsSession: s.hydrateTabsSession,
       hydrateEditorSession: s.hydrateEditorSession,
@@ -257,6 +271,7 @@ function App(): React.JSX.Element {
       setRightSidebarOpen: s.setRightSidebarOpen,
       setRightSidebarTab: s.setRightSidebarTab,
       seedFileSearchQuery: s.seedFileSearchQuery,
+      seedFileSearchIncludePattern: s.seedFileSearchIncludePattern,
       setActiveView: s.setActiveView,
       updateSettings: s.updateSettings,
       pruneLastVisitedTimestamps: s.pruneLastVisitedTimestamps,
@@ -274,6 +289,9 @@ function App(): React.JSX.Element {
   const worktreeSidebarScrollOffsetRef = useRef(0)
   const worktreeSidebarScrollAnchorRef = useRef<VirtualizedScrollAnchor>(null)
   const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
+  const floatingUnifiedTabCount = useAppStore(
+    (s) => s.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID]?.length ?? 0
+  )
   const activeTabId = useAppStore((s) => s.activeTabId)
   const expandedPaneByTabId = useAppStore((s) => s.expandedPaneByTabId)
   const canExpandPaneByTabId = useAppStore((s) => s.canExpandPaneByTabId)
@@ -286,7 +304,7 @@ function App(): React.JSX.Element {
   const showFloatingTerminalButton =
     floatingTerminalEnabled &&
     (floatingTerminalTriggerLocation === 'floating-button' || !statusBarVisible)
-  // Why: the floating terminal is a transient overlay; hotkey minimize should
+  // Why: the floating workspace is a transient overlay; hotkey minimize should
   // return keyboard focus to the surface the user was working in before it.
   const floatingTerminalReturnFocusRef = useRef<HTMLElement | null>(null)
 
@@ -350,7 +368,7 @@ function App(): React.JSX.Element {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const groupBy = useAppStore((s) => s.groupBy)
   const sortBy = useAppStore((s) => s.sortBy)
-  const showActiveOnly = useAppStore((s) => s.showActiveOnly)
+  const showSleepingWorkspaces = useAppStore((s) => s.showSleepingWorkspaces)
   const hideDefaultBranchWorkspace = useAppStore((s) => s.hideDefaultBranchWorkspace)
   const filterRepoIds = useAppStore((s) => s.filterRepoIds)
   const acknowledgedAgentsByPaneKey = useAppStore((s) => s.acknowledgedAgentsByPaneKey)
@@ -739,6 +757,7 @@ function App(): React.JSX.Element {
         state.tabsByWorktree === previousState.tabsByWorktree &&
         state.groupsByWorktree === previousState.groupsByWorktree &&
         state.activeGroupIdByWorktree === previousState.activeGroupIdByWorktree &&
+        state.layoutByWorktree === previousState.layoutByWorktree &&
         state.unifiedTabsByWorktree === previousState.unifiedTabsByWorktree &&
         state.tabBarOrderByWorktree === previousState.tabBarOrderByWorktree &&
         state.activeFileId === previousState.activeFileId &&
@@ -866,7 +885,9 @@ function App(): React.JSX.Element {
         rightSidebarWidth,
         groupBy,
         sortBy,
-        showActiveOnly,
+        showActiveOnly: false,
+        hideSleepingWorkspaces: !showSleepingWorkspaces,
+        showSleepingWorkspaces,
         hideDefaultBranchWorkspace,
         filterRepoIds,
         // Why: rides the same debounced save so dashboard auto-acks (which fire
@@ -885,7 +906,7 @@ function App(): React.JSX.Element {
     rightSidebarWidth,
     groupBy,
     sortBy,
-    showActiveOnly,
+    showSleepingWorkspaces,
     hideDefaultBranchWorkspace,
     filterRepoIds,
     acknowledgedAgentsByPaneKey
@@ -925,6 +946,9 @@ function App(): React.JSX.Element {
     const handler = (): void => {
       if (document.visibilityState === 'visible') {
         actions.refreshAllGitHub()
+        actions.bumpGitHubPRVisibleRefreshGeneration()
+      } else {
+        actions.reportVisibleGitHubPRRefreshCandidates([], Date.now())
       }
     }
     document.addEventListener('visibilitychange', handler)
@@ -1014,6 +1038,24 @@ function App(): React.JSX.Element {
       }
 
       if (mod && isSearchShortcut && canRevealRightSidebar) {
+        // Why: when focus is inside the file explorer and a folder is selected,
+        // Cmd/Ctrl+Shift+F means "Find in Folder" — seed the include pattern
+        // with that folder instead of treating the chord as a text-search seed.
+        const selectedFolderRelativePath =
+          document.activeElement instanceof Element
+            ? selectedExplorerFolderRelativePath(document.activeElement)
+            : null
+        if (selectedFolderRelativePath !== null && activeWorktreeId) {
+          e.preventDefault()
+          actions.seedFileSearchIncludePattern(
+            activeWorktreeId,
+            folderRelativePathToIncludeGlob(selectedFolderRelativePath)
+          )
+          actions.setRightSidebarTab('search')
+          actions.setRightSidebarOpen(true)
+          return
+        }
+
         const selectedText = getSelectedTextForFileSearch()
         if (selectedText) {
           e.preventDefault()
@@ -1041,10 +1083,10 @@ function App(): React.JSX.Element {
         (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) &&
         (e.code === 'ArrowLeft' || e.code === 'ArrowRight')
       ) {
-        // Why: Back/Forward traverse mixed worktree + Tasks visits, so the
+        // Why: Back/Forward traverse mixed worktree + page visits, so the
         // shortcut is active wherever the titlebar button cluster is (terminal
-        // or tasks). Still suppressed in Settings to keep that view modal-ish.
-        if (activeView !== 'terminal' && activeView !== 'tasks' && activeView !== 'automations') {
+        // or stack-backed pages). Still suppressed in Settings.
+        if (!shouldShowWorktreeHistoryControls(activeView)) {
           return
         }
         e.preventDefault()
@@ -1058,6 +1100,28 @@ function App(): React.JSX.Element {
       }
 
       if (!mod) {
+        return
+      }
+
+      if (isFloatingWorkspacePanelFocused()) {
+        return
+      }
+
+      // Why: after the last floating tab is closed, the empty overlay has no
+      // pane-level handler; Cmd/Ctrl+W should minimize only that landing state.
+      if (
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === 'w' &&
+        shouldMinimizeFloatingWorkspacePanelOnCloseShortcut({
+          activeView,
+          activeWorktreeId,
+          floatingTerminalOpen,
+          floatingUnifiedTabCount
+        })
+      ) {
+        e.preventDefault()
+        setFloatingTerminalOpenWithFocus(false)
         return
       }
 
@@ -1114,22 +1178,19 @@ function App(): React.JSX.Element {
         e.preventDefault()
         actions.setRightSidebarTab('source-control')
         actions.setRightSidebarOpen(true)
-        return
-      }
-
-      // Cmd+Shift+I — toggle right sidebar / ports tab (macOS only).
-      // Why: Ctrl+Shift+I is the built-in DevTools accelerator on Windows/Linux;
-      // intercepting it would break an essential developer tool.
-      if (isMac && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'i') {
-        e.preventDefault()
-        actions.setRightSidebarTab('ports')
-        actions.setRightSidebarOpen(true)
       }
     }
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
-  }, [activeView, activeWorktreeId, actions])
+  }, [
+    activeView,
+    activeWorktreeId,
+    actions,
+    floatingTerminalOpen,
+    floatingUnifiedTabCount,
+    setFloatingTerminalOpenWithFocus
+  ])
 
   useLayoutEffect(() => {
     const controls = titlebarLeftControlsRef.current
@@ -1257,12 +1318,10 @@ function App(): React.JSX.Element {
           </Tooltip>
         )}
       </div>
-      {/* Why: Back/Forward traverse mixed worktree + Tasks history, so the
-          cluster is shown wherever the history shortcut is live (terminal or
-          tasks). Hidden in Settings to keep that view modal-ish, and in
-          Activity since that page owns its own back-out via the Close button
-          in ActivityTitlebarControls. */}
-      {(activeView === 'terminal' || activeView === 'tasks') && (
+      {/* Why: Back/Forward traverse mixed worktree + page history, so the
+          cluster is shown wherever the history shortcut is live. Hidden in
+          Settings and non-stack page views. */}
+      {shouldShowWorktreeHistoryControls(activeView) && (
         // Why: when the workspace sidebar is collapsed, this header shrink-wraps
         // and ml-auto has no spare width; keep a fixed gutter before Back.
         <div className="ml-auto mr-3 flex items-center pl-2">
@@ -1350,66 +1409,68 @@ function App(): React.JSX.Element {
       }
     >
       <TooltipProvider delayDuration={400}>
-        {/* Why: leaf-mounted retention sync keeps agent-status retention
+        <ConfirmationDialogProvider>
+          <WorkspacePortScanner />
+          {/* Why: leaf-mounted retention sync keeps agent-status retention
             subscriptions from re-rendering the App tree. */}
-        <RetainedAgentsSyncGate />
-        <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-          {/* Why: the non-workspace titlebar lives inside this left+center
+          <RetainedAgentsSyncGate />
+          <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
+            {/* Why: the non-workspace titlebar lives inside this left+center
               wrapper so it does not span over the right-sidebar column —
               when the right sidebar is open, its own header anchors at the
               top alongside the titlebar instead of being pushed below it. */}
-          <div className="flex flex-col flex-1 min-w-0 min-h-0">
-            {/* Why: in workspace view (split groups always enabled), the
+            <div className="flex flex-col flex-1 min-w-0 min-h-0">
+              {/* Why: in workspace view (split groups always enabled), the
                 full-width titlebar is removed so tab groups + terminal extend
                 to the top of the window. Left titlebar controls move to a
                 header above the sidebar. Settings, landing, and the tasks
                 page keep the titlebar. */}
-            {!workspaceActive ? (
-              <div className="titlebar">
-                <div
-                  className={`flex items-center${showSidebar && sidebarOpen ? ' overflow-hidden shrink-0' : ' shrink-0 mr-2'}`}
-                  style={{ width: showSidebar && sidebarOpen ? sidebarWidth : undefined }}
-                >
-                  {titlebarLeftControls}
-                </div>
-                {activeView === 'activity' ? (
-                  <ActivityTitlebarControls />
-                ) : (
+              {!workspaceActive ? (
+                <div className="titlebar">
                   <div
-                    id="titlebar-tabs"
-                    className={`flex flex-1 min-w-0 self-stretch${activeView !== 'terminal' || !activeWorktreeId ? ' invisible pointer-events-none' : ''}`}
-                  />
-                )}
-                {showTitlebarExpandButton && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className="titlebar-icon-button"
-                        onClick={handleToggleExpand}
-                        aria-label="Collapse pane"
-                        disabled={!activeTabCanExpand}
-                      >
-                        <Minimize2 size={14} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" sideOffset={6}>
-                      Collapse pane
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {/* Why: when the right sidebar is open, its own header renders
+                    className={`flex items-center${showSidebar && sidebarOpen ? ' overflow-hidden shrink-0' : ' shrink-0 mr-2'}`}
+                    style={{ width: showSidebar && sidebarOpen ? sidebarWidth : undefined }}
+                  >
+                    {titlebarLeftControls}
+                  </div>
+                  {activeView === 'activity' ? (
+                    <ActivityTitlebarControls />
+                  ) : (
+                    <div
+                      id="titlebar-tabs"
+                      className={`flex flex-1 min-w-0 self-stretch${activeView !== 'terminal' || !activeWorktreeId ? ' invisible pointer-events-none' : ''}`}
+                    />
+                  )}
+                  {showTitlebarExpandButton && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          className="titlebar-icon-button"
+                          onClick={handleToggleExpand}
+                          aria-label="Collapse pane"
+                          disabled={!activeTabCanExpand}
+                        >
+                          <Minimize2 size={14} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" sideOffset={6}>
+                        Collapse pane
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  {/* Why: when the right sidebar is open, its own header renders
                     an identical close button — hide this copy so only one is
                     visible at a time. */}
-                {!rightSidebarOpen && rightSidebarToggle}
-                {/* Why: reserve space so content is not obscured by the
+                  {!rightSidebarOpen && rightSidebarToggle}
+                  {/* Why: reserve space so content is not obscured by the
                     fixed-position window-controls overlay on Windows. */}
-                {isWindows && <div className="window-controls-titlebar-spacer" />}
-              </div>
-            ) : null}
-            <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
-              {showSidebar ? (
-                workspaceActive ? (
-                  /* Why: left column wraps the sidebar with a titlebar-height
+                  {isWindows && <div className="window-controls-titlebar-spacer" />}
+                </div>
+              ) : null}
+              <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
+                {showSidebar ? (
+                  workspaceActive ? (
+                    /* Why: left column wraps the sidebar with a titlebar-height
                      header above it. The header holds the same controls
                      (traffic lights, sidebar toggle, "Orca" title, agent badge)
                      that the full-width titlebar held while the center and right
@@ -1417,173 +1478,176 @@ function App(): React.JSX.Element {
                      When the sidebar is collapsed, take this header out of flex
                      layout so the terminal/editor reclaim the left edge instead of
                      leaving behind a content-width blank strip. */
-                  <div
-                    className={`flex min-h-0 flex-col shrink-0${sidebarOpen ? '' : ' relative w-0 overflow-visible'}`}
-                  >
                     <div
-                      // Why: when the sidebar is collapsed, titlebar-left floats
-                      // absolutely on top of the center column's own `border-l`
-                      // (see TabGroupSplitLayout), occluding that seam. Add a
-                      // `border-r` in the floating state so the vertical line
-                      // between the traffic-light/nav cluster and the tab strip
-                      // stays visible in both states. w-max keeps the floating
-                      // header sized to its own controls instead of the w-0
-                      // sidebar wrapper.
-                      className={`titlebar-left${
-                        sidebarOpen
-                          ? ''
-                          : ' absolute top-0 left-0 z-10 w-max border-r border-border'
-                      }`}
-                      style={{
-                        // Why: the Sidebar resize hook updates the sidebar DOM width
-                        // directly during drag and only persists to Zustand on
-                        // mouseup. In workspace view, size this header from the
-                        // wrapper's live width so it tracks those in-flight resizes
-                        // instead of leaving a stale-width gap until the drag ends.
-                        width: sidebarOpen ? '100%' : undefined
-                      }}
+                      className={`flex min-h-0 flex-col shrink-0${sidebarOpen ? '' : ' relative w-0 overflow-visible'}`}
                     >
-                      {titlebarLeftControls}
-                    </div>
-                    <div className="flex min-h-0 flex-1">
-                      {/* Why: the workspace-view wrapper adds a fixed 36px header
+                      <div
+                        // Why: when the sidebar is collapsed, titlebar-left floats
+                        // absolutely on top of the center column's own `border-l`
+                        // (see TabGroupSplitLayout), occluding that seam. Add a
+                        // `border-r` in the floating state so the vertical line
+                        // between the traffic-light/nav cluster and the tab strip
+                        // stays visible in both states. w-max keeps the floating
+                        // header sized to its own controls instead of the w-0
+                        // sidebar wrapper.
+                        className={`titlebar-left${
+                          sidebarOpen
+                            ? ''
+                            : ' absolute top-0 left-0 z-10 w-max border-r border-border'
+                        }`}
+                        style={{
+                          // Why: the Sidebar resize hook updates the sidebar DOM width
+                          // directly during drag and only persists to Zustand on
+                          // mouseup. In workspace view, size this header from the
+                          // wrapper's live width so it tracks those in-flight resizes
+                          // instead of leaving a stale-width gap until the drag ends.
+                          width: sidebarOpen ? '100%' : undefined
+                        }}
+                      >
+                        {titlebarLeftControls}
+                      </div>
+                      <div className="flex min-h-0 flex-1">
+                        {/* Why: the workspace-view wrapper adds a fixed 36px header
                           above the sidebar. Without a flex-1/min-h-0 slot here,
                           the sidebar falls back to its content height, so the
                           worktree list loses its scroll viewport and the fixed
                           bottom toolbar (including Add Project) gets pushed offscreen. */}
-                      <Sidebar
-                        worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
-                        worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
-                      />
+                        <Sidebar
+                          worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
+                          worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <Sidebar
-                    worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
-                    worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
-                  />
-                )
-              ) : null}
-              <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
-                {/* Why: right sidebar toggle floats at the top-right of the center
+                  ) : (
+                    <Sidebar
+                      worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
+                      worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
+                    />
+                  )
+                ) : null}
+                <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
+                  {/* Why: right sidebar toggle floats at the top-right of the center
                     column so it's always accessible whether the right sidebar is
                     open or closed. Match the RightSidebar header's 36px height and
                     top-0 anchor so the icon's vertical center is identical between
                     open and closed states — otherwise toggling makes the icon jump
                     a few pixels, which reads as layout jitter. */}
-                {workspaceActive && !rightSidebarOpen && (
-                  <div
-                    className="absolute top-0 z-10 flex items-center h-[36px]"
-                    style={
-                      {
-                        // Why: right: var(--window-controls-width) is the single
-                        // mechanism that keeps the toggle clear of the
-                        // fixed-position window-controls overlay on Windows (138px)
-                        // and sits at the right edge on non-Windows (0px). No
-                        // internal spacer needed — adding one would push the button
-                        // a further 138px to the left and cover the pane-actions
-                        // Ellipsis button with an un-clickable div.
-                        right: 'var(--window-controls-width)',
-                        WebkitAppRegion: 'no-drag'
-                      } as React.CSSProperties
-                    }
-                  >
-                    {rightSidebarToggle}
+                  {workspaceActive && !rightSidebarOpen && (
+                    <div
+                      className="absolute top-0 z-10 flex items-center h-[36px]"
+                      style={
+                        {
+                          // Why: right: var(--window-controls-width) is the single
+                          // mechanism that keeps the toggle clear of the
+                          // fixed-position window-controls overlay on Windows (138px)
+                          // and sits at the right edge on non-Windows (0px). No
+                          // internal spacer needed — adding one would push the button
+                          // a further 138px to the left and cover the pane-actions
+                          // Ellipsis button with an un-clickable div.
+                          right: 'var(--window-controls-width)',
+                          WebkitAppRegion: 'no-drag'
+                        } as React.CSSProperties
+                      }
+                    >
+                      {rightSidebarToggle}
+                    </div>
+                  )}
+                  <div className="flex flex-1 min-w-0 min-h-0 flex-col">
+                    <div
+                      className={
+                        activeView !== 'terminal' || !activeWorktreeId
+                          ? 'hidden flex-1 min-w-0 min-h-0'
+                          : 'flex flex-1 min-w-0 min-h-0'
+                      }
+                    >
+                      <Terminal />
+                    </div>
+                    <Suspense fallback={null}>
+                      {activeView === 'settings' ? <Settings /> : null}
+                      {activeView === 'skills' ? <SkillsPage /> : null}
+                      {activeView === 'tasks' ? <TaskPage /> : null}
+                      {activeView === 'automations' ? <AutomationsPage /> : null}
+                      {activeView === 'activity' ? <ActivityPrototypePage /> : null}
+                      {activeView === 'space' ? <WorkspaceSpacePage /> : null}
+                      {activeView === 'terminal' && !activeWorktreeId ? <Landing /> : null}
+                    </Suspense>
                   </div>
-                )}
-                <div className="flex flex-1 min-w-0 min-h-0 flex-col">
-                  <div
-                    className={
-                      activeView !== 'terminal' || !activeWorktreeId
-                        ? 'hidden flex-1 min-w-0 min-h-0'
-                        : 'flex flex-1 min-w-0 min-h-0'
-                    }
-                  >
-                    <Terminal />
-                  </div>
-                  <Suspense fallback={null}>
-                    {activeView === 'settings' ? <Settings /> : null}
-                    {activeView === 'skills' ? <SkillsPage /> : null}
-                    {activeView === 'tasks' ? <TaskPage /> : null}
-                    {activeView === 'automations' ? <AutomationsPage /> : null}
-                    {activeView === 'activity' ? <ActivityPrototypePage /> : null}
-                    {activeView === 'space' ? <WorkspaceSpacePage /> : null}
-                    {activeView === 'terminal' && !activeWorktreeId ? <Landing /> : null}
-                  </Suspense>
+                  {showFloatingTerminalButton ? (
+                    <FloatingTerminalToggleButton
+                      // Why: anchor the floating trigger to the center surface so it
+                      // cannot cover the worktree sidebar or right sidebar.
+                      className="absolute bottom-3 right-3"
+                      open={floatingTerminalOpen}
+                      onToggle={() => setFloatingTerminalOpenWithFocus((open) => !open)}
+                    />
+                  ) : null}
                 </div>
-                {showFloatingTerminalButton ? (
-                  <FloatingTerminalToggleButton
-                    // Why: anchor the floating trigger to the center surface so it
-                    // cannot cover the worktree sidebar or right sidebar.
-                    className="absolute bottom-8 right-3"
-                    open={floatingTerminalOpen}
-                    onToggle={() => setFloatingTerminalOpenWithFocus((open) => !open)}
-                  />
-                ) : null}
               </div>
             </div>
-          </div>
-          {/* Why: keep RightSidebar mounted even when closed so that its
+            {/* Why: keep RightSidebar mounted even when closed so that its
               child components (FileExplorer, SourceControl, etc.) and their
               filesystem watchers + cached directory trees survive across
               open/close toggles. Unmount on the tasks view since that
               surface is intentionally distraction-free. */}
-          {showRightSidebarControls ? <RightSidebar /> : null}
-        </div>
-        {floatingTerminalEnabled ? (
-          <FloatingTerminalPanel
-            open={floatingTerminalOpen}
-            onOpenChange={setFloatingTerminalOpenWithFocus}
-          />
-        ) : null}
-        <StatusBar floatingTerminalOpen={floatingTerminalOpen} />
-        {/* Why: root overlays can render Radix <Tooltip>s; keep them inside
+            {showRightSidebarControls ? <RightSidebar /> : null}
+          </div>
+          {floatingTerminalEnabled ? (
+            <FloatingTerminalPanel
+              open={floatingTerminalOpen}
+              onOpenChange={setFloatingTerminalOpenWithFocus}
+            />
+          ) : null}
+          <StatusBar floatingTerminalOpen={floatingTerminalOpen} />
+          {/* Why: root overlays can render Radix <Tooltip>s; keep them inside
             the shared provider so lazy surfaces mount safely from any entry point. */}
-        <Suspense fallback={null}>
-          {mountedLazyModalIds.has('new-workspace-composer') ? <NewWorkspaceComposerModal /> : null}
-          {mountedLazyModalIds.has('workspace-cleanup') ? <WorkspaceCleanupDialog /> : null}
-        </Suspense>
-        <Suspense fallback={null}>
-          {mountedLazyModalIds.has('quick-open') ? <QuickOpen /> : null}
-          {mountedLazyModalIds.has('worktree-palette') ? <WorktreeJumpPalette /> : null}
-          {mountedLazyModalIds.has('feature-wall') ? <FeatureWallModal /> : null}
-          {mountedLazyModalIds.has('feature-tips') ? <FeatureTipsModal /> : null}
-        </Suspense>
-        {/* Why: mount PetOverlay only when the experimental flag is on AND
+          <Suspense fallback={null}>
+            {mountedLazyModalIds.has('new-workspace-composer') ? (
+              <NewWorkspaceComposerModal />
+            ) : null}
+            {mountedLazyModalIds.has('workspace-cleanup') ? <WorkspaceCleanupDialog /> : null}
+          </Suspense>
+          <Suspense fallback={null}>
+            {mountedLazyModalIds.has('quick-open') ? <QuickOpen /> : null}
+            {mountedLazyModalIds.has('worktree-palette') ? <WorktreeJumpPalette /> : null}
+            {mountedLazyModalIds.has('feature-wall') ? <FeatureWallModal /> : null}
+            {mountedLazyModalIds.has('feature-tips') ? <FeatureTipsModal /> : null}
+          </Suspense>
+          {/* Why: mount PetOverlay only when the experimental flag is on AND
           the user hasn't hit "Hide pet" in the status-bar menu. Both
           conditions must be true — see design doc (pet-overlay.md) on why
           the two toggles are kept independent. */}
-        {petEnabled && petVisible ? (
-          <Suspense fallback={null}>
-            <PetOverlay />
-          </Suspense>
-        ) : null}
-        <UpdateCard />
-        <FeatureTourNudge />
-        <StarNagCard />
-        {/* Why: the existing-user opt-in banner mounts at App root so it
+          {petEnabled && petVisible ? (
+            <Suspense fallback={null}>
+              <PetOverlay />
+            </Suspense>
+          ) : null}
+          <UpdateCard />
+          <FeatureTourNudge />
+          <StarNagCard />
+          {/* Why: the existing-user opt-in banner mounts at App root so it
           renders once per renderer session, not per view. It gates
           internally on the cohort markers populated by the migration,
           so it only shows for users who installed before the telemetry
           release and have not yet resolved consent. New users get no
           first-launch surface — see telemetry-plan.md §First-launch
           experience. */}
-        <TelemetryFirstLaunchSurface />
-        <ZoomOverlay />
-        <SshPassphraseDialog />
-        <DeleteWorktreeDialog />
-        <CrashReportDialog />
-        {onboarding && shouldShowOnboarding(onboarding) && !onboardingSettingsDetour ? (
-          <Suspense fallback={null}>
-            <OnboardingFlow
-              onboarding={onboarding}
-              onOnboardingChange={setOnboarding}
-              onSettingsDetourStart={beginOnboardingSettingsDetour}
-            />
-          </Suspense>
-        ) : null}
-        <DictationController />
-        <RecentTabSwitcher />
+          <TelemetryFirstLaunchSurface />
+          <ZoomOverlay />
+          <SshPassphraseDialog />
+          <DeleteWorktreeDialog />
+          <CrashReportDialog />
+          {onboarding && shouldShowOnboarding(onboarding) && !onboardingSettingsDetour ? (
+            <Suspense fallback={null}>
+              <OnboardingFlow
+                onboarding={onboarding}
+                onOnboardingChange={setOnboarding}
+                onSettingsDetourStart={beginOnboardingSettingsDetour}
+              />
+            </Suspense>
+          ) : null}
+          <DictationController />
+          <RecentTabSwitcher />
+        </ConfirmationDialogProvider>
       </TooltipProvider>
       <Toaster closeButton toastOptions={{ className: 'font-sans text-sm' }} />
       {/* Why: rendered last so it sits after all -webkit-app-region:drag elements

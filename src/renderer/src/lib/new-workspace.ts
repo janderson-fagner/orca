@@ -7,6 +7,8 @@ import {
 import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import { isShellProcess } from '@/lib/tui-agent-startup'
 import type { OrcaHooks, TaskViewPresetId } from '../../../shared/types'
+import { normalizeHookCommandSourcePolicy } from '../../../shared/hook-command-source-policy'
+import { isExpectedAgentProcess } from '../../../shared/agent-process-recognition'
 
 /**
  * Why: the TaskPage's preset buttons and the openTaskPage prefetcher both need
@@ -55,11 +57,23 @@ export type LinkedWorkItemSummary = {
   linearIdentifier?: string
 }
 
+export function isGitLabIssueUrl(url: string): boolean {
+  // Why: self-hosted GitLab issue URLs may not contain "gitlab"; the
+  // provider-stable signal is the `/-/issues/` path segment.
+  try {
+    return new URL(url).pathname.includes('/-/issues/')
+  } catch {
+    return /\/-\/issues\//i.test(url)
+  }
+}
+
 // Why: when a repo has no `orca.yaml` issueCommand and no per-user override,
 // we still want the composer to send a useful default prompt whenever the user
 // attaches a linked work item without typing anything else. "Complete <url>"
 // is the minimum viable instruction that always produces a coherent agent task.
 export const DEFAULT_ISSUE_COMMAND_TEMPLATE = 'Complete {{artifact_url}}'
+
+export type SetupConfig = { source: 'yaml' | 'local' | 'both'; command: string }
 
 /**
  * Substitute the issue-command template variables. Prefers `{{artifact_url}}`
@@ -115,16 +129,30 @@ export function getAttachmentLabel(pathValue: string): string {
 }
 
 export function getSetupConfig(
-  repo: { hookSettings?: { scripts?: { setup?: string } } } | undefined,
+  repo:
+    | {
+        hookSettings?: {
+          commandSourcePolicy?: unknown
+          scripts?: { setup?: string }
+        }
+      }
+    | undefined,
   yamlHooks: OrcaHooks | null
-): { source: 'yaml' | 'legacy'; command: string } | null {
+): SetupConfig | null {
   const yamlSetup = yamlHooks?.scripts?.setup?.trim()
+  const localSetup = repo?.hookSettings?.scripts?.setup?.trim()
+  const sourcePolicy = normalizeHookCommandSourcePolicy(repo?.hookSettings?.commandSourcePolicy)
+
+  if (sourcePolicy === 'local-only') {
+    return localSetup ? { source: 'local', command: localSetup } : null
+  }
+
+  if (sourcePolicy === 'run-both' && yamlSetup && localSetup) {
+    return { source: 'both', command: `${yamlSetup}\n${localSetup}` }
+  }
+
   if (yamlSetup) {
     return { source: 'yaml', command: yamlSetup }
-  }
-  const legacySetup = repo?.hookSettings?.scripts?.setup?.trim()
-  if (legacySetup) {
-    return { source: 'legacy', command: legacySetup }
   }
   return null
 }
@@ -277,11 +305,7 @@ async function waitForAgentForeground(ptyId: string, expectedProcess: string): P
     try {
       const process = await inspectRuntimeTerminalProcess(useAppStore.getState().settings, ptyId)
       const foreground = process.foregroundProcess?.toLowerCase() ?? ''
-      const owns =
-        foreground === expectedProcess ||
-        foreground.startsWith(`${expectedProcess}.`) ||
-        foreground.endsWith(`/${expectedProcess}`)
-      if (owns) {
+      if (isExpectedAgentProcess(foreground, expectedProcess)) {
         return
       }
       if (attempt >= 4 && !isShellProcess(foreground)) {

@@ -5,7 +5,7 @@
  * more clarity than the ~5 lines of bloat is worth. */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SortableContext } from '@dnd-kit/sortable'
-import { FilePlus, Globe, Plus, TerminalSquare } from 'lucide-react'
+import { FilePlus, FileText, Globe, Plus, TerminalSquare } from 'lucide-react'
 import type {
   BrowserTab as BrowserTabState,
   TerminalTab,
@@ -26,6 +26,7 @@ import { getEditorDisplayLabel } from '@/components/editor/editor-labels'
 import { ShellIcon } from './shell-icons'
 import { resolveWindowsShellLaunchTarget } from './windows-shell-launch'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
+import { useWindowsTerminalCapabilities } from '@/lib/windows-terminal-capabilities'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,9 +59,7 @@ type TabBarProps = {
   terminalOnly?: boolean
   showAgentLaunchItems?: boolean
   onNewFileTab?: () => void
-  /** Whether WSL is installed on this Windows machine. When true, the "+"
-   *  dropdown shows a WSL option under the terminal submenu. */
-  wslAvailable?: boolean
+  onOpenFileTab?: () => void
   onSetCustomTitle: (tabId: string, title: string | null) => void
   onSetTabColor: (tabId: string, color: string | null) => void
   onTogglePaneExpand: (tabId: string) => void
@@ -125,6 +124,7 @@ function TabBarInner({
   terminalOnly = false,
   showAgentLaunchItems = true,
   onNewFileTab,
+  onOpenFileTab,
   onSetCustomTitle,
   onSetTabColor,
   onTogglePaneExpand,
@@ -142,8 +142,7 @@ function TabBarInner({
   onPinFile,
   tabBarOrder,
   onCreateSplitGroup,
-  hoveredTabInsertion,
-  wslAvailable
+  hoveredTabInsertion
 }: TabBarProps): React.JSX.Element {
   const gitStatusByWorktree = useAppStore((s) => s.gitStatusByWorktree)
   const defaultWindowsShell = useAppStore(
@@ -152,15 +151,7 @@ function TabBarInner({
   const defaultWindowsPowerShellImplementation = useAppStore(
     (s) => s.settings?.terminalWindowsPowerShellImplementation ?? 'auto'
   )
-  const [pwshAvailable, setPwshAvailable] = useState(false)
-  useEffect(() => {
-    if (!isWindows) {
-      setPwshAvailable(false)
-      return
-    }
-
-    void window.api.pwsh.isAvailable().then(setPwshAvailable)
-  }, [])
+  const windowsTerminalCapabilities = useWindowsTerminalCapabilities(isWindows)
   const resolvedGroupId = groupId ?? worktreeId
 
   const statusByRelativePath = useMemo(
@@ -497,7 +488,9 @@ function TabBarInner({
               }[] = [
                 { label: 'PowerShell', shell: 'powershell.exe' },
                 { label: 'CMD Prompt', shell: 'cmd.exe' },
-                ...(wslAvailable ? ([{ label: 'WSL', shell: 'wsl.exe' }] as const) : [])
+                ...(windowsTerminalCapabilities.wslAvailable
+                  ? ([{ label: 'WSL', shell: 'wsl.exe' }] as const)
+                  : [])
               ]
               const defaultEntry =
                 allShells.find((s) => s.shell === defaultWindowsShell) ?? allShells[0]
@@ -520,7 +513,7 @@ function TabBarInner({
                         resolveWindowsShellLaunchTarget(
                           entry.shell,
                           defaultWindowsPowerShellImplementation,
-                          pwshAvailable
+                          windowsTerminalCapabilities.pwshAvailable
                         )
                       )
                     }}
@@ -565,6 +558,15 @@ function TabBarInner({
               <FilePlus className="size-4 text-muted-foreground" />
               New Markdown
               <DropdownMenuShortcut>{NEW_FILE_SHORTCUT}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+          {!terminalOnly && onOpenFileTab && (
+            <DropdownMenuItem
+              onSelect={onOpenFileTab}
+              className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+            >
+              <FileText className="size-4 text-muted-foreground" />
+              Open Markdown...
             </DropdownMenuItem>
           )}
           {showAgentLaunchItems ? (

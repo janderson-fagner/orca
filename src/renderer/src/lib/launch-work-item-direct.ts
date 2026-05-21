@@ -1,20 +1,23 @@
 import { toast } from 'sonner'
-import { useAppStore } from '@/store'
+import { useAppStore, type AppState } from '@/store'
 import { AGENT_CATALOG } from '@/lib/agent-catalog'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '@/lib/tui-agent-startup'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { activateAndRevealWorktree, type AgentStartedTelemetry } from '@/lib/worktree-activation'
+import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import {
   CLIENT_PLATFORM,
   getLinkedWorkItemSuggestedName,
   getSetupConfig,
-  getWorkspaceSeedName
+  getWorkspaceSeedName,
+  isGitLabIssueUrl
 } from '@/lib/new-workspace'
 import { ensureHooksConfirmed } from '@/lib/ensure-hooks-confirmed'
 import { checkRuntimeHooks } from '@/runtime/runtime-hooks-client'
 import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
 import type {
+  GitPushTarget,
   OrcaHooks,
   RepoHookSettings,
   SetupDecision,
@@ -26,7 +29,7 @@ import type { LaunchSource } from '../../../shared/telemetry-events'
 export type LaunchableWorkItem = {
   title: string
   url: string
-  type: 'issue' | 'pr'
+  type: 'issue' | 'pr' | 'mr'
   number: number | null
   repoId?: string
   /** Content to paste into the agent's input. Defaults to the URL when omitted. */
@@ -84,6 +87,24 @@ function pickAgent(
     }
   }
   return null
+}
+
+async function resolveDirectPrStartPoint(
+  repoId: string,
+  prNumber: number,
+  settings: AppState['settings']
+): Promise<{ baseBranch: string; pushTarget?: GitPushTarget }> {
+  const target = getActiveRuntimeTarget(settings)
+  const result =
+    target.kind === 'local'
+      ? await window.api.worktrees.resolvePrBase({ repoId, prNumber })
+      : await callRuntimeRpc<
+          { baseBranch: string; pushTarget?: GitPushTarget } | { error: string }
+        >(target, 'worktree.resolvePrBase', { repo: repoId, prNumber }, { timeoutMs: 30_000 })
+  if ('error' in result) {
+    throw new Error(result.error)
+  }
+  return result
 }
 
 async function resolveSetupDecision(
@@ -207,6 +228,21 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     linkedIssueNumber: item.type === 'issue' ? (item.number ?? null) : null,
     linkedPR: item.type === 'pr' ? (item.number ?? null) : null
   })
+  let resolvedBaseBranch = baseBranch
+  let resolvedPushTarget: GitPushTarget | undefined
+  if (!resolvedBaseBranch && item.type === 'pr' && item.number) {
+    try {
+      // Why: direct "Use PR" launches bypass the Start-from picker, so they
+      // must still resolve the PR head before `git worktree add`.
+      const result = await resolveDirectPrStartPoint(repoId, item.number, settings)
+      resolvedBaseBranch = result.baseBranch
+      resolvedPushTarget = result.pushTarget
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to resolve PR head.')
+      openModalFallback()
+      return
+    }
+  }
 
   let worktreeId: string
   let primaryTabId: string | null
@@ -217,16 +253,20 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     const result = await store.createWorktree(
       repoId,
       workspaceName,
-      baseBranch,
+      resolvedBaseBranch,
       finalSetupDecision,
       undefined,
       telemetrySource,
       item.title,
       item.type === 'issue' && item.number ? item.number : undefined,
       item.type === 'pr' && item.number ? item.number : undefined,
+      resolvedPushTarget,
+      undefined,
+      item.linearIdentifier,
       undefined,
       undefined,
-      item.linearIdentifier
+      item.type === 'mr' && item.number ? item.number : undefined,
+      item.type === 'issue' && item.number && isGitLabIssueUrl(item.url) ? item.number : undefined
     )
     worktreeId = result.worktree.id
     const worktreePath = result.worktree.path

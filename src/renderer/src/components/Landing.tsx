@@ -30,7 +30,8 @@ function getPreflightIssues(status: {
     issues.push({
       id: 'git',
       title: 'Git is not installed',
-      description: 'Git is required for Git repositories, source control, and worktree management.',
+      description:
+        'Git is required for Git repositories, source control, and workspace management.',
       fixLabel: 'Install Git',
       fixUrl: 'https://git-scm.com/downloads'
     })
@@ -250,9 +251,9 @@ export default function Landing(): React.JSX.Element {
     const mod = isMac ? '⌘' : 'Ctrl'
     const shift = isMac ? '⇧' : 'Shift'
     return [
-      { id: 'create', keys: [mod, 'N'], action: 'Create worktree' },
-      { id: 'up', keys: [mod, shift, '↑'], action: 'Move up worktree' },
-      { id: 'down', keys: [mod, shift, '↓'], action: 'Move down worktree' }
+      { id: 'create', keys: [mod, 'N'], action: 'Create workspace' },
+      { id: 'up', keys: [mod, shift, '↑'], action: 'Move up workspace' },
+      { id: 'down', keys: [mod, shift, '↓'], action: 'Move down workspace' }
     ]
   }, [])
 
@@ -272,7 +273,7 @@ export default function Landing(): React.JSX.Element {
 
           <p className="text-sm text-muted-foreground text-center">
             {canCreateWorktree
-              ? 'Select a worktree from the sidebar to begin.'
+              ? 'Select a workspace from the sidebar to begin.'
               : 'Add a project to get started.'}
           </p>
 
@@ -292,7 +293,7 @@ export default function Landing(): React.JSX.Element {
               onClick={() => openModal('new-workspace-composer', { telemetrySource: 'unknown' })}
             >
               <GitBranchPlus className="size-3.5" />
-              Create Worktree
+              Create Workspace
             </button>
           </div>
 

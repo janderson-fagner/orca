@@ -73,6 +73,10 @@ import {
   createWebRuntimeSessionTerminal,
   isWebRuntimeSessionActive
 } from '@/runtime/web-runtime-session'
+import {
+  createFloatingWorkspaceTerminalTab,
+  isFloatingWorkspacePanelVisible
+} from '@/lib/floating-workspace-terminal-actions'
 
 const EditorPanel = lazy(() => import('./editor/EditorPanel'))
 
@@ -175,14 +179,6 @@ function Terminal(): React.JSX.Element | null {
   const activeWorktreeBrowserTabIdsKey = activeWorktreeId
     ? (browserTabsByWorktree[activeWorktreeId] ?? []).map((tab) => tab.id).join(',')
     : ''
-
-  const [wslAvailable, setWslAvailable] = useState(false)
-  useEffect(() => {
-    // Why: wsl:isAvailable is synchronous on the main-process side but we
-    // call it asynchronously so the renderer doesn't block on startup. The
-    // result only gates UI options, so a brief false→true transition is fine.
-    void window.api.wsl.isAvailable().then(setWslAvailable)
-  }, [])
 
   // Save confirmation dialog state
   const [saveDialogFileId, setSaveDialogFileId] = useState<string | null>(null)
@@ -1056,6 +1052,10 @@ function Terminal(): React.JSX.Element | null {
       // terminal from anywhere in the central pane.
       if (mod && e.key === 't' && !e.shiftKey && !e.repeat) {
         e.preventDefault()
+        if (isFloatingWorkspacePanelVisible()) {
+          void createFloatingWorkspaceTerminalTab(useAppStore.getState())
+          return
+        }
         handleNewTab()
         return
       }
@@ -1338,7 +1338,6 @@ function Terminal(): React.JSX.Element | null {
             onNewTerminalWithShell={handleNewTab}
             onNewBrowserTab={handleNewBrowserTab}
             onNewFileTab={handleNewFile}
-            wslAvailable={wslAvailable}
             onSetCustomTitle={setTabCustomTitle}
             onSetTabColor={setTabColor}
             expandedPaneByTabId={expandedPaneByTabId}

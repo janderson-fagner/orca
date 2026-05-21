@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Columns2,
   Copy,
@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Rows2
 } from 'lucide-react'
+import { useAppStore } from '@/store'
 import type { MarkdownViewMode, OpenFile } from '@/store/slices/editor'
 import {
   DropdownMenu,
@@ -28,6 +29,7 @@ import type { EditorToggleValue } from './EditorViewToggle'
 import type { EditorHeaderOpenFileState } from './editor-header'
 import { getEditorHeaderCopyState } from './editor-header'
 import { getMarkdownPreviewShortcutLabel } from './markdown-preview-controls'
+import { DiffNotesSendMenu } from './DiffNotesSendMenu'
 
 const isMac = navigator.userAgent.includes('Mac')
 const isLinux = navigator.userAgent.includes('Linux')
@@ -61,7 +63,7 @@ type EditorPanelHeaderProps = {
   sideBySide: boolean
   openFileState: EditorHeaderOpenFileState
   onCopyPath: () => void
-  onOpenDiffTargetFile: () => void
+  onOpenDiffTargetFile: (preferredMarkdownViewMode?: 'rich') => void
   onOpenPreviewToSide: () => void
   onOpenMarkdownPreview: () => void
   onOpenContainingFolder: () => void
@@ -104,6 +106,12 @@ export function EditorPanelHeader({
   const [pathMenuOpen, setPathMenuOpen] = useState(false)
   const [pathMenuPoint, setPathMenuPoint] = useState({ x: 0, y: 0 })
   const headerCopyState = getEditorHeaderCopyState(activeFile)
+  const diffComments = useAppStore((s) => s.getDiffComments(activeFile.worktreeId))
+  const activeGroupId = useAppStore((s) => s.activeGroupIdByWorktree[activeFile.worktreeId])
+  const fileDiffComments = useMemo(
+    () => diffComments.filter((comment) => comment.filePath === activeFile.relativePath),
+    [activeFile.relativePath, diffComments]
+  )
 
   useEffect(() => {
     const closeMenu = (): void => setPathMenuOpen(false)
@@ -187,7 +195,7 @@ export function EditorPanelHeader({
               <button
                 type="button"
                 className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                onClick={onOpenDiffTargetFile}
+                onClick={() => onOpenDiffTargetFile(isMarkdown ? 'rich' : undefined)}
                 aria-label="Open file"
                 disabled={!openFileState.canOpen}
               >
@@ -203,6 +211,19 @@ export function EditorPanelHeader({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+      )}
+      {isSingleDiff && fileDiffComments.length > 0 && (
+        <DiffNotesSendMenu
+          worktreeId={activeFile.worktreeId}
+          groupId={activeGroupId ?? activeFile.worktreeId}
+          comments={diffComments}
+          filePath={activeFile.relativePath}
+          showFileScope
+          triggerLabel="AI notes"
+          triggerCount={fileDiffComments.length}
+          triggerClassName="h-6 shrink-0 gap-1 rounded-full border border-border/70 bg-muted/40 px-2 text-[11px] font-medium leading-none text-foreground/80 hover:bg-accent hover:text-foreground"
+          iconClassName="size-3"
+        />
       )}
       {canOpenPreviewToSide && (
         <TooltipProvider delayDuration={300}>
