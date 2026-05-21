@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { CircleDot, ExternalLink, GitMerge, PanelRightOpen, Pencil, StickyNote } from 'lucide-react'
+import { CircleDot, ExternalLink, GitMerge, MonitorUp, Pencil, StickyNote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LinearIcon } from '@/components/icons/LinearIcon'
 import CommentMarkdown from './CommentMarkdown'
@@ -305,7 +305,7 @@ export function WorktreeCardDetailsHover({
                         label="Open in Orca"
                         onClick={dismissAndRun(onOpenGitHubIssueInOrca)}
                       >
-                        <PanelRightOpen className="size-3" />
+                        <MonitorUp className="size-3" />
                       </MetadataActionIcon>
                     )}
                     {issue.url && (
@@ -349,7 +349,7 @@ export function WorktreeCardDetailsHover({
                         label="Open in Orca"
                         onClick={dismissAndRun(onOpenLinearIssueInOrca)}
                       >
-                        <PanelRightOpen className="size-3" />
+                        <MonitorUp className="size-3" />
                       </MetadataActionIcon>
                     )}
                     {linearIssue.url && (
@@ -393,7 +393,7 @@ export function WorktreeCardDetailsHover({
                         label="Open in Orca"
                         onClick={dismissAndRun(onOpenReviewInOrca)}
                       >
-                        <PanelRightOpen className="size-3" />
+                        <MonitorUp className="size-3" />
                       </MetadataActionIcon>
                     )}
                     {review.url && (
