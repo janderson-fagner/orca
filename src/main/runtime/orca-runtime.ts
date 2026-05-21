@@ -10135,6 +10135,10 @@ function detectTerminalWaitBlockedReason(preview: string): RuntimeTerminalWaitBl
   if (normalized.includes('update available') && normalized.includes('press enter to continue')) {
     return 'codex-update-prompt'
   }
+  // Why: bare substring tests like "trust this folder" can match agent-generated
+  // diff/review text that merely discusses the trust prompt. Require an
+  // accompanying numbered-option line ("1. ...") so we only flag the actual
+  // interactive prompt UI, mirroring the dual-key check used for the update prompt.
   if (
     (normalized.includes('do you trust') ||
       normalized.includes('trust this') ||
@@ -10142,7 +10146,8 @@ function detectTerminalWaitBlockedReason(preview: string): RuntimeTerminalWaitBl
     (normalized.includes('workspace') ||
       normalized.includes('folder') ||
       normalized.includes('directory') ||
-      normalized.includes('repo'))
+      normalized.includes('repo')) &&
+    /\n\s*1[.)]\s/.test(normalized)
   ) {
     return 'codex-trust-workspace'
   }
