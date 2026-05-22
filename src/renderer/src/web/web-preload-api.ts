@@ -206,6 +206,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     git: createGitApi(),
     browser: createBrowserApi(),
     gh: createGitHubApi(),
+    gl: createGitLabApi(),
     hostedReview: createRuntimeNamespaceApi('hostedReview'),
     linear: createRuntimeNamespaceApi('linear'),
     hooks: createHooksApi(),
@@ -1082,6 +1083,53 @@ function createGitHubApi(): NonNullable<Partial<PreloadApi>['gh']> {
     listIssueTypesBySlug: direct('github.project.listIssueTypesBySlug'),
     updateIssueTypeBySlug: direct('github.project.updateIssueTypeBySlug')
   } as NonNullable<Partial<PreloadApi>['gh']>
+}
+
+function createGitLabApi(): NonNullable<Partial<PreloadApi>['gl']> {
+  const direct = (method: string) => (args?: unknown) =>
+    callRuntimeResult(method, mapRepoPathArg(args))
+  const listWorkItems = async (args: unknown): Promise<Record<string, unknown>> =>
+    callRuntimeResult<Record<string, unknown>>('gitlab.listWorkItems', mapRepoPathArg(args))
+  const filterItems = async (
+    args: unknown,
+    type: 'issue' | 'mr'
+  ): Promise<Record<string, unknown>> => {
+    const result = await listWorkItems(args)
+    const items = Array.isArray(result.items)
+      ? result.items.filter(
+          (item) =>
+            item !== null && typeof item === 'object' && (item as { type?: unknown }).type === type
+        )
+      : []
+    return { ...result, items }
+  }
+
+  return {
+    viewer: () => Promise.resolve(null),
+    projectSlug: () => Promise.resolve(null),
+    mrForBranch: () => Promise.resolve(null),
+    mr: () => Promise.resolve(null),
+    listMRs: (args) => filterItems(args, 'mr') as never,
+    listWorkItems: (args) => listWorkItems(args) as never,
+    issue: () => Promise.resolve(null),
+    listIssues: (args) => filterItems(args, 'issue') as never,
+    createIssue: (args) => direct('gitlab.createIssue')(args) as never,
+    updateIssue: (args) => direct('gitlab.updateIssue')(args) as never,
+    addIssueComment: (args) => direct('gitlab.addIssueComment')(args) as never,
+    listLabels: () => Promise.resolve([]),
+    listAssignableUsers: () => Promise.resolve([]),
+    todos: (args) => direct('gitlab.todos')(args) as never,
+    workItemDetails: (args) => direct('gitlab.workItemDetails')(args) as never,
+    closeMR: (args) => direct('gitlab.updateMRState')({ ...args, state: 'closed' }) as never,
+    reopenMR: (args) => direct('gitlab.updateMRState')({ ...args, state: 'opened' }) as never,
+    mergeMR: (args) => direct('gitlab.mergeMR')(args) as never,
+    addMRComment: (args) => direct('gitlab.addMRComment')(args) as never,
+    workItemByPath: (args) =>
+      direct('gitlab.workItemDetails')({
+        ...args,
+        projectRef: { host: args.host, path: args.path }
+      }) as never
+  } as NonNullable<Partial<PreloadApi>['gl']>
 }
 
 function createRuntimeNamespaceApi(prefix: string): never {
