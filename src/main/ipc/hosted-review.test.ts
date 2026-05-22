@@ -1,4 +1,3 @@
-import { join, resolve } from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -46,9 +45,8 @@ type HandlerMap = Record<string, (_event: unknown, args: unknown) => unknown>
 
 describe('registerHostedReviewHandlers', () => {
   const handlers: HandlerMap = {}
-  const repoPath = resolve('workspace', 'repo')
-  const worktreePath = join(repoPath, '..', 'feature-worktree')
-  const resolvedWorktreePath = resolve(worktreePath)
+  const repoPath = '/remote/workspace/repo'
+  const worktreePath = '/remote/workspace/feature-worktree'
   const repo = {
     id: 'repo-1',
     path: repoPath,
@@ -83,7 +81,6 @@ describe('registerHostedReviewHandlers', () => {
     handleMock.mockImplementation((channel, handler) => {
       handlers[channel] = handler
     })
-    resolveRegisteredWorktreePathMock.mockImplementation(async () => resolvedWorktreePath)
     listRepoWorktreesMock.mockResolvedValue([{ path: worktreePath }])
   })
 
@@ -111,12 +108,13 @@ describe('registerHostedReviewHandlers', () => {
 
     expect(getHostedReviewCreationEligibilityMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        repoPath: resolvedWorktreePath,
+        repoPath: worktreePath,
         connectionId: 'ssh-1',
         branch: 'feature/pr',
         base: 'main'
       })
     )
+    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
   })
 
   it('passes SSH connectionId through pull request creation and records successful creates', async () => {
@@ -140,7 +138,7 @@ describe('registerHostedReviewHandlers', () => {
     })
 
     expect(createHostedReviewMock).toHaveBeenCalledWith(
-      resolvedWorktreePath,
+      worktreePath,
       {
         provider: 'github',
         base: 'main',
@@ -151,6 +149,7 @@ describe('registerHostedReviewHandlers', () => {
       },
       'ssh-1'
     )
+    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
     expect(stats.record).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'pr_created',

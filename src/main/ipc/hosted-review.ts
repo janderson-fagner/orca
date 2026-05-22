@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { resolve } from 'path'
+import { posix, resolve } from 'path'
 import type {
   CreateHostedReviewArgs,
   HostedReviewCreationEligibilityArgs,
@@ -40,12 +40,34 @@ async function resolveHostedReviewWorktreePath(
   if (!worktreePath) {
     return repo.path
   }
+  if (repo.connectionId) {
+    const remoteWorktreePath = normalizeRemoteHostedReviewPath(worktreePath)
+    const repoWorktrees = await listRepoWorktrees(repo)
+    if (
+      !repoWorktrees.some(
+        (worktree) => normalizeRemoteHostedReviewPath(worktree.path) === remoteWorktreePath
+      )
+    ) {
+      throw new Error('Access denied: worktree does not belong to repository')
+    }
+    return remoteWorktreePath
+  }
   const resolvedWorktreePath = await resolveRegisteredWorktreePath(worktreePath, store)
   const repoWorktrees = await listRepoWorktrees(repo)
   if (!repoWorktrees.some((worktree) => resolve(worktree.path) === resolvedWorktreePath)) {
     throw new Error('Access denied: worktree does not belong to repository')
   }
   return resolvedWorktreePath
+}
+
+function normalizeRemoteHostedReviewPath(remotePath: string): string {
+  if (!remotePath || remotePath.includes('\0')) {
+    throw new Error('Access denied: invalid worktree path')
+  }
+  // Why: SSH worktree paths belong to the remote POSIX host. Local path.resolve
+  // rewrites them on Windows and cannot authorize remote-only paths.
+  const normalized = posix.normalize(remotePath)
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized
 }
 
 export function registerHostedReviewHandlers(store: Store, stats: StatsCollector): void {

@@ -159,12 +159,15 @@ async function hasUncommittedChanges(
   connectionId?: string | null
 ): Promise<boolean> {
   if (connectionId) {
-    const { stdout } = await runGitForHostedReview(
-      repoPath,
-      ['status', '--porcelain'],
-      connectionId
-    )
-    return stdout.trim().length > 0
+    const provider = getSshGitProvider(connectionId)
+    if (!provider) {
+      throw new Error(
+        'Remote connection dropped. Click Reconnect on the SSH target before retrying.'
+      )
+    }
+    // Why: the relay intentionally restricts generic git.exec. Use the
+    // structured status RPC for SSH dirty checks instead of raw `git status`.
+    return (await provider.getStatus(repoPath)).entries.length > 0
   }
   const { stdout } = await gitExecFileAsync(['status', '--porcelain'], {
     cwd: repoPath,
@@ -182,32 +185,14 @@ async function getHostedReviewUpstreamStatus(
   if (!connectionId) {
     return getUpstreamStatus(repoPath)
   }
+  const provider = getSshGitProvider(connectionId)
+  if (!provider) {
+    throw new Error('Remote connection dropped. Click Reconnect on the SSH target before retrying.')
+  }
   try {
-    const { stdout: upstreamStdout } = await runGitForHostedReview(
-      repoPath,
-      ['rev-parse', '--abbrev-ref', 'HEAD@{u}'],
-      connectionId
-    )
-    const upstreamName = upstreamStdout.trim()
-    if (!upstreamName) {
-      return { hasUpstream: false, ahead: 0, behind: 0 }
-    }
-
-    const { stdout: countsStdout } = await runGitForHostedReview(
-      repoPath,
-      ['rev-list', '--left-right', '--count', 'HEAD...@{u}'],
-      connectionId
-    )
-    const tokens = countsStdout.trim().split(/\s+/)
-    if (tokens.length !== 2) {
-      throw new Error(`Unexpected git rev-list output: ${JSON.stringify(countsStdout)}`)
-    }
-    const ahead = Number.parseInt(tokens[0]!, 10)
-    const behind = Number.parseInt(tokens[1]!, 10)
-    if (!Number.isFinite(ahead) || !Number.isFinite(behind) || ahead < 0 || behind < 0) {
-      throw new Error(`Unparseable git rev-list counts: ${JSON.stringify(countsStdout)}`)
-    }
-    return { hasUpstream: true, upstreamName, ahead, behind }
+    // Why: SSH exposes upstream divergence through a dedicated relay RPC;
+    // generic git.exec intentionally does not allow rev-list/status plumbing.
+    return await provider.getUpstreamStatus(repoPath)
   } catch (error) {
     if (isNoUpstreamError(error)) {
       return { hasUpstream: false, ahead: 0, behind: 0 }

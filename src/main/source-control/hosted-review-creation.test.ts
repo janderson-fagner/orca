@@ -194,18 +194,16 @@ describe('createHostedReview', () => {
 
   it('uses the SSH git provider for remote hosted-review preflight', async () => {
     const remoteGit = {
+      getStatus: vi.fn(async () => ({ entries: [], conflictOperation: 'unknown' })),
+      getUpstreamStatus: vi.fn(async () => ({
+        hasUpstream: true,
+        upstreamName: 'origin/feature',
+        ahead: 0,
+        behind: 0
+      })),
       exec: vi.fn(async (args: string[]) => {
         if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref' && args[2] === 'HEAD') {
           return { stdout: 'feature\n', stderr: '' }
-        }
-        if (args[0] === 'status') {
-          return { stdout: '', stderr: '' }
-        }
-        if (args[0] === 'rev-parse' && args[2] === 'HEAD@{u}') {
-          return { stdout: 'origin/feature\n', stderr: '' }
-        }
-        if (args[0] === 'rev-list') {
-          return { stdout: '0 0\n', stderr: '' }
         }
         if (args[0] === 'log' && args.includes('--pretty=%s')) {
           return { stdout: 'Feature title\n', stderr: '' }
@@ -239,7 +237,13 @@ describe('createHostedReview', () => {
       ['rev-parse', '--abbrev-ref', 'HEAD'],
       '/remote/repo'
     )
-    expect(remoteGit.exec).toHaveBeenCalledWith(['status', '--porcelain'], '/remote/repo')
+    expect(remoteGit.getStatus).toHaveBeenCalledWith('/remote/repo')
+    expect(remoteGit.exec).not.toHaveBeenCalledWith(['status', '--porcelain'], '/remote/repo')
+    expect(remoteGit.getUpstreamStatus).toHaveBeenCalledWith('/remote/repo')
+    expect(remoteGit.exec).not.toHaveBeenCalledWith(
+      ['rev-list', '--left-right', '--count', 'HEAD...@{u}'],
+      '/remote/repo'
+    )
     expect(getUpstreamStatusMock).not.toHaveBeenCalled()
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
       ['auth', 'status', '--hostname', 'github.com'],
