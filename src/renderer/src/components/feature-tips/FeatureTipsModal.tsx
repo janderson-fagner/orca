@@ -1,6 +1,5 @@
 import type { JSX } from 'react'
 import { Mic, Sparkles } from 'lucide-react'
-import { getDefaultVoiceSettings } from '../../../../shared/constants'
 import type { FeatureTip } from '../../../../shared/feature-tips'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,8 +13,27 @@ import {
 } from '@/components/ui/dialog'
 import { useAppStore } from '@/store'
 import { getFeatureTipForModal } from './feature-tip-modal-state'
+import { runFeatureTipPrimaryAction } from './feature-tip-primary-action'
 
 const WAVEFORM_BAR_HEIGHTS = [30, 60, 90, 70, 100, 50, 80, 35, 65]
+
+function AgentStatusSidebarVisual({
+  tip
+}: {
+  tip: Extract<FeatureTip, { action: 'open-agent-status-release-notes' }>
+}): JSX.Element {
+  return (
+    <div className="flex aspect-video w-full max-w-sm items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+      <img
+        src={tip.mediaUrl}
+        alt=""
+        className="h-full w-full object-cover"
+        loading="lazy"
+        draggable={false}
+      />
+    </div>
+  )
+}
 
 function FeatureTipVisual({ tip }: { tip: FeatureTip }): JSX.Element {
   switch (tip.action) {
@@ -37,6 +55,8 @@ function FeatureTipVisual({ tip }: { tip: FeatureTip }): JSX.Element {
           </div>
         </div>
       )
+    case 'open-agent-status-release-notes':
+      return <AgentStatusSidebarVisual tip={tip} />
   }
 }
 
@@ -80,21 +100,15 @@ export default function FeatureTipsModal(): JSX.Element | null {
       return
     }
 
-    markFeatureTipsSeen([currentTip.id])
-    switch (currentTip.action) {
-      case 'enable-voice': {
-        const voice = settings?.voice ?? getDefaultVoiceSettings()
-        void updateSettings({
-          voice: {
-            ...voice,
-            enabled: true
-          }
-        })
-        closeModal()
-        openSettingsTarget({ pane: 'voice', repoId: null })
-        openSettingsPage()
-      }
-    }
+    runFeatureTipPrimaryAction(currentTip, {
+      closeModal,
+      markFeatureTipsSeen,
+      openSettingsPage,
+      openSettingsTarget,
+      openUrl: (url) => window.api.shell.openUrl(url),
+      settings,
+      updateSettings
+    })
   }
 
   if (!isOpen || !currentTip) {
