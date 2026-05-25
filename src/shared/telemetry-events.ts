@@ -16,6 +16,12 @@
 import { z } from 'zod'
 import { FEATURE_WALL_MAX_DWELL_MS } from './feature-wall-telemetry'
 import { FEATURE_WALL_EXIT_ACTIONS, FEATURE_WALL_TOUR_DEPTH_STEPS } from './feature-wall-tour-depth'
+import {
+  CONTEXTUAL_TOUR_OUTCOMES,
+  FEATURE_EDUCATION_CONTEXTUAL_TOUR_IDS,
+  FEATURE_EDUCATION_FEATURE_IDS,
+  FEATURE_EDUCATION_SOURCES
+} from './feature-education-telemetry'
 import { SETUP_SCRIPT_IMPORT_PROVIDERS } from './setup-script-import-providers'
 import { WORKSPACE_SOURCE_VALUES, type WorkspaceSource } from './workspace-source'
 
@@ -878,6 +884,40 @@ const onboardingFeatureSetupTerminalInteractedSchema = z
   )
   .strict()
 
+const featureEducationSourceSchema = z.enum(FEATURE_EDUCATION_SOURCES)
+const featureEducationContextualTourIdSchema = z.enum(FEATURE_EDUCATION_CONTEXTUAL_TOUR_IDS)
+const featureEducationFeatureIdSchema = z.enum(FEATURE_EDUCATION_FEATURE_IDS)
+
+const contextualTourShownSchema = z
+  .object({
+    tour_id: featureEducationContextualTourIdSchema,
+    source: featureEducationSourceSchema,
+    was_feature_previously_interacted: z.boolean()
+  })
+  .strict()
+
+const contextualTourOutcomeSchema = z
+  .object({
+    tour_id: featureEducationContextualTourIdSchema,
+    source: featureEducationSourceSchema,
+    outcome: z.enum(CONTEXTUAL_TOUR_OUTCOMES),
+    steps_seen: z.number().int().min(0).max(8),
+    total_steps: z.number().int().min(1).max(8)
+  })
+  .refine((payload) => payload.steps_seen <= payload.total_steps, {
+    message: 'steps_seen must be less than or equal to total_steps',
+    path: ['steps_seen']
+  })
+  .strict()
+
+const featureInteractionFirstRecordedSchema = z
+  .object({
+    feature_id: featureEducationFeatureIdSchema,
+    source: featureEducationSourceSchema,
+    had_contextual_tour_seen: z.boolean()
+  })
+  .strict()
+
 // ── Event registry: the one record the validator consumes ───────────────
 //
 // The validator does `eventSchemas[name].safeParse(props)`. `EventMap` is
@@ -939,6 +979,10 @@ export const eventSchemas = {
   onboarding_feature_setup_terminal_opened: onboardingFeatureSetupTerminalOpenedSchema,
   onboarding_feature_setup_terminal_interacted: onboardingFeatureSetupTerminalInteractedSchema,
   activation_checklist_item_completed: activationChecklistItemCompletedSchema,
+
+  contextual_tour_shown: contextualTourShownSchema,
+  contextual_tour_outcome: contextualTourOutcomeSchema,
+  feature_interaction_first_recorded: featureInteractionFirstRecordedSchema,
 
   smart_sort_class_distribution: smartSortClassDistributionSchema,
   smart_sort_class_1_promotion: smartSortClass1PromotionSchema,

@@ -101,6 +101,62 @@ describe('workspace_created schema', () => {
   })
 })
 
+describe('feature education telemetry schemas', () => {
+  it('accepts contextual tour shown payloads', () => {
+    const parsed = eventSchemas.contextual_tour_shown.safeParse({
+      tour_id: 'browser',
+      source: 'browser_visible',
+      was_feature_previously_interacted: false
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it('accepts contextual tour outcome payloads with bounded step counts', () => {
+    const parsed = eventSchemas.contextual_tour_outcome.safeParse({
+      tour_id: 'tasks',
+      source: 'tasks_open',
+      outcome: 'completed',
+      steps_seen: 2,
+      total_steps: 3
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it('rejects contextual tour outcome payloads with impossible progress', () => {
+    const parsed = eventSchemas.contextual_tour_outcome.safeParse({
+      tour_id: 'tasks',
+      source: 'tasks_open',
+      outcome: 'completed',
+      steps_seen: 4,
+      total_steps: 3
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
+  it('rejects raw contextual tour sources', () => {
+    const parsed = eventSchemas.contextual_tour_shown.safeParse({
+      tour_id: 'browser',
+      source: 'http://localhost:3000/private',
+      was_feature_previously_interacted: false
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
+  it('accepts first feature interaction payloads', () => {
+    const parsed = eventSchemas.feature_interaction_first_recorded.safeParse({
+      feature_id: 'voice-dictation',
+      source: 'dictation_session',
+      had_contextual_tour_seen: false
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+})
+
 describe('agent_started schema', () => {
   it('requires all three keys', () => {
     const parsed = eventSchemas.agent_started.safeParse({

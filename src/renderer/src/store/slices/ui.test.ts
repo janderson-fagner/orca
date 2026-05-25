@@ -784,11 +784,13 @@ describe('createUISlice feature interactions', () => {
 
   it('records a feature interaction once and persists it', () => {
     const setMock = vi.fn(() => Promise.resolve())
+    const telemetryTrackMock = vi.fn(() => Promise.resolve())
     vi.stubGlobal('window', {
       api: {
         ui: {
           set: setMock
-        }
+        },
+        telemetryTrack: telemetryTrackMock
       }
     })
     const now = 1_700_000_000_000
@@ -809,9 +811,37 @@ describe('createUISlice feature interactions', () => {
       expect(store.getState().featureInteractions).toEqual(expected)
       expect(setMock).toHaveBeenCalledTimes(1)
       expect(setMock).toHaveBeenCalledWith({ featureInteractions: expected })
+      expect(telemetryTrackMock).toHaveBeenCalledTimes(1)
+      expect(telemetryTrackMock).toHaveBeenCalledWith('feature_interaction_first_recorded', {
+        feature_id: 'tasks',
+        source: 'unknown',
+        had_contextual_tour_seen: false
+      })
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('records interaction telemetry with source and prior tour state', () => {
+    const telemetryTrackMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: vi.fn(() => Promise.resolve())
+        },
+        telemetryTrack: telemetryTrackMock
+      }
+    })
+    const store = createUIStore()
+    store.getState().hydratePersistedUI(makePersistedUI({ contextualToursSeenIds: ['tasks'] }))
+
+    store.getState().recordFeatureInteraction('tasks', 'tasks_open')
+
+    expect(telemetryTrackMock).toHaveBeenCalledWith('feature_interaction_first_recorded', {
+      feature_id: 'tasks',
+      source: 'tasks_open',
+      had_contextual_tour_seen: true
+    })
   })
 
   it('does not record interactions before persisted UI has hydrated', () => {

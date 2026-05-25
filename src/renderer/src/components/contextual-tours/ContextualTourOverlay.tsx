@@ -1,6 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useAppStore } from '@/store'
-import { getContextualTour } from '../../../../shared/contextual-tours'
+import { hasFeatureInteraction } from '../../../../shared/feature-interactions'
+import { getContextualTour, type ContextualTourId } from '../../../../shared/contextual-tours'
+import type { ContextualTourOutcome } from '../../../../shared/feature-education-telemetry'
+import {
+  trackContextualTourOutcome,
+  trackContextualTourShown
+} from '@/lib/feature-education-telemetry'
 import {
   clampContextualTourPanelPosition,
   getContextualTourStepCopy,
@@ -22,8 +28,10 @@ const PANEL_FALLBACK_SIZE = { width: 304, height: 172 }
 export function ContextualTourOverlay(): JSX.Element | null {
   const activeTourId = useAppStore((s) => s.activeContextualTourId)
   const activeStepIndex = useAppStore((s) => s.activeContextualTourStepIndex)
+  const activeTourSource = useAppStore((s) => s.activeContextualTourSource)
   const activeModal = useAppStore((s) => s.activeModal)
   const blockingSurfaceVisible = useAppStore((s) => s.contextualToursBlockingSurfaceVisible)
+  const featureInteractions = useAppStore((s) => s.featureInteractions)
   const markContextualToursSeen = useAppStore((s) => s.markContextualToursSeen)
   const advanceContextualTour = useAppStore((s) => s.advanceContextualTour)
   const dismissContextualTour = useAppStore((s) => s.dismissContextualTour)
@@ -35,14 +43,41 @@ export function ContextualTourOverlay(): JSX.Element | null {
   const markedTourIdRef = useRef<string | null>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const focusedStepRef = useRef<string | null>(null)
+  const telemetryTourIdRef = useRef<ContextualTourId | null>(null)
+  const telemetryOutcomeSentRef = useRef(false)
+  const telemetryStepsSeenRef = useRef<Set<number>>(new Set())
 
   const activeTour = useMemo(
     () => (activeTourId ? getContextualTour(activeTourId) : null),
     [activeTourId]
   )
 
+  const emitContextualTourOutcome = useCallback(
+    (outcome: ContextualTourOutcome): void => {
+      if (
+        !activeTourId ||
+        telemetryOutcomeSentRef.current ||
+        telemetryTourIdRef.current !== activeTourId
+      ) {
+        return
+      }
+      telemetryOutcomeSentRef.current = true
+      trackContextualTourOutcome({
+        tourId: activeTourId,
+        source: activeTourSource,
+        outcome,
+        stepsSeen: telemetryStepsSeenRef.current.size,
+        totalSteps: activeTour?.steps.length ?? 1
+      })
+    },
+    [activeTour, activeTourId, activeTourSource]
+  )
+
   useEffect(() => {
     markedTourIdRef.current = null
+    telemetryTourIdRef.current = null
+    telemetryOutcomeSentRef.current = false
+    telemetryStepsSeenRef.current = new Set()
     setRenderState(null)
   }, [activeTourId])
 
@@ -51,9 +86,17 @@ export function ContextualTourOverlay(): JSX.Element | null {
       return
     }
     if (blockingSurfaceVisible || !isContextualTourAllowedForModal(activeTour, activeModal)) {
+      emitContextualTourOutcome('cancelled')
       cancelContextualTour(activeTourId)
     }
-  }, [activeModal, activeTour, activeTourId, blockingSurfaceVisible, cancelContextualTour])
+  }, [
+    activeModal,
+    activeTour,
+    activeTourId,
+    blockingSurfaceVisible,
+    cancelContextualTour,
+    emitContextualTourOutcome
+  ])
 
   useEffect(() => {
     if (!activeTourId) {
@@ -88,8 +131,10 @@ export function ContextualTourOverlay(): JSX.Element | null {
 
     if (visibleStepIndexes.length === 0) {
       if (markedTourIdRef.current === activeTourId) {
+        emitContextualTourOutcome('completed')
         completeContextualTour(activeTourId)
       } else {
+        emitContextualTourOutcome('cancelled')
         cancelContextualTour(activeTourId)
       }
       return
@@ -100,8 +145,10 @@ export function ContextualTourOverlay(): JSX.Element | null {
       if (hasLaterStep) {
         advanceContextualTour()
       } else if (markedTourIdRef.current === activeTourId) {
+        emitContextualTourOutcome('completed')
         completeContextualTour(activeTourId)
       } else {
+        emitContextualTourOutcome('cancelled')
         cancelContextualTour(activeTourId)
       }
       return
@@ -123,7 +170,7 @@ export function ContextualTourOverlay(): JSX.Element | null {
     advanceContextualTour,
     cancelContextualTour,
     completeContextualTour,
-    dismissContextualTour,
+    emitContextualTourOutcome,
     measureVersion
   ])
 
@@ -136,6 +183,26 @@ export function ContextualTourOverlay(): JSX.Element | null {
     markedTourIdRef.current = activeTourId
     markContextualToursSeen([activeTourId])
   }, [activeTourId, markContextualToursSeen, renderState])
+
+  useEffect(() => {
+    if (!activeTourId || !renderState || telemetryTourIdRef.current === activeTourId) {
+      return
+    }
+    telemetryTourIdRef.current = activeTourId
+    telemetryStepsSeenRef.current.add(activeStepIndex)
+    trackContextualTourShown({
+      tourId: activeTourId,
+      source: activeTourSource,
+      wasFeaturePreviouslyInteracted: hasFeatureInteraction(featureInteractions, activeTourId)
+    })
+  }, [activeStepIndex, activeTourId, activeTourSource, featureInteractions, renderState])
+
+  useEffect(() => {
+    if (!activeTourId || !renderState) {
+      return
+    }
+    telemetryStepsSeenRef.current.add(activeStepIndex)
+  }, [activeStepIndex, activeTourId, renderState])
 
   useEffect(() => {
     if (!activeTourId || !renderState) {
@@ -240,9 +307,13 @@ export function ContextualTourOverlay(): JSX.Element | null {
       highlightStyle={highlightStyle}
       panelPosition={panelPosition}
       panelHost={renderState.panelHost}
-      onSkip={dismissContextualTour}
+      onSkip={(id) => {
+        emitContextualTourOutcome('skipped')
+        dismissContextualTour(id)
+      }}
       onNext={() => {
         if (renderState.isLastStep) {
+          emitContextualTourOutcome('completed')
           completeContextualTour(activeTourId)
         } else {
           advanceContextualTour()

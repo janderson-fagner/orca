@@ -34,7 +34,7 @@ Use this to suppress tips or tours that would teach a feature the user has alrea
 - Record interactions only after persisted UI state is hydrated, so startup defaults cannot overwrite real user data.
 - Do not rename or reuse ids. If semantics change materially, add a new id and leave the old one readable.
 - Unknown or malformed persisted ids are ignored during hydration for forward/backward compatibility.
-- This state is local product state, not telemetry. Do not use it for analytics conclusions unless a separate telemetry event exists.
+- This state is local product state, not telemetry. Analytics should use the bounded feature-education telemetry events (`contextual_tour_shown`, `contextual_tour_outcome`, and `feature_interaction_first_recorded`) rather than reading or uploading the persisted state blob.
 
 ## Adding A Tip
 

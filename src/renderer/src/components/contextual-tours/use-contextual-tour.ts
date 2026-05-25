@@ -32,9 +32,9 @@ export function useContextualTour(
 
   useEffect(() => {
     if (enabled && persistedUIReady) {
-      recordFeatureInteraction(id)
+      recordFeatureInteraction(id, source)
     }
-  }, [enabled, id, persistedUIReady, recordFeatureInteraction])
+  }, [enabled, id, persistedUIReady, recordFeatureInteraction, source])
 
   useEffect(() => {
     // Why: a tour can be registered by multiple surfaces; an inactive sibling
