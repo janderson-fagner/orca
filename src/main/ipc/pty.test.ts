@@ -153,6 +153,10 @@ import {
   setLocalPtyProvider,
   unregisterSshPtyProvider
 } from './pty'
+import {
+  registerSshFilesystemProvider,
+  unregisterSshFilesystemProvider
+} from '../providers/ssh-filesystem-dispatch'
 import { hasLiveClaudePtys } from '../claude-accounts/live-pty-gate'
 import {
   encodePowerShellCommand,
@@ -190,6 +194,7 @@ describe('registerPtyHandlers', () => {
   const savedOrcaCodexHome = process.env.ORCA_CODEX_HOME
   const savedOrcaOmpAgentDir = process.env.ORCA_OMP_CODING_AGENT_DIR
   const savedOrcaOmpSourceAgentDir = process.env.ORCA_OMP_SOURCE_AGENT_DIR
+  const savedOrcaOmpStatusExtension = process.env.ORCA_OMP_STATUS_EXTENSION
 
   beforeEach(() => {
     delete process.env.OPENCODE_CONFIG_DIR
@@ -202,6 +207,7 @@ describe('registerPtyHandlers', () => {
     delete process.env.ORCA_CODEX_HOME
     delete process.env.ORCA_OMP_SOURCE_AGENT_DIR
     delete process.env.ORCA_OMP_CODING_AGENT_DIR
+    delete process.env.ORCA_OMP_STATUS_EXTENSION
     handlers.clear()
     handleMock.mockReset()
     onMock.mockReset()
@@ -275,6 +281,7 @@ describe('registerPtyHandlers', () => {
 
   afterEach(() => {
     unregisterSshPtyProvider('ssh-1')
+    unregisterSshFilesystemProvider('ssh-1')
     setLocalPtyProvider(new LocalPtyProvider())
     if (savedOpenCodeConfigDir !== undefined) {
       process.env.OPENCODE_CONFIG_DIR = savedOpenCodeConfigDir
@@ -320,6 +327,11 @@ describe('registerPtyHandlers', () => {
       process.env.ORCA_OMP_SOURCE_AGENT_DIR = savedOrcaOmpSourceAgentDir
     } else {
       delete process.env.ORCA_OMP_SOURCE_AGENT_DIR
+    }
+    if (savedOrcaOmpStatusExtension !== undefined) {
+      process.env.ORCA_OMP_STATUS_EXTENSION = savedOrcaOmpStatusExtension
+    } else {
+      delete process.env.ORCA_OMP_STATUS_EXTENSION
     }
   })
 
@@ -502,7 +514,7 @@ describe('registerPtyHandlers', () => {
       expect(env.ORCA_CODEX_HOME).toBe('/tmp/orca-codex-home')
     })
 
-    it('injects Claude runtime home into ordinary local PTYs when enabled', async () => {
+    it('injects Claude runtime home into ordinary local PTYs while agent hooks are enabled', async () => {
       const prepareClaudeAuth = vi.fn(async () => ({
         configDir: '/tmp/orca-claude-home',
         envPatch: { CLAUDE_CONFIG_DIR: '/tmp/orca-claude-home' },
@@ -516,8 +528,7 @@ describe('registerPtyHandlers', () => {
         undefined,
         () =>
           ({
-            agentStatusHooksEnabled: true,
-            claudeRuntimeHomeEnabled: true
+            agentStatusHooksEnabled: true
           }) as never,
         prepareClaudeAuth
       )
@@ -530,11 +541,16 @@ describe('registerPtyHandlers', () => {
       expect(env.ORCA_CLAUDE_CONFIG_DIR).toBe('/tmp/orca-claude-home')
     })
 
-    it('strips inherited Claude runtime home when the feature flag is off', async () => {
-      const env = await spawnAndGetEnv({
-        CLAUDE_CONFIG_DIR: '/tmp/parent-orca-claude-home',
-        ORCA_CLAUDE_CONFIG_DIR: '/tmp/parent-orca-claude-home'
-      })
+    it('strips inherited Claude runtime home when no runtime home is prepared', async () => {
+      const env = await spawnAndGetEnv(
+        {
+          CLAUDE_CONFIG_DIR: '/tmp/parent-orca-claude-home',
+          ORCA_CLAUDE_CONFIG_DIR: '/tmp/parent-orca-claude-home'
+        },
+        undefined,
+        undefined,
+        () => ({ agentStatusHooksEnabled: false })
+      )
       expect(env.CLAUDE_CONFIG_DIR).toBeUndefined()
       expect(env.ORCA_CLAUDE_CONFIG_DIR).toBeUndefined()
     })
@@ -634,9 +650,14 @@ describe('registerPtyHandlers', () => {
     it('injects the Pi agent overlay env into Orca terminal PTYs', async () => {
       const env = await spawnAndGetEnv(undefined, { PI_CODING_AGENT_DIR: '/tmp/user-pi-agent' })
       expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), '/tmp/user-pi-agent', 'pi')
+      expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), undefined, 'omp')
       expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
       expect(env.ORCA_PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
       expect(env.ORCA_PI_SOURCE_AGENT_DIR).toBe('/tmp/user-pi-agent')
+      expect(env.ORCA_OMP_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
+      expect(env.ORCA_OMP_STATUS_EXTENSION).toBe(
+        '/tmp/orca-pi-agent-overlay/extensions/orca-agent-status.ts'
+      )
     })
 
     it('threads command: "omp" through to piBuildPtyEnv and emits ORCA_OMP_* shadow vars', async () => {
@@ -659,6 +680,9 @@ describe('registerPtyHandlers', () => {
       )
       expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
       expect(env.ORCA_OMP_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
+      expect(env.ORCA_OMP_STATUS_EXTENSION).toBe(
+        '/tmp/orca-pi-agent-overlay/extensions/orca-agent-status.ts'
+      )
       expect(env.ORCA_OMP_SOURCE_AGENT_DIR).toBe('/tmp/user-omp-agent')
       // CRITICAL: a Pi-named shadow MUST NOT leak into an OMP PTY env.
       expect(env.ORCA_PI_CODING_AGENT_DIR).toBeUndefined()
@@ -696,18 +720,25 @@ describe('registerPtyHandlers', () => {
       expect(env.ORCA_PI_SOURCE_AGENT_DIR).toBeUndefined()
     })
 
-    it('does not use an inherited OMP overlay source for a Pi launch', async () => {
-      const env = await spawnAndGetEnv({
-        PI_CODING_AGENT_DIR: '/tmp/parent-orca-omp-overlay',
-        ORCA_OMP_CODING_AGENT_DIR: '/tmp/parent-orca-omp-overlay',
-        ORCA_OMP_SOURCE_AGENT_DIR: '/tmp/user-omp-agent'
-      })
+    it('does not use an inherited OMP overlay source for an explicit Pi launch', async () => {
+      const env = await spawnAndGetEnv(
+        {
+          PI_CODING_AGENT_DIR: '/tmp/parent-orca-omp-overlay',
+          ORCA_OMP_CODING_AGENT_DIR: '/tmp/parent-orca-omp-overlay',
+          ORCA_OMP_SOURCE_AGENT_DIR: '/tmp/user-omp-agent'
+        },
+        undefined,
+        undefined,
+        undefined,
+        'pi'
+      )
 
       expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), undefined, 'pi')
       expect(env.ORCA_PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
       expect(env.ORCA_PI_SOURCE_AGENT_DIR).toBeUndefined()
       expect(env.ORCA_OMP_CODING_AGENT_DIR).toBeUndefined()
       expect(env.ORCA_OMP_SOURCE_AGENT_DIR).toBeUndefined()
+      expect(env.ORCA_OMP_STATUS_EXTENSION).toBeUndefined()
     })
 
     it('restores user Pi config when agent status hooks are disabled in a nested Orca shell', async () => {
@@ -999,9 +1030,14 @@ describe('registerPtyHandlers', () => {
         // daemon-assigned sessionId minted in pty.ts, and the mock returns
         // the fixed overlay path from the shared setup.
         expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), '/user/.pi/agent', 'pi')
+        expect(piBuildPtyEnvMock).toHaveBeenCalledWith(expect.any(String), undefined, 'omp')
         expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
         expect(env.ORCA_PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
         expect(env.ORCA_PI_SOURCE_AGENT_DIR).toBe('/user/.pi/agent')
+        expect(env.ORCA_OMP_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
+        expect(env.ORCA_OMP_STATUS_EXTENSION).toBe(
+          '/tmp/orca-pi-agent-overlay/extensions/orca-agent-status.ts'
+        )
       })
 
       it('threads command: "omp" through to piBuildPtyEnv on the daemon path with OMP shadow vars', async () => {
@@ -1022,6 +1058,9 @@ describe('registerPtyHandlers', () => {
         )
         expect(env.PI_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
         expect(env.ORCA_OMP_CODING_AGENT_DIR).toBe('/tmp/orca-pi-agent-overlay')
+        expect(env.ORCA_OMP_STATUS_EXTENSION).toBe(
+          '/tmp/orca-pi-agent-overlay/extensions/orca-agent-status.ts'
+        )
         expect(env.ORCA_OMP_SOURCE_AGENT_DIR).toBe('/user/.omp/agent')
         expect(env.ORCA_PI_CODING_AGENT_DIR).toBeUndefined()
         expect(env.ORCA_PI_SOURCE_AGENT_DIR).toBeUndefined()
@@ -1435,6 +1474,86 @@ describe('registerPtyHandlers', () => {
         expect(sshSpawn.mock.calls.at(-1)?.[0].env.ORCA_PANE_KEY).toBeUndefined()
         expect(store.upsertSshRemotePtyLease.mock.calls[0]?.[0]).not.toHaveProperty('leafId')
         expect(store.persistPtyBinding).not.toHaveBeenCalled()
+      })
+
+      it('injects a remote Claude runtime home on SSH spawns', async () => {
+        const sshSpawn = vi.fn(async (_opts: { env: Record<string, string> }) => ({
+          id: 'ssh-pty'
+        }))
+        registerSshPtyProvider('ssh-1', {
+          spawn: sshSpawn,
+          write: vi.fn(),
+          resize: vi.fn(),
+          shutdown: vi.fn(),
+          sendSignal: vi.fn(),
+          getCwd: vi.fn(),
+          getInitialCwd: vi.fn(),
+          clearBuffer: vi.fn(),
+          acknowledgeDataEvent: vi.fn(),
+          hasChildProcesses: vi.fn(),
+          getForegroundProcess: vi.fn(),
+          serialize: vi.fn(),
+          revive: vi.fn(),
+          onData: vi.fn(() => () => {}),
+          onReplay: vi.fn(() => () => {}),
+          onExit: vi.fn(() => () => {}),
+          listProcesses: vi.fn(async () => []),
+          attach: vi.fn(),
+          getDefaultShell: vi.fn(),
+          getProfiles: vi.fn()
+        } as never)
+        const remoteFiles = new Map<string, string>([
+          ['/home/dev/.claude/settings.json', '{ "model": "sonnet" }\n']
+        ])
+        const writes = new Map<string, string>()
+        const missing = (path: string) =>
+          Object.assign(new Error(`ENOENT: no such file or directory, stat '${path}'`), {
+            code: 'ENOENT'
+          })
+        registerSshFilesystemProvider('ssh-1', {
+          realpath: vi.fn(async () => '/home/dev'),
+          createDir: vi.fn(async () => undefined),
+          writeFile: vi.fn(async (path: string, content: string) => {
+            writes.set(path, content)
+            remoteFiles.set(path, content)
+          }),
+          readFile: vi.fn(async (path: string) => {
+            const content = remoteFiles.get(path)
+            if (content === undefined) {
+              throw missing(path)
+            }
+            return { content, isBinary: false }
+          }),
+          stat: vi.fn(async (path: string) => {
+            if (!remoteFiles.has(path)) {
+              throw missing(path)
+            }
+            return { size: remoteFiles.get(path)!.length, type: 'file', mtime: 1 }
+          }),
+          copy: vi.fn(async () => undefined)
+        } as never)
+        handlers.clear()
+        registerPtyHandlers(
+          mainWindow as never,
+          undefined,
+          undefined,
+          () => ({ agentStatusHooksEnabled: true }) as never
+        )
+
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          env: { FOO: 'bar' },
+          connectionId: 'ssh-1'
+        })
+
+        const env = sshSpawn.mock.calls.at(-1)![0].env
+        expect(env.CLAUDE_CONFIG_DIR).toBe('/home/dev/.orca/claude-runtime-home/home')
+        expect(env.ORCA_CLAUDE_CONFIG_DIR).toBe('/home/dev/.orca/claude-runtime-home/home')
+        expect(writes.get('/home/dev/.orca/agent-hooks/claude-hook.sh')).toContain('#!/bin/sh')
+        expect(writes.get('/home/dev/.orca/claude-runtime-home/home/settings.json')).toContain(
+          "sh '/home/dev/.orca/agent-hooks/claude-hook.sh'"
+        )
       })
 
       it('marks a caller-supplied SSH session expired when remote reattach is gone', async () => {

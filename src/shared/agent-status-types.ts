@@ -23,6 +23,7 @@ export type WellKnownAgentType =
   | 'pi'
   | 'omp'
   | 'droid'
+  | 'command-code'
   | 'grok'
   | 'hermes'
   | 'unknown'

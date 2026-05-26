@@ -14,16 +14,18 @@ import { openCodeHookService } from '../opencode/hook-service'
 import { agentHookServer } from '../agent-hooks/server'
 import { isAgentStatusHooksEnabled } from '../agent-hooks/managed-agent-hook-controls'
 import { piTitlebarExtensionService } from '../pi/titlebar-extension-service'
+import { ORCA_PI_AGENT_STATUS_EXTENSION_FILE } from '../pi/agent-status-extension-source'
 import { detectPiAgentKindFromCommand, type PiAgentKind } from '../../shared/pi-agent-kind'
 import { isPwshAvailable } from '../pwsh'
 import { LocalPtyProvider } from '../providers/local-pty-provider'
 import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../providers/types'
 import { SSH_SESSION_EXPIRED_ERROR, isSshPtyNotFoundError } from '../providers/ssh-pty-provider'
+import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import { toAppSshPtyId, toRelaySshPtyId } from '../providers/ssh-pty-id'
 import { mintPtySessionId, isSafePtySessionId } from '../daemon/pty-session-id'
 import { addNodePtyRecoveryHint } from '../daemon/node-pty-error-hints'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth-service'
-import { isClaudeRuntimeHomeEnabled } from '../claude/claude-runtime-home-service'
+import { prepareRemoteClaudeRuntimeHome } from '../claude/claude-remote-runtime-home'
 import { CLAUDE_AUTH_ENV_VARS, hasClaudeAuthEnvConflict } from '../claude-accounts/environment'
 import {
   isClaudeAuthSwitchInProgress,
@@ -324,6 +326,57 @@ function resolvePiAgentSourceDir(
   )
 }
 
+function resolveScopedPiAgentSourceDir(
+  baseEnv: Record<string, string>,
+  kind: PiAgentKind
+): string | undefined {
+  const sourceKey = kind === 'omp' ? 'ORCA_OMP_SOURCE_AGENT_DIR' : 'ORCA_PI_SOURCE_AGENT_DIR'
+  return readEnvWithProcessFallback(baseEnv, sourceKey)
+}
+
+function getPiAgentStatusExtensionPath(agentDir: string): string {
+  return join(agentDir, 'extensions', ORCA_PI_AGENT_STATUS_EXTENSION_FILE)
+}
+
+function clearPiAgentShadowEnv(baseEnv: Record<string, string>, kind: PiAgentKind): void {
+  if (kind === 'omp') {
+    delete baseEnv.ORCA_OMP_CODING_AGENT_DIR
+    delete baseEnv.ORCA_OMP_SOURCE_AGENT_DIR
+    delete baseEnv.ORCA_OMP_STATUS_EXTENSION
+    return
+  }
+  delete baseEnv.ORCA_PI_CODING_AGENT_DIR
+  delete baseEnv.ORCA_PI_SOURCE_AGENT_DIR
+}
+
+function exposePiAgentOverlayEnv(
+  baseEnv: Record<string, string>,
+  kind: PiAgentKind,
+  overlayDir: string,
+  sourceDir: string | undefined
+): void {
+  if (kind === 'omp') {
+    baseEnv.ORCA_OMP_CODING_AGENT_DIR = overlayDir
+    baseEnv.ORCA_OMP_STATUS_EXTENSION = getPiAgentStatusExtensionPath(overlayDir)
+    if (sourceDir) {
+      // Why: preserve the original OMP root across nested Orca terminals; the
+      // public env var is intentionally restored to the current PTY overlay.
+      baseEnv.ORCA_OMP_SOURCE_AGENT_DIR = sourceDir
+    } else {
+      delete baseEnv.ORCA_OMP_SOURCE_AGENT_DIR
+    }
+    return
+  }
+  baseEnv.ORCA_PI_CODING_AGENT_DIR = overlayDir
+  if (sourceDir) {
+    // Why: preserve the original Pi root across nested Orca terminals; the
+    // public env var is intentionally restored to the current PTY overlay.
+    baseEnv.ORCA_PI_SOURCE_AGENT_DIR = sourceDir
+  } else {
+    delete baseEnv.ORCA_PI_SOURCE_AGENT_DIR
+  }
+}
+
 function mergePtyEnvDeletions(
   existingKeys: string[] | undefined,
   additionalKeys: readonly string[]
@@ -338,9 +391,27 @@ function shouldPrepareClaudeForHostPty(
   isClaudeLaunch: boolean,
   settings: GlobalSettings | undefined
 ): boolean {
-  return (
-    isClaudeLaunch || (isAgentStatusHooksEnabled(settings) && isClaudeRuntimeHomeEnabled(settings))
-  )
+  return isClaudeLaunch || isAgentStatusHooksEnabled(settings)
+}
+
+async function prepareClaudeForRemotePty(
+  connectionId: string | null | undefined,
+  settings: GlobalSettings | undefined
+): Promise<string | null> {
+  if (!connectionId || !isAgentStatusHooksEnabled(settings) || !isRemoteAgentHooksEnabled()) {
+    return null
+  }
+  const provider = getSshFilesystemProvider(connectionId)
+  if (!provider) {
+    return null
+  }
+  try {
+    const preparation = await prepareRemoteClaudeRuntimeHome(provider)
+    return preparation.configDir
+  } catch (error) {
+    console.warn('[claude-runtime-home] Failed to prepare remote Claude runtime home:', error)
+    return null
+  }
 }
 
 function getInheritedAgentHookEnvKeysToDelete(
@@ -433,9 +504,16 @@ export function buildPtyHostEnv(
       baseEnv.SHELL ?? process.env.SHELL
     )
   const piAgentKind = detectPiAgentKindFromCommand(opts.launchCommand)
+  const hasLaunchCommand =
+    typeof opts.launchCommand === 'string' && opts.launchCommand.trim().length > 0
+  const shouldPrepareOmpShadow = piAgentKind === 'omp' || !hasLaunchCommand
   // Why: source shadows are agent-scoped. Trusting the other kind's source
   // would reintroduce the exact Pi/OMP extension-state shadowing this PR fixes.
-  const preexistingPiAgentDir = resolvePiAgentSourceDir(baseEnv, piAgentKind)
+  const preexistingPiAgentDir = resolvePiAgentSourceDir(baseEnv, 'pi')
+  const preexistingOmpAgentDir =
+    piAgentKind === 'omp'
+      ? resolvePiAgentSourceDir(baseEnv, 'omp')
+      : resolveScopedPiAgentSourceDir(baseEnv, 'omp')
 
   if (opts.agentStatusHooksEnabled) {
     // Why: OPENCODE_CONFIG_DIR is a singular path, not a colon-list, so a user
@@ -488,35 +566,29 @@ export function buildPtyHostEnv(
   // should NOT "simplify" id allocation back to a fresh UUID per spawn; that
   // would discard user state on every daemon reconnect.
   if (opts.agentStatusHooksEnabled) {
-    Object.assign(
-      baseEnv,
-      piTitlebarExtensionService.buildPtyEnv(id, preexistingPiAgentDir, piAgentKind)
-    )
-    if (baseEnv.PI_CODING_AGENT_DIR) {
-      // Why: ~/.zshrc can re-export the user's default after spawn; shell-ready
-      // wrappers restore this PTY-scoped value after user startup files run. The
-      // shadow var name is agent-scoped (ORCA_PI_* for Pi, ORCA_OMP_* for OMP)
-      // so an OMP PTY never reads a stale Pi shadow (and vice versa). The
-      // restored target stays `PI_CODING_AGENT_DIR` because that's what the
-      // OMP/Pi binary itself reads.
-      if (piAgentKind === 'omp') {
-        delete baseEnv.ORCA_PI_CODING_AGENT_DIR
-        delete baseEnv.ORCA_PI_SOURCE_AGENT_DIR
-        baseEnv.ORCA_OMP_CODING_AGENT_DIR = baseEnv.PI_CODING_AGENT_DIR
-        if (preexistingPiAgentDir) {
-          // Why: preserve the original OMP root across nested Orca terminals; the
-          // public env var is intentionally restored to the current PTY overlay.
-          baseEnv.ORCA_OMP_SOURCE_AGENT_DIR = preexistingPiAgentDir
+    clearPiAgentShadowEnv(baseEnv, 'pi')
+    clearPiAgentShadowEnv(baseEnv, 'omp')
+    if (piAgentKind === 'pi') {
+      const piEnv = piTitlebarExtensionService.buildPtyEnv(id, preexistingPiAgentDir, 'pi')
+      Object.assign(baseEnv, piEnv)
+      if (piEnv.PI_CODING_AGENT_DIR) {
+        // Why: ~/.zshrc can re-export the user's default after spawn; shell-ready
+        // wrappers restore this PTY-scoped value after user startup files run.
+        baseEnv.PI_CODING_AGENT_DIR = piEnv.PI_CODING_AGENT_DIR
+        exposePiAgentOverlayEnv(baseEnv, 'pi', piEnv.PI_CODING_AGENT_DIR, preexistingPiAgentDir)
+      }
+    }
+
+    if (shouldPrepareOmpShadow) {
+      const ompEnv = piTitlebarExtensionService.buildPtyEnv(id, preexistingOmpAgentDir, 'omp')
+      if (ompEnv.PI_CODING_AGENT_DIR) {
+        if (piAgentKind === 'omp') {
+          // Why: an OMP-launched PTY should default the binary-facing env var to
+          // OMP. Bare shells keep the Pi primary and use the `omp` shell wrapper
+          // to switch only while OMP is running.
+          baseEnv.PI_CODING_AGENT_DIR = ompEnv.PI_CODING_AGENT_DIR
         }
-      } else {
-        delete baseEnv.ORCA_OMP_CODING_AGENT_DIR
-        delete baseEnv.ORCA_OMP_SOURCE_AGENT_DIR
-        baseEnv.ORCA_PI_CODING_AGENT_DIR = baseEnv.PI_CODING_AGENT_DIR
-        if (preexistingPiAgentDir) {
-          // Why: preserve the original Pi root across nested Orca terminals; the
-          // public env var is intentionally restored to the current PTY overlay.
-          baseEnv.ORCA_PI_SOURCE_AGENT_DIR = preexistingPiAgentDir
-        }
+        exposePiAgentOverlayEnv(baseEnv, 'omp', ompEnv.PI_CODING_AGENT_DIR, preexistingOmpAgentDir)
       }
     }
   } else {
@@ -532,6 +604,7 @@ export function buildPtyHostEnv(
       overlay: 'ORCA_OMP_CODING_AGENT_DIR',
       source: 'ORCA_OMP_SOURCE_AGENT_DIR'
     })
+    delete baseEnv.ORCA_OMP_STATUS_EXTENSION
   }
 
   // Why: Codex account switching now materializes auth into an Orca-scoped
@@ -829,9 +902,8 @@ export function registerPtyHandlers(
           isPackaged: app.isPackaged,
           userDataPath: app.getPath('userData'),
           selectedCodexHomePath: getSelectedCodexHomePath?.() ?? null,
-          selectedClaudeConfigDir: isClaudeRuntimeHomeEnabled(settings)
-            ? (baseEnv.ORCA_CLAUDE_CONFIG_DIR ?? baseEnv.CLAUDE_CONFIG_DIR ?? null)
-            : null,
+          selectedClaudeConfigDir:
+            baseEnv.ORCA_CLAUDE_CONFIG_DIR ?? baseEnv.CLAUDE_CONFIG_DIR ?? null,
           // Why: WSL's inner shell cannot use a Windows userData CODEX_HOME.
           // Leave Linux Codex on its native ~/.codex until we own a WSL home.
           skipCodexHomeEnv: ctx?.isWsl === true,
@@ -1129,6 +1201,9 @@ export function registerPtyHandlers(
         !args.connectionId && shouldPrepareClaudeForHostPty(isClaudeLaunch, settings)
       const claudeAuth =
         shouldPrepareClaude && prepareClaudeAuth ? await prepareClaudeAuth({ cwd: args.cwd }) : null
+      const remoteClaudeConfigDir = args.connectionId
+        ? await prepareClaudeForRemotePty(args.connectionId, settings)
+        : null
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
         throw new Error('A Claude account switch is in progress. Try again after it finishes.')
       }
@@ -1143,6 +1218,13 @@ export function registerPtyHandlers(
       let env: Record<string, string> | undefined = claudeAuth
         ? { ...args.env, ...claudeAuth.envPatch }
         : args.env
+      if (remoteClaudeConfigDir) {
+        env = {
+          ...env,
+          CLAUDE_CONFIG_DIR: remoteClaudeConfigDir,
+          ORCA_CLAUDE_CONFIG_DIR: remoteClaudeConfigDir
+        }
+      }
       if (args.preAllocatedHandle) {
         env = { ...env, ORCA_TERMINAL_HANDLE: args.preAllocatedHandle }
       }
@@ -1406,6 +1488,9 @@ export function registerPtyHandlers(
         !args.connectionId && shouldPrepareClaudeForHostPty(isClaudeLaunch, settings)
       const claudeAuth =
         shouldPrepareClaude && prepareClaudeAuth ? await prepareClaudeAuth({ cwd: args.cwd }) : null
+      const remoteClaudeConfigDir = args.connectionId
+        ? await prepareClaudeForRemotePty(args.connectionId, settings)
+        : null
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
         throw new Error('A Claude account switch is in progress. Try again after it finishes.')
       }
@@ -1475,9 +1560,14 @@ export function registerPtyHandlers(
           sshSourceEnv = stripped
         }
       }
-      const baseEnvWithAuth = claudeAuth
-        ? { ...sshSourceEnv, ...claudeAuth.envPatch }
-        : sshSourceEnv
+      let baseEnvWithAuth = claudeAuth ? { ...sshSourceEnv, ...claudeAuth.envPatch } : sshSourceEnv
+      if (remoteClaudeConfigDir) {
+        baseEnvWithAuth = {
+          ...baseEnvWithAuth,
+          CLAUDE_CONFIG_DIR: remoteClaudeConfigDir,
+          ORCA_CLAUDE_CONFIG_DIR: remoteClaudeConfigDir
+        }
+      }
       const spawnPaneKey = baseEnvWithAuth?.ORCA_PANE_KEY
       const parsedSpawnPaneKey = parseValidPaneKey(spawnPaneKey)
       const verifiedPaneKey =

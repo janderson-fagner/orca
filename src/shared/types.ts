@@ -1477,6 +1477,7 @@ export type TuiAgent =
   | 'aug' // Augment/Auggie
   | 'cline' // Cline
   | 'codebuff' // Codebuff
+  | 'command-code' // Command Code
   | 'continue' // Continue
   | 'cursor' // Cursor
   | 'droid' // Factory Droid
@@ -1775,8 +1776,6 @@ export type GlobalSettings = {
   /** Why: disabling must persist so startup does not reinstall global agent
    *  hook entries right after the user removes them from Settings or CLI. */
   agentStatusHooksEnabled: boolean
-  /** Off-by-default migration gate for CLAUDE_CONFIG_DIR based runtime home. */
-  claudeRuntimeHomeEnabled: boolean
   /** When true, Orca requests local awake assertions while hook-reported agents are working. */
   keepComputerAwakeWhileAgentsRun: boolean
   /** Why: macOS terminals must choose between letting Option compose layout
@@ -1799,6 +1798,9 @@ export type GlobalSettings = {
    *  detection, so no visible behavior change. Then we flip this flag to true
    *  and never migrate again. */
   terminalMacOptionAsAltMigrated: boolean
+  /** Controls whether macOS terminal input translates the physical JIS Yen (¥)
+   *  key to a backslash, matching the common terminal expectation for that key. */
+  terminalJISYenToBackslash: boolean
   experimentalMobile: boolean
   /** Auto-restore window for a phone-fit PTY after the last mobile
    *  subscriber leaves. `null` (default) holds the PTY at phone size

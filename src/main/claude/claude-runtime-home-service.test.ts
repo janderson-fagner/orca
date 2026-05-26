@@ -32,7 +32,6 @@ let previousUserDataPath: string | undefined
 function createSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings {
   return {
     agentStatusHooksEnabled: true,
-    claudeRuntimeHomeEnabled: false,
     claudeManagedAccounts: [],
     activeClaudeManagedAccountId: null,
     ...overrides
@@ -81,10 +80,10 @@ afterEach(() => {
 })
 
 describe('ClaudeRuntimeHomeService', () => {
-  it('uses legacy auth prep when the runtime-home flag is disabled', async () => {
+  it('uses legacy auth prep when agent status hooks are disabled', async () => {
     const runtimeAuth = createRuntimeAuth()
     const service = new ClaudeRuntimeHomeService(
-      createStore(createSettings()) as never,
+      createStore(createSettings({ agentStatusHooksEnabled: false })) as never,
       runtimeAuth as never
     )
 
@@ -99,11 +98,7 @@ describe('ClaudeRuntimeHomeService', () => {
     writeFileSync(join(fakeHomeDir, '.claude', 'settings.json'), '{ "model": "haiku" }\n')
     const runtimeAuth = createRuntimeAuth()
     const service = new ClaudeRuntimeHomeService(
-      createStore(
-        createSettings({
-          claudeRuntimeHomeEnabled: true
-        })
-      ) as never,
+      createStore(createSettings()) as never,
       runtimeAuth as never
     )
 

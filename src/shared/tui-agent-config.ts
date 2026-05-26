@@ -196,6 +196,16 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     expectedProcess: 'codebuff',
     promptInjectionMode: 'stdin-after-start'
   },
+  'command-code': {
+    // Why: `npm i -g command-code` installs two binaries — `command-code` and
+    // the shorter alias `cmd`. Use the full `command-code` name so detection
+    // does not collide with Windows' built-in `cmd.exe` shell, which
+    // agent-process-recognition normalizes to `cmd` after stripping the .exe.
+    detectCmd: 'command-code',
+    launchCmd: 'command-code',
+    expectedProcess: 'command-code',
+    promptInjectionMode: 'stdin-after-start'
+  },
   continue: {
     detectCmd: 'continue',
     launchCmd: 'continue',

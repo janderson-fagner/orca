@@ -1,4 +1,3 @@
-import type { GlobalSettings } from '../../shared/types'
 import type {
   ClaudeRuntimeAuthPreparation,
   ClaudeRuntimeAuthService
@@ -23,12 +22,6 @@ export type ClaudeRuntimeHomePreparation =
       auth: ClaudeRuntimeAuthPreparation
     }
 
-export function isClaudeRuntimeHomeEnabled(
-  settings: Pick<GlobalSettings, 'claudeRuntimeHomeEnabled'> | null | undefined
-): boolean {
-  return settings?.claudeRuntimeHomeEnabled === true
-}
-
 export class ClaudeRuntimeHomeService {
   constructor(
     private readonly store: Store,
@@ -39,7 +32,7 @@ export class ClaudeRuntimeHomeService {
     input: { cwd?: string } = {}
   ): Promise<ClaudeRuntimeHomePreparation> {
     const settings = this.store.getSettings()
-    if (!isClaudeRuntimeHomeEnabled(settings) || settings.agentStatusHooksEnabled === false) {
+    if (settings.agentStatusHooksEnabled === false) {
       return {
         mode: 'legacy',
         reason: 'disabled',
