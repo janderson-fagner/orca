@@ -325,7 +325,8 @@ describe('source-control AI resolution', () => {
       customAgentCommand: 'claude',
       instructionsByOperation: {
         commitMessage: 'Legacy commit prompt',
-        pullRequest: 'Global PR style'
+        pullRequest: 'Global PR style',
+        branchName: 'Legacy commit prompt'
       }
     })
     expect(merged.modelOverridesByOperation?.commitMessage).toEqual({

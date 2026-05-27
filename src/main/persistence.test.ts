@@ -865,7 +865,8 @@ describe('Store', () => {
       customAgentCommand: 'claude',
       instructionsByOperation: {
         commitMessage: 'Rollback commit prompt',
-        pullRequest: 'Preserve PR prompt'
+        pullRequest: 'Preserve PR prompt',
+        branchName: 'Rollback commit prompt'
       },
       prCreationDefaults: {
         draft: true,
@@ -1785,7 +1786,8 @@ describe('Store', () => {
       selectedThinkingByModel: {},
       customAgentCommand: 'claude',
       instructionsByOperation: {
-        commitMessage: 'Legacy settings update'
+        commitMessage: 'Legacy settings update',
+        branchName: 'Legacy settings update'
       }
     })
     expect(updated.sourceControlAi?.modelOverridesByOperation?.commitMessage).toEqual({

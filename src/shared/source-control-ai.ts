@@ -399,6 +399,7 @@ export function mergeLegacyCommitMessageAiIntoSourceControlAi(
         instructionsByOperation: {
           ...base.instructionsByOperation,
           commitMessage: legacy.customPrompt ?? '',
+          branchName: legacy.customPrompt ?? '',
           ...(options.pullRequestInstructionsFromLegacy
             ? { pullRequest: legacy.customPrompt ?? '' }
             : {})
@@ -422,6 +423,7 @@ export function mergeLegacyCommitMessageAiIntoSourceControlAi(
       instructionsByOperation: {
         ...base.instructionsByOperation,
         commitMessage: legacy.customPrompt ?? '',
+        branchName: legacy.customPrompt ?? '',
         ...(options.pullRequestInstructionsFromLegacy
           ? { pullRequest: legacy.customPrompt ?? '' }
           : {})
