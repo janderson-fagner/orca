@@ -113,15 +113,11 @@ const DeleteWorktreeDialog = React.memo(function DeleteWorktreeDialog() {
     !isBatchDelete && modalData.allowSkipConfirm !== false && childWorkspaceCount === 0
   const [dontAskAgain, setDontAskAgain] = useState(false)
 
-  // Why: the checkbox is a one-shot intent captured inside the dialog — when
-  // the dialog closes (cancel, delete, or esc) we reset it so the next open
-  // starts unchecked. Without this, toggling the box and cancelling would
-  // silently re-surface the checked state on the next delete.
-  useEffect(() => {
-    if (!isOpen) {
-      setDontAskAgain(false)
-    }
-  }, [isOpen])
+  if (!isOpen && dontAskAgain) {
+    // Why: this checkbox is a one-shot dialog intent; reset it as soon as the
+    // dialog is closed so a later delete never inherits a cancelled choice.
+    setDontAskAgain(false)
+  }
 
   useEffect(() => {
     if (isOpen && worktreeIds.length > 0 && worktrees.length === 0 && !isDeleting) {
