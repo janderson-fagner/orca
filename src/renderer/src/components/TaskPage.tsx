@@ -2175,19 +2175,18 @@ export default function TaskPage(): React.JSX.Element {
   const [gitlabTodos, setGitlabTodos] = useState<GitLabTodo[]>([])
   const [gitlabTodosLoading, setGitlabTodosLoading] = useState(false)
 
-  // Why: Issues and MRs expose different filter sets. Reset before fetching
-  // so a stale chip cannot become an invalid glab CLI flag.
-  useEffect(() => {
-    const filterIsValid =
-      gitlabView === 'issues'
-        ? isGitLabIssueFilter(gitlabFilter)
-        : gitlabView === 'mrs'
-          ? isGitLabMRFilter(gitlabFilter)
-          : true
-    if (!filterIsValid) {
-      setGitlabFilter('opened')
-    }
-  }, [gitlabView, gitlabFilter])
+  const gitlabFilterIsValid =
+    gitlabView === 'issues'
+      ? isGitLabIssueFilter(gitlabFilter)
+      : gitlabView === 'mrs'
+        ? isGitLabMRFilter(gitlabFilter)
+        : true
+  const activeGitlabFilter = gitlabFilterIsValid ? gitlabFilter : 'opened'
+  // Why: Issues and MRs expose different filter sets; repair before commit so
+  // fetch Effects never issue `glab` with a stale filter from the other view.
+  if (!gitlabFilterIsValid) {
+    setGitlabFilter('opened')
+  }
 
   const displayedGitLabItems = useMemo(() => {
     if (gitlabView === 'issues') {
@@ -2679,9 +2678,9 @@ export default function TaskPage(): React.JSX.Element {
       return
     }
     const activeIssueFilter =
-      gitlabView === 'issues' && isGitLabIssueFilter(gitlabFilter) ? gitlabFilter : null
+      gitlabView === 'issues' && isGitLabIssueFilter(activeGitlabFilter) ? activeGitlabFilter : null
     const activeMRFilter =
-      gitlabView === 'mrs' && isGitLabMRFilter(gitlabFilter) ? gitlabFilter : null
+      gitlabView === 'mrs' && isGitLabMRFilter(activeGitlabFilter) ? activeGitlabFilter : null
     if (
       (gitlabView === 'issues' && !activeIssueFilter) ||
       (gitlabView === 'mrs' && !activeMRFilter)
@@ -2778,7 +2777,7 @@ export default function TaskPage(): React.JSX.Element {
       stale = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedReposKey encodes the only selectedRepos fields read above; keying off the array ref would re-run on every parent render.
-  }, [taskSource, gitlabView, gitlabFilter, gitlabRefreshNonce, selectedReposKey])
+  }, [taskSource, gitlabView, activeGitlabFilter, gitlabRefreshNonce, selectedReposKey])
 
   // Why: Todos fetch lives in its own effect — different trigger
   // condition from the project view (no chip filter dependence) and a
@@ -4917,7 +4916,7 @@ export default function TaskPage(): React.JSX.Element {
                                   ? GITLAB_ISSUE_FILTERS
                                   : GITLAB_MR_FILTERS
                                 ).map(({ id, label }) => {
-                                  const active = gitlabFilter === id
+                                  const active = activeGitlabFilter === id
                                   return (
                                     <button
                                       key={id}
