@@ -5114,10 +5114,17 @@ export default function GitHubItemDialog({
   const [localState, setLocalState] = useState<GitHubWorkItem['state']>(workItem?.state ?? 'open')
   const [localLabels, setLocalLabels] = useState<string[]>(workItem?.labels ?? [])
   const [linkCopied, setLinkCopied] = useState(false)
+  const linkCopiedResetTimerRef = useRef<number | null>(null)
   const workItemId = workItem?.id
   const workItemState = workItem?.state
   const workItemLabels = workItem?.labels
   const effectiveRepoId = repoId ?? workItem?.repoId ?? null
+  const clearLinkCopiedResetTimer = useCallback((): void => {
+    if (linkCopiedResetTimerRef.current !== null) {
+      window.clearTimeout(linkCopiedResetTimerRef.current)
+      linkCopiedResetTimerRef.current = null
+    }
+  }, [])
 
   // Why: the cache key has to include the issue source preference so a user
   // toggling between origin/upstream for the same issue number doesn't read
@@ -5382,16 +5389,10 @@ export default function GitHubItemDialog({
   const [pendingViewedPaths, setPendingViewedPaths] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
+    clearLinkCopiedResetTimer()
     setLinkCopied(false)
-  }, [workItemId])
-
-  useEffect(() => {
-    if (!linkCopied) {
-      return
-    }
-    const handle = window.setTimeout(() => setLinkCopied(false), 1500)
-    return () => window.clearTimeout(handle)
-  }, [linkCopied])
+    return clearLinkCopiedResetTimer
+  }, [clearLinkCopiedResetTimer, workItemId])
 
   const handleCopyWorkItemLink = useCallback(async (): Promise<void> => {
     if (!workItem) {
@@ -5401,12 +5402,17 @@ export default function GitHubItemDialog({
       // Why: Electron's clipboard IPC is reliable even when browser clipboard
       // APIs lose focus/activation inside nested overlay surfaces.
       await window.api.ui.writeClipboardText(workItem.url)
+      clearLinkCopiedResetTimer()
       setLinkCopied(true)
+      linkCopiedResetTimerRef.current = window.setTimeout(() => {
+        linkCopiedResetTimerRef.current = null
+        setLinkCopied(false)
+      }, 1500)
       toast.success('GitHub link copied')
     } catch {
       toast.error('Failed to copy GitHub link')
     }
-  }, [workItem])
+  }, [clearLinkCopiedResetTimer, workItem])
 
   const appendOptimisticComment = useCallback(
     (comment: PRComment) => {
