@@ -57,12 +57,12 @@ export function useMobileDictation(options: UseMobileDictationOptions): UseMobil
   const generationRef = useRef(0)
   const finishingIdRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    clientRef.current = client
-    enabledRef.current = enabled
-    onTranscriptRef.current = onTranscript
-    onErrorRef.current = onError
-  }, [client, enabled, onTranscript, onError])
+  // Native audio events and stable start/stop callbacks read these before
+  // passive Effects flush, so keep the live options current during render.
+  clientRef.current = client
+  enabledRef.current = enabled
+  onTranscriptRef.current = onTranscript
+  onErrorRef.current = onError
 
   const reportError = useCallback((err: unknown) => {
     const normalized = err instanceof Error ? err : new Error(String(err))
