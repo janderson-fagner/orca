@@ -224,6 +224,14 @@ export default function CombinedDiffViewer({
     }
   }, [settings?.combinedDiffFileTreeVisibleByDefault])
 
+  useEffect(() => {
+    return () => {
+      if (notesCopiedResetTimerRef.current !== null) {
+        window.clearTimeout(notesCopiedResetTimerRef.current)
+      }
+    }
+  }, [])
+
   const setFileTreeCollapsed = useCallback((collapsed: boolean) => {
     combinedDiffFileTreeCollapsedPreference = collapsed
     setFileTreeCollapsedState(collapsed)
