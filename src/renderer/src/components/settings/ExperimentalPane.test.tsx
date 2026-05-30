@@ -10,15 +10,12 @@ vi.mock('../../store', () => ({
 }))
 
 describe('ExperimentalPane', () => {
-  it('renders compact worktree cards as an off-by-default experimental switch', () => {
+  it('does not expose compact worktree cards as an experimental switch', () => {
     const markup = renderToStaticMarkup(
       <ExperimentalPane settings={getDefaultSettings('/tmp')} updateSettings={vi.fn()} />
     )
 
-    expect(markup).toContain('Compact worktree cards')
-    expect(markup).toContain('aria-checked="false"')
-    expect(markup).toContain('Collapses a card only when its second line would be empty or repeat')
-    expect(markup).toContain('different branch')
-    expect(EXPERIMENTAL_SEARCH_ENTRY.compactWorktreeCards.keywords).toContain('metadata')
+    expect(markup).not.toContain('Compact worktree cards')
+    expect(Object.keys(EXPERIMENTAL_SEARCH_ENTRY)).not.toContain('compactWorktreeCards')
   })
 })

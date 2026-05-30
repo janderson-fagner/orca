@@ -279,7 +279,6 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalActivity: false,
     experimentalActivityDefaultedOffForAllUsers: true,
     experimentalTerminalAttention: false,
-    experimentalCompactWorktreeCards: false,
     experimentalWorktreeSymlinks: false,
     experimentalUnifiedNewTabLauncher: false,
     // Why: local desktop remains the default server until the user explicitly

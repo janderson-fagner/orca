@@ -19,7 +19,8 @@ let worktreeCardProperties: WorktreeCardProperty[] = ['status', 'unread']
 let tabsByWorktree: Record<string, { id: string }[]> = {}
 let ptyIdsByTabId: Record<string, string[]> = {}
 let browserTabsByWorktree: Record<string, { id: string }[]> = {}
-let settings: Partial<GlobalSettings> | null = null
+let settings: (Partial<GlobalSettings> & { experimentalCompactWorktreeCards?: boolean }) | null =
+  null
 let workspacePortScan: WorkspacePortScanResult | null = null
 let workspaceDeleteModifierPressed = false
 let WorktreeCard: typeof WorktreeCardComponent
@@ -272,7 +273,7 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).toContain('text-[11px] text-muted-foreground truncate leading-none')
   })
 
-  it('uses the pre-compact unread lane and primary badge when compact cards are disabled', () => {
+  it('uses title-row unread and primary controls by default', () => {
     worktreeCardProperties = ['status', 'unread']
 
     const markup = renderToStaticMarkup(
@@ -288,12 +289,12 @@ describe('WorktreeCard quick actions', () => {
       />
     )
 
-    expect(markup).toContain('primary')
-    expect(markup).not.toContain('aria-label="Primary worktree"')
+    expect(markup).toContain('aria-label="Primary worktree"')
+    expect(markup).not.toContain('>primary<')
     expect(markup).not.toContain('data-worktree-card-meta-row=""')
   })
 
-  it('keeps the non-compact metadata row for details after hiding a duplicate branch', () => {
+  it('keeps title-row details after hiding a duplicate branch', () => {
     worktreeCardProperties = ['comment']
 
     const markup = renderToStaticMarkup(
@@ -309,12 +310,12 @@ describe('WorktreeCard quick actions', () => {
       />
     )
 
-    expect(markup).toContain('data-worktree-card-meta-row=""')
+    expect(markup).not.toContain('data-worktree-card-meta-row=""')
     expect(markup).toContain('aria-label="Workspace metadata"')
     expect(markup).not.toContain('text-[11px] text-muted-foreground truncate leading-none')
   })
 
-  it('keeps the non-compact metadata row for ports after hiding a duplicate branch', () => {
+  it('keeps title-row ports after hiding a duplicate branch', () => {
     worktreeCardProperties = ['ports']
     const worktree = makeWorktree({ displayName: 'quick-action', branch: 'quick-action' })
     workspacePortScan = {
@@ -345,14 +346,14 @@ describe('WorktreeCard quick actions', () => {
       <WorktreeCard worktree={worktree} repo={makeRepo()} isActive={false} hideRepoBadge />
     )
 
-    expect(markup).toContain('data-worktree-card-meta-row=""')
+    expect(markup).not.toContain('data-worktree-card-meta-row=""')
     expect(markup).toContain('aria-label="1 live port"')
     expect(markup).not.toContain('text-[11px] text-muted-foreground truncate leading-none')
   })
 
-  it('moves unread and primary into the title row when compact cards are enabled', () => {
+  it('ignores stale disabled compact-card settings from older profiles', () => {
     worktreeCardProperties = ['status', 'unread']
-    settings = { experimentalCompactWorktreeCards: true }
+    settings = { experimentalCompactWorktreeCards: false }
 
     const markup = renderToStaticMarkup(
       <WorktreeCard

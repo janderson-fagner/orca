@@ -122,7 +122,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const fetchIssue = useAppStore((s) => s.fetchIssue)
   const fetchLinearIssue = useAppStore((s) => s.fetchLinearIssue)
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
-  const compactCards = settings?.experimentalCompactWorktreeCards === true
   const handleEditIssue = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -562,12 +561,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
     isFolder ||
     (!!conflictOperation && conflictOperation !== 'unknown')
   const showUnreadQuickAction = cardProps.includes('unread')
-  const showTitleRowUnread = compactCards && showUnreadQuickAction
-  const showLeftUnread = !compactCards && showUnreadQuickAction
-  const showTitleRowPrimary = compactCards && worktree.isMainWorktree && !isFolder
-  const showTitleRowDetails = compactCards && (hasDetails || hasPorts)
-  const showMetaRowDetails = !compactCards && (hasDetails || hasPorts)
-  const hasMetaRow = hasMetadataBadge || showBranch || cacheStartedAt != null || showMetaRowDetails
+  const showTitleRowUnread = showUnreadQuickAction
+  const showTitleRowPrimary = worktree.isMainWorktree && !isFolder
+  const showTitleRowDetails = hasDetails || hasPorts
+  const hasMetaRow = hasMetadataBadge || showBranch || cacheStartedAt != null
   const showHeaderActions =
     showTitleRowUnread || showTitleRowPrimary || showTitleRowDetails || showDeleteQuickAction
 
@@ -663,16 +660,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
         </div>
       )}
 
-      {compactCards && cardProps.includes('status') ? (
+      {/* Why: keep this column to just the dot. Stacking the unread toggle here
+           sets a height floor that pads otherwise single-line cards. */}
+      {cardProps.includes('status') ? (
         <WorktreeActivityStatusIndicator worktreeId={worktree.id} className="mt-[2px] shrink-0" />
-      ) : cardProps.includes('status') || showLeftUnread ? (
-        <div className="flex flex-col items-center justify-start pt-[2px] gap-2 shrink-0">
-          {cardProps.includes('status') && (
-            <WorktreeActivityStatusIndicator worktreeId={worktree.id} />
-          )}
-
-          {showLeftUnread && unreadQuickAction}
-        </div>
       ) : null}
 
       {/* Content area */}
@@ -711,22 +702,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
               onEditingChange={setTitleRenaming}
               onRename={handleRenameTitle}
             />
-
-            {!compactCards && worktree.isMainWorktree && !isFolder && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge
-                    variant="outline"
-                    className="h-[16px] px-1.5 text-[10px] font-medium rounded shrink-0 leading-none text-foreground/70 border-foreground/20 bg-foreground/[0.06]"
-                  >
-                    primary
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent side="right" sideOffset={8}>
-                  Primary worktree (original clone directory)
-                </TooltipContent>
-              </Tooltip>
-            )}
 
             {worktree.isSparse && (
               <Tooltip>
@@ -844,12 +819,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
                 <CacheTimer startedAt={cacheStartedAt} ttlMs={cacheTtlMs} />
               )}
             </div>
-
-            {showMetaRowDetails && (
-              <div className="ml-auto flex shrink-0 items-center gap-1 pr-1.5">
-                {detailsAndPorts}
-              </div>
-            )}
           </div>
         )}
 
