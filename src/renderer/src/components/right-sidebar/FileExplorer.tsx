@@ -111,13 +111,6 @@ function FileExplorerInner(): React.JSX.Element {
     copyPathsForNode
   } = useFileExplorerSelection(visibleFlatRows, isMac)
 
-  const clearFlashTimeout = useCallback(() => {
-    if (flashTimeoutRef.current !== null) {
-      window.clearTimeout(flashTimeoutRef.current)
-      flashTimeoutRef.current = null
-    }
-  }, [])
-
   const entries = useMemo(
     () => (activeWorktreeId ? (gitStatusByWorktree[activeWorktreeId] ?? []) : []),
     [activeWorktreeId, gitStatusByWorktree]
@@ -193,8 +186,6 @@ function FileExplorerInner(): React.JSX.Element {
       }
     }
   }, [sshConnectedGeneration, visibleWorktreePath]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => clearFlashTimeout, [clearFlashTimeout])
 
   useEffect(() => {
     if (!visibleWorktreePath) {
