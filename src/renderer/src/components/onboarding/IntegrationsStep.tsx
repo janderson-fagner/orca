@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ExternalLink, Github, Loader2, Terminal } from 'lucide-react'
 import { LinearIcon } from '@/components/icons/LinearIcon'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { useAppStore } from '@/store'
 import { IntegrationStatusPill } from '@/components/integration-status-pill'
 import { cn } from '@/lib/utils'
+import { useMountedRef } from '@/hooks/useMountedRef'
 import { OnboardingInlineCommandTerminal } from './OnboardingInlineCommandTerminal'
 
 type GitHubSetupState = 'checking' | 'connected' | 'not-installed' | 'not-authenticated'
@@ -123,14 +124,7 @@ export function LinearRow(props: { compact?: boolean } = {}): React.JSX.Element 
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [connectState, setConnectState] = useState<'idle' | 'connecting' | 'error'>('idle')
   const [connectError, setConnectError] = useState<string | null>(null)
-  const mountedRef = useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
+  const mountedRef = useMountedRef()
 
   const workspaceCount = linearStatus.workspaces?.length ?? (linearStatus.connected ? 1 : 0)
 
