@@ -1096,7 +1096,7 @@ function decryptAes256Gcm(payload: Buffer, key: Buffer): Buffer | null {
 // Safari binary cookie parser
 // ---------------------------------------------------------------------------
 
-function decodeSafariBinaryCookies(buffer: Buffer): ValidatedCookie[] {
+export function decodeSafariBinaryCookies(buffer: Buffer): ValidatedCookie[] {
   if (buffer.length < 8) {
     return []
   }
@@ -1119,7 +1119,11 @@ function decodeSafariBinaryCookies(buffer: Buffer): ValidatedCookie[] {
   for (const pageSize of pageSizes) {
     const page = buffer.subarray(cursor, cursor + pageSize)
     cursor += pageSize
-    cookies.push(...decodeSafariPage(page))
+    // Why: a single Safari cookie page can contain enough entries to exceed
+    // V8's argument limit if appended via spread.
+    for (const cookie of decodeSafariPage(page)) {
+      cookies.push(cookie)
+    }
   }
   return cookies
 }
