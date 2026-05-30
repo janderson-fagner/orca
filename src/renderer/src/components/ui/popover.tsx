@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Popover as PopoverPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
+import { updatePopoverContentRef } from './popover-content-ref'
 
 function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -42,14 +43,7 @@ function PopoverContent({
     (node: HTMLDivElement | null) => {
       // Why: the wheel shim schedules frames against the content node; cancel
       // them when Radix removes that node instead of from a passive Effect.
-      if (node === null) {
-        cancelWheelFrames()
-      }
-      if (typeof forwardedRef === 'function') {
-        forwardedRef(node)
-      } else if (forwardedRef) {
-        forwardedRef.current = node
-      }
+      return updatePopoverContentRef(forwardedRef, node, cancelWheelFrames)
     },
     [cancelWheelFrames, forwardedRef]
   )
