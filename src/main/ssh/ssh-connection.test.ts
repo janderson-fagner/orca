@@ -12,6 +12,8 @@ let connectErrorMessage = ''
 let destroyErrorMessage = ''
 let connectSequence: ('ready' | Error)[] = []
 let execBehavior: 'callback' | 'pending' = 'callback'
+let pendingExecCallback: ((err: Error | undefined, channel: unknown) => void) | null = null
+let sftpBehavior: 'callback' | 'pending' = 'callback'
 
 type MockSshClient = {
   setNoDelay: ReturnType<typeof vi.fn>
@@ -85,11 +87,17 @@ vi.mock('ssh2', () => {
     exec(cmd: string, cb: (err: Error | undefined, channel: unknown) => void) {
       this.lastExecCommand = cmd
       if (execBehavior === 'pending') {
+        pendingExecCallback = cb
         return
       }
       cb(undefined, {})
     }
-    sftp() {}
+    sftp(cb: (err: Error | undefined, channel: unknown) => void) {
+      if (sftpBehavior === 'pending') {
+        return
+      }
+      cb(undefined, {})
+    }
   }
   return {
     BaseAgent: MockBaseAgent,
@@ -178,6 +186,8 @@ describe('SshConnection', () => {
     destroyErrorMessage = ''
     connectSequence = []
     execBehavior = 'callback'
+    pendingExecCallback = null
+    sftpBehavior = 'callback'
     clientInstances = []
     spawnSystemSshCommandMock.mockReset()
     spawnSystemSshCommandMock.mockImplementation(() => createSystemCommandChannel())
@@ -565,6 +575,48 @@ describe('SshConnection', () => {
       const outcome = await Promise.race([outcomePromise, Promise.resolve('pending')])
 
       expect(outcome).toBe('SSH exec channel timed out')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a late exec callback after the channel-open timeout settles', async () => {
+    const conn = new SshConnection(createTarget(), createCallbacks())
+    await conn.connect()
+    execBehavior = 'pending'
+
+    vi.useFakeTimers()
+    try {
+      const outcomePromise = conn
+        .exec('printf ready')
+        .then(() => 'opened')
+        .catch((error: Error) => error.message)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      pendingExecCallback?.(undefined, {})
+
+      await expect(outcomePromise).resolves.toBe('SSH exec channel timed out')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('times out when ssh2 never opens an SFTP channel', async () => {
+    const conn = new SshConnection(createTarget(), createCallbacks())
+    await conn.connect()
+    sftpBehavior = 'pending'
+
+    vi.useFakeTimers()
+    try {
+      const outcomePromise = conn
+        .sftp()
+        .then(() => 'opened')
+        .catch((error: Error) => error.message)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      const outcome = await Promise.race([outcomePromise, Promise.resolve('pending')])
+
+      expect(outcome).toBe('SSH SFTP channel timed out')
     } finally {
       vi.useRealTimers()
     }
