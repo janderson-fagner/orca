@@ -174,7 +174,7 @@ class RemoteRuntimeTerminalMultiplexer {
     if (this.connectPromise) {
       return this.connectPromise
     }
-    this.connectPromise = new Promise<void>((resolve, reject) => {
+    const connectPromise = new Promise<void>((resolve, reject) => {
       this.readyResolver = resolve
       this.readyRejecter = reject
       void window.api.runtimeEnvironments
@@ -193,16 +193,26 @@ class RemoteRuntimeTerminalMultiplexer {
           }
         )
         .then((subscription) => {
+          if (this.connectPromise !== connectPromise || (!this.ready && !this.readyRejecter)) {
+            // Why: close/error can arrive before subscribe() resolves because
+            // preload listens before ipcMain.handle() returns. The multiplexer
+            // may already be released; do not retain the late handle.
+            subscription.unsubscribe()
+            return
+          }
           this.subscription = subscription
           this.resolveReadyIfConnected()
         })
         .catch((error) => {
-          this.connectPromise = null
-          this.readyResolver = null
-          this.readyRejecter = null
+          if (this.connectPromise === connectPromise) {
+            this.connectPromise = null
+            this.readyResolver = null
+            this.readyRejecter = null
+          }
           reject(error instanceof Error ? error : new Error(String(error)))
         })
     })
+    this.connectPromise = connectPromise
     return this.connectPromise
   }
 

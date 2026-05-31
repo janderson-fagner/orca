@@ -46,6 +46,8 @@ describe('remote runtime terminal data subscriptions', () => {
   let callbacks: {
     onResponse: (response: unknown) => void
     onBinary?: (bytes: Uint8Array<ArrayBufferLike>) => void
+    onError?: (error: { message: string }) => void
+    onClose?: () => void
   } | null = null
 
   beforeEach(() => {
@@ -155,5 +157,35 @@ describe('remote runtime terminal data subscriptions', () => {
 
     expect(sendBinary).not.toHaveBeenCalled()
     expect(_getRemoteRuntimeTerminalMultiplexerCountForTest()).toBe(0)
+  })
+
+  it('unsubscribes a late subscription handle after pre-resolution transport close', async () => {
+    let resolveSubscribe!: (handle: {
+      unsubscribe: () => void
+      sendBinary: typeof sendBinary
+    }) => void
+    runtimeSubscribe.mockImplementationOnce((_args: unknown, nextCallbacks: typeof callbacks) => {
+      callbacks = nextCallbacks
+      callbacks?.onClose?.()
+      return new Promise((resolve) => {
+        resolveSubscribe = resolve
+      })
+    })
+
+    const subscriptionPromise = subscribeToRuntimeTerminalData(
+      { activeRuntimeEnvironmentId: 'env-fallback' },
+      'remote:env-1@@terminal-1',
+      'watcher-1',
+      vi.fn()
+    )
+
+    await expect(subscriptionPromise).rejects.toThrow('Remote Orca runtime closed the connection.')
+    expect(_getRemoteRuntimeTerminalMultiplexerCountForTest()).toBe(0)
+    expect(unsubscribe).not.toHaveBeenCalled()
+
+    resolveSubscribe({ unsubscribe, sendBinary })
+    await Promise.resolve()
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
   })
 })
