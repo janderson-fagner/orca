@@ -51,10 +51,22 @@ export default function PairScanScreen() {
       return
     }
     // Why: pairing attempts can outlive the visible route; dispose them when
-    // the scan screen detaches without a passive cleanup-only Effect.
+    // the scan screen detaches without a passive cleanup-only Effect. The
+    // dispose is deferred to a microtask because a permission-state flip
+    // unmounts one conditional branch and mounts another in the same
+    // commit — the unmounting branch's ref(null) fires before the new
+    // branch's ref(node), and we must not tear down an in-flight pairing
+    // attempt for what is really a sibling-branch swap inside the same
+    // mounted screen.
     mountedRef.current = false
-    activePairingAttemptRef.current?.dispose()
-    activePairingAttemptRef.current = null
+    const attempt = activePairingAttemptRef.current
+    queueMicrotask(() => {
+      if (mountedRef.current) return
+      attempt?.dispose()
+      if (activePairingAttemptRef.current === attempt) {
+        activePairingAttemptRef.current = null
+      }
+    })
   }, [])
 
   const handleBarCodeScanned = useCallback(
