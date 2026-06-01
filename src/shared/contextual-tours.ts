@@ -74,7 +74,7 @@ export const CONTEXTUAL_TOURS = [
     steps: [
       {
         title: 'Work side by side',
-        body: 'Run more than one thread of work at once. Open a second pane with {terminal.splitRight}, or right-click the pane for split options.',
+        body: 'Run more than one thread of work at once. Open a second terminal pane with {terminal.splitRight}, or right-click the pane for split options.',
         targetSelector:
           '[data-contextual-tour-target="terminal-pane-split-target"], [data-contextual-tour-target="workspace-agent-terminal-tip"]',
         requiredForStart: true,

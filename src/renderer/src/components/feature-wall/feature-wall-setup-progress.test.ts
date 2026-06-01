@@ -30,10 +30,11 @@ function makeInput(
 
 function makeWorktree(
   id: string,
-  options: { createdAt?: number; isMainWorktree?: boolean } = {}
+  options: { createdAt?: number; isMainWorktree?: boolean; path?: string | null } = {}
 ): Worktree {
   return {
     id,
+    path: options.path === null ? undefined : (options.path ?? `/repo/${id}`),
     createdAt: options.createdAt,
     isMainWorktree: options.isMainWorktree ?? false
   } as unknown as Worktree
@@ -197,7 +198,7 @@ describe('getFeatureWallSetupProgress', () => {
         worktreesByRepo: {
           'repo-1': [
             makeWorktree('main', { isMainWorktree: true }),
-            makeWorktree('ssh-restored-placeholder')
+            makeWorktree('ssh-restored-placeholder', { path: null })
           ]
         }
       })
@@ -206,14 +207,11 @@ describe('getFeatureWallSetupProgress', () => {
     expect(progress.stepDone['two-worktrees']).toBe(false)
   })
 
-  it('marks the step complete once the user creates a worktree beyond the main checkout', () => {
+  it('marks the step complete once a non-main worktree exists beyond the main checkout', () => {
     const progress = getFeatureWallSetupProgress(
       makeInput({
         worktreesByRepo: {
-          'repo-1': [
-            makeWorktree('main', { isMainWorktree: true }),
-            makeWorktree('worktree-1', { createdAt: 1_700_000_000_000 })
-          ]
+          'repo-1': [makeWorktree('main', { isMainWorktree: true }), makeWorktree('worktree-1')]
         }
       })
     )

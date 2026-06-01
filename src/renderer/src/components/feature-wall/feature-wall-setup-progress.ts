@@ -56,14 +56,14 @@ function hasSplitTerminalInAnyWorktree(input: FeatureWallSetupProgressInput): bo
   return false
 }
 
-function countCreatedWorktrees(worktreesByRepo: Record<string, Worktree[]>): number {
-  // Why: only count confirmed Orca-created worktrees. SSH restore can hydrate
-  // temporary non-main placeholders before the relay sends full worktree data.
+function countAvailableNonMainWorktrees(worktreesByRepo: Record<string, Worktree[]>): number {
+  // Why: imported git worktrees count as real parallel-work capacity, but
+  // partially hydrated placeholders can appear before a worktree path is known.
   return Object.values(worktreesByRepo).reduce(
     (sum, worktrees) =>
       sum +
       worktrees.filter(
-        (worktree) => !worktree.isMainWorktree && typeof worktree.createdAt === 'number'
+        (worktree) => !worktree.isMainWorktree && typeof worktree.path === 'string' && worktree.path
       ).length,
     0
   )
@@ -85,7 +85,7 @@ export function getFeatureWallSetupProgress(
       input.settings?.notifications.enabled === true &&
       input.settings.notifications.agentTaskComplete === true,
     'split-terminal': hasSplitTerminalInAnyWorktree(input),
-    'two-worktrees': countCreatedWorktrees(input.worktreesByRepo) >= 1,
+    'two-worktrees': countAvailableNonMainWorktrees(input.worktreesByRepo) >= 1,
     'task-sources': input.hasConnectedTaskSource,
     'agent-capabilities': agentCapabilitiesDone,
     'setup-script': input.hasSetupScript

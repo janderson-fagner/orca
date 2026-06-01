@@ -25,8 +25,8 @@ export type FeatureWallSetupSectionId = 'parallel-work' | 'setup'
 export const FEATURE_WALL_SETUP_STEPS: readonly FeatureWallSetupStep[] = [
   {
     id: 'split-terminal',
-    name: 'Open a second terminal',
-    subtitle: 'Open a second terminal',
+    name: 'Split a terminal',
+    subtitle: 'Split a terminal',
     description:
       'Split the terminal to run two things at once — a second agent, a dev server, or a REPL.'
   },
