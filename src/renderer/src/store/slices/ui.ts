@@ -647,7 +647,7 @@ export type UISlice = {
   featureTipsSeenIds: FeatureTipId[]
   markFeatureTipsSeen: (ids: FeatureTipId[]) => void
   featureInteractions: FeatureInteractionState
-  recordFeatureInteraction: (id: FeatureInteractionId) => void
+  recordFeatureInteraction: (id: FeatureInteractionId) => Promise<void>
   contextualToursSeenIds: ContextualTourId[]
   contextualToursAutoEligible: boolean | null
   activeContextualTourId: ContextualTourId | null
@@ -1241,6 +1241,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   featureInteractions: {},
   recordFeatureInteraction: (id) => {
     let tourProgression: ReturnType<typeof getContextualTourProgressionForFeatureInteraction> = null
+    let persistPromise = Promise.resolve()
     set((s) => {
       if (!s.persistedUIReady) {
         return s
@@ -1270,7 +1271,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
               }))
             })
           : window.api.ui.set({ featureInteractions: next })
-        persist.catch(console.error)
+        persistPromise = persist.catch(console.error)
       }
       if (tourProgression === 'reveal-sidebar-and-advance') {
         // Why: the split can be triggered by keyboard/menu paths while the
@@ -1288,6 +1289,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     } else if (tourProgression === 'advance') {
       get().advanceContextualTour()
     }
+    return persistPromise
   },
   contextualToursSeenIds: [],
   contextualToursAutoEligible: null,

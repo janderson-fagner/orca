@@ -821,6 +821,35 @@ describe('web UI preload API', () => {
       ])
     )
   })
+
+  it('rejects paired web computer-use status failures instead of marking the helper unavailable', async () => {
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          if (method === 'computer.permissionsStatus') {
+            return Promise.reject(new Error('runtime disconnected'))
+          }
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: {},
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(globals.window.api.computerUsePermissions.getStatus()).rejects.toThrow(
+      'runtime disconnected'
+    )
+  })
 })
 
 describe('web worktree preload API', () => {

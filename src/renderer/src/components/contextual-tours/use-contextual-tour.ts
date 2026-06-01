@@ -12,6 +12,16 @@ const TOUR_SOURCES = {
   'workspace-creation': 'workspace_creation_visible'
 } satisfies Record<ContextualTourId, string>
 
+export async function shouldRequestContextualTourAfterInteraction(args: {
+  id: ContextualTourId
+  persisted: Promise<void>
+  isCancelled: () => boolean
+  getContextualToursSeenIds: () => ContextualTourId[]
+}): Promise<boolean> {
+  await args.persisted
+  return !args.isCancelled() && !args.getContextualToursSeenIds().includes(args.id)
+}
+
 export function useContextualTour(
   id: ContextualTourId,
   enabled: boolean,
@@ -27,7 +37,6 @@ export function useContextualTour(
   const activeContextualTourSourceDetached = useAppStore(
     (s) => s.activeContextualTourSourceDetached
   )
-  const featureInteractions = useAppStore((s) => s.featureInteractions)
   const contextualToursSeenIds = useAppStore((s) => s.contextualToursSeenIds)
   const contextualToursAutoEligible = useAppStore((s) => s.contextualToursAutoEligible)
   const contextualTourShownThisSession = useAppStore((s) => s.contextualTourShownThisSession)
@@ -39,6 +48,7 @@ export function useContextualTour(
     id: ContextualTourId
     source: string
     wasPreviouslyInteracted: boolean
+    persisted: Promise<void>
   } | null>(null)
 
   useEffect(() => {
@@ -52,14 +62,18 @@ export function useContextualTour(
     ) {
       return
     }
+    const wasPreviouslyInteracted = hasFeatureInteraction(
+      useAppStore.getState().featureInteractions,
+      id
+    )
     enabledInteractionSnapshotRef.current = {
       id,
       source,
       // Why: recording writes featureInteractions; subscribing here would retrigger
       // this effect and repeatedly persist the same enabled source.
-      wasPreviouslyInteracted: hasFeatureInteraction(useAppStore.getState().featureInteractions, id)
+      wasPreviouslyInteracted,
+      persisted: recordFeatureInteraction(id)
     }
-    recordFeatureInteraction(id)
   }, [enabled, id, persistedUIReady, recordFeatureInteraction, source])
 
   useEffect(() => {
@@ -116,21 +130,41 @@ export function useContextualTour(
 
     let frame: number | null = null
     let attempts = 0
+    let requestPending = false
+    let cancelled = false
     const request = (): void => {
-      if (frame !== null) {
+      if (frame !== null || requestPending) {
         return
       }
-      attempts += 1
-      frame = window.requestAnimationFrame(() => {
-        frame = null
-        const snapshot = enabledInteractionSnapshotRef.current
-        requestContextualTour(
-          id,
-          source,
-          snapshot?.id === id && snapshot.source === source
-            ? snapshot.wasPreviouslyInteracted
-            : hasFeatureInteraction(featureInteractions, id)
-        )
+      requestPending = true
+      const snapshot = enabledInteractionSnapshotRef.current
+      const persisted =
+        snapshot?.id === id && snapshot.source === source ? snapshot.persisted : Promise.resolve()
+      void shouldRequestContextualTourAfterInteraction({
+        id,
+        persisted,
+        isCancelled: () => cancelled,
+        getContextualToursSeenIds: () => useAppStore.getState().contextualToursSeenIds
+      }).then((shouldRequest) => {
+        requestPending = false
+        if (!shouldRequest) {
+          return
+        }
+        attempts += 1
+        frame = window.requestAnimationFrame(() => {
+          frame = null
+          const latestSnapshot = enabledInteractionSnapshotRef.current
+          if (useAppStore.getState().contextualToursSeenIds.includes(id)) {
+            return
+          }
+          requestContextualTour(
+            id,
+            source,
+            latestSnapshot?.id === id && latestSnapshot.source === source
+              ? latestSnapshot.wasPreviouslyInteracted
+              : hasFeatureInteraction(useAppStore.getState().featureInteractions, id)
+          )
+        })
       })
     }
 
@@ -157,6 +191,7 @@ export function useContextualTour(
     }, 500)
 
     return () => {
+      cancelled = true
       if (frame !== null) {
         window.cancelAnimationFrame(frame)
       }
@@ -173,7 +208,6 @@ export function useContextualTour(
     contextualToursOnboardingVisible,
     contextualToursSeenIds,
     enabled,
-    featureInteractions,
     id,
     persistedUIReady,
     requestContextualTour,

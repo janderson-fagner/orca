@@ -1926,12 +1926,7 @@ function createComputerUsePermissionsApi(): NonNullable<
         'computer.permissionsStatus',
         {},
         15_000
-      ).catch(() => ({
-        platform: getBrowserPlatform(),
-        helperAppPath: null,
-        helperUnavailableReason: 'web_client',
-        permissions: []
-      })),
+      ),
     openSetup: (args) =>
       callRuntimeResult<ComputerUsePermissionSetupResult>(
         'computer.permissions',
