@@ -110,6 +110,31 @@ describe('buildWorktreeAgentRows', () => {
     expect(working?.state).toBe('idle')
     expect(done?.state).toBe('done')
   })
+
+  it('renders live worktree-attributed entries even when their tab is absent', () => {
+    const rows = buildWorktreeAgentRows({
+      tabs: [],
+      entries: [
+        makeEntry(PANE_KEY_1, 1000, {
+          state: 'working',
+          worktreeId: 'wt-1',
+          tabId: 'tab-1',
+          prompt: 'child agent'
+        })
+      ],
+      retained: [],
+      now: 2000
+    })
+
+    expect(rows.map((row) => row.paneKey)).toEqual([PANE_KEY_1])
+    expect(rows[0]).toMatchObject({
+      state: 'working',
+      tab: {
+        id: 'tab-1',
+        worktreeId: 'wt-1'
+      }
+    })
+  })
 })
 
 describe('applyAgentRowLineage', () => {

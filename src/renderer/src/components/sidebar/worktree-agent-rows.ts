@@ -9,6 +9,23 @@ import { parsePaneKey } from '../../../../shared/stable-pane-id'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/types'
 import { buildTitleDerivedAgentRows } from './worktree-title-derived-agent-rows'
 
+function tabFromAttributedStatusEntry(entry: AgentStatusEntry): TerminalTab | null {
+  const parsed = parsePaneKey(entry.paneKey)
+  if (!parsed || !entry.worktreeId) {
+    return null
+  }
+  return {
+    id: parsed.tabId,
+    ptyId: null,
+    worktreeId: entry.worktreeId,
+    title: entry.terminalTitle ?? 'Agent',
+    customTitle: null,
+    color: null,
+    sortOrder: Number.MAX_SAFE_INTEGER,
+    createdAt: entry.stateStartedAt
+  }
+}
+
 export function buildWorktreeAgentRows(args: {
   tabs: TerminalTab[]
   entries: AgentStatusEntry[]
@@ -55,6 +72,32 @@ export function buildWorktreeAgentRows(args: {
   }
 
   rows.push(...buildTitleDerivedAgentRows({ ...args, seenPaneKeys }))
+
+  // Why: orchestration workers can be attributed to a worktree by main before
+  // their tab is present in this renderer. Keep those live rows visible in the
+  // worktree card instead of waiting for tab membership that may never arrive.
+  for (const entry of args.entries) {
+    if (seenPaneKeys.has(entry.paneKey)) {
+      continue
+    }
+    const tab = tabFromAttributedStatusEntry(entry)
+    if (!tab) {
+      continue
+    }
+    const isFresh = isExplicitAgentStatusFresh(entry, args.now, AGENT_STATUS_STALE_AFTER_MS)
+    const shouldDecay =
+      !isFresh &&
+      (entry.state === 'working' || entry.state === 'blocked' || entry.state === 'waiting')
+    rows.push({
+      paneKey: entry.paneKey,
+      entry,
+      tab,
+      agentType: entry.agentType ?? 'unknown',
+      state: shouldDecay ? 'idle' : entry.state,
+      startedAt: entry.stateHistory[0]?.startedAt ?? entry.stateStartedAt
+    })
+    seenPaneKeys.add(entry.paneKey)
+  }
 
   for (const ra of args.retained) {
     if (seenPaneKeys.has(ra.entry.paneKey)) {

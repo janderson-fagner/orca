@@ -61,7 +61,8 @@ export type AgentStatusSlice = {
     paneKey: string,
     payload: ParsedAgentStatusPayload & { orchestration?: AgentStatusOrchestrationContext },
     terminalTitle?: string,
-    timing?: { updatedAt?: number; stateStartedAt?: number }
+    timing?: { updatedAt?: number; stateStartedAt?: number },
+    routing?: { tabId?: string; worktreeId?: string }
   ) => void
 
   setMigrationUnsupportedPty: (entry: MigrationUnsupportedPtyEntry) => void
@@ -200,7 +201,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
     retainedAgentsByPaneKey: {},
     retentionSuppressedPaneKeys: {},
 
-    setAgentStatus: (paneKey, payload, terminalTitle, timing) => {
+    setAgentStatus: (paneKey, payload, terminalTitle, timing, routing) => {
       const updatedAt = timing?.updatedAt ?? Date.now()
       let completionRefreshWorktreeId: string | null = null
       let suppressedInheritedTerminalStatus = false
@@ -288,6 +289,12 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           stateStartedAt,
           agentType: identity.agentType,
           paneKey,
+          worktreeId:
+            routing?.worktreeId ??
+            existing?.worktreeId ??
+            findAgentPaneWorktreeId(s, paneKey) ??
+            undefined,
+          tabId: routing?.tabId ?? existing?.tabId ?? getTabIdFromPaneKey(paneKey) ?? undefined,
           terminalTitle: effectiveTitle,
           stateHistory: history,
           toolName: payload.toolName,

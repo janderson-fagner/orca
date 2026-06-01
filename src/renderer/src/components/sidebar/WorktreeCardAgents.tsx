@@ -255,6 +255,13 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           scrollToBottomIfOutputSinceLastView: true
         })
       } else {
+        const liveEntry = useAppStore.getState().agentStatusByPaneKey[paneKey]
+        if (liveEntry?.worktreeId === worktreeId) {
+          // Why: orchestration worker status can be worktree-attributed before
+          // the renderer knows its tab. Keep the visible live row instead of
+          // dismissing it as stale just because it cannot be focused yet.
+          return
+        }
         dismissStaleAgentRowByKey(paneKey)
       }
     },
@@ -270,7 +277,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     [agents]
   )
   const hasLineage = childrenByParentPaneKey.size > 0
-  const [expandedLineageParents, setExpandedLineageParents] = useState<ReadonlySet<string>>(
+  const [collapsedLineageParents, setCollapsedLineageParents] = useState<ReadonlySet<string>>(
     () => new Set()
   )
   const [compactRootListExpanded, setCompactRootListExpanded] = useState(false)
@@ -285,7 +292,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
   }, [agentActivityDisplayMode, compactRootListExpanded])
   const toggleLineageParent = useCallback((paneKey: string) => {
     dispatchSuppressScrollAdjustment()
-    setExpandedLineageParents((current) => {
+    setCollapsedLineageParents((current) => {
       const next = new Set(current)
       if (next.has(paneKey)) {
         next.delete(paneKey)
@@ -320,7 +327,9 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     }
     const childAgents = childrenByParentPaneKey.get(agent.paneKey) ?? []
     const hasChildAgents = childAgents.length > 0
-    const expanded = expandedLineageParents.has(agent.paneKey)
+    // Why: spawned child agents are actionable work, so they should be visible
+    // as soon as the parent appears; the disclosure remains available to fold noise.
+    const expanded = !collapsedLineageParents.has(agent.paneKey)
     const sendTarget = isAgentSendTargetModeActive
       ? (sendTargetsByPaneKey.get(agent.paneKey) ?? {
           status: 'disabled' as const,
@@ -371,11 +380,13 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           // chevron-shifted column and read as floating fragments.
           hideLineageConnectors
         />
-        {hasChildAgents && expanded
-          ? childAgents.map((childAgent) =>
+        {hasChildAgents && expanded ? (
+          <div className="worktree-agent-lineage-children">
+            {childAgents.map((childAgent) =>
               renderAgentBranch(childAgent, descendantAncestorPaneKeys)
-            )
-          : null}
+            )}
+          </div>
+        ) : null}
       </React.Fragment>
     )
   }
@@ -389,7 +400,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
     }
     const childAgents = childrenByParentPaneKey.get(agent.paneKey) ?? []
     const hasChildAgents = childAgents.length > 0
-    const expanded = expandedLineageParents.has(agent.paneKey)
+    const expanded = !collapsedLineageParents.has(agent.paneKey)
     const descendantAncestorPaneKeys = new Set(ancestorPaneKeys)
     descendantAncestorPaneKeys.add(agent.paneKey)
     return (
@@ -408,9 +419,11 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
         />
         {hasChildAgents ? (
           <CompactAgentExpansion expanded={expanded}>
-            {childAgents.map((childAgent) =>
-              renderCompactAgentBranch(childAgent, descendantAncestorPaneKeys)
-            )}
+            <div className="worktree-agent-lineage-children flex flex-col gap-0.5">
+              {childAgents.map((childAgent) =>
+                renderCompactAgentBranch(childAgent, descendantAncestorPaneKeys)
+              )}
+            </div>
           </CompactAgentExpansion>
         ) : null}
       </React.Fragment>
@@ -451,7 +464,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
         {!shouldUseSummaryRow ? (
           rootAgents.map((rootAgent) => renderCompactAgentBranch(rootAgent))
         ) : shouldUseSummaryRow ? (
-          <CompactAgentExpansion expanded={compactRootListExpanded}>
+          <CompactAgentExpansion expanded={compactRootListExpanded} contentClassName="pl-1">
             {rootAgents.map((rootAgent) => renderCompactAgentBranch(rootAgent))}
           </CompactAgentExpansion>
         ) : null}

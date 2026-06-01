@@ -129,6 +129,26 @@ describe('selectLiveAgentStatusEntriesForWorktree', () => {
     expect(secondWt2).not.toBe(firstWt2)
     expect(secondWt2[0]?.prompt).toBe('updated prompt preview')
   })
+
+  it('uses worktree attribution when the status tab is not in the renderer tab list', () => {
+    const childEntry = makeEntry(PANE_KEY_1, 1000, {
+      state: 'working',
+      worktreeId: 'wt-1',
+      tabId: 'tab-1'
+    })
+    const state = {
+      tabsByWorktree: {
+        'wt-1': []
+      },
+      agentStatusByPaneKey: {
+        [PANE_KEY_1]: childEntry
+      },
+      migrationUnsupportedByPtyId: {},
+      retainedAgentsByPaneKey: {}
+    }
+
+    expect(selectLiveAgentStatusEntriesForWorktree(state, 'wt-1')).toEqual([childEntry])
+  })
 })
 
 describe('selectRetainedAgentEntriesForWorktree', () => {

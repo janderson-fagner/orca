@@ -188,6 +188,11 @@ import {
   type WorktreeSectionActivityState,
   type WorktreeSectionActivitySummary
 } from './worktree-section-activity'
+import {
+  SIDEBAR_TREE_INDENT,
+  getProjectGroupHeaderPaddingLeft,
+  getWorktreeCardContentIndent
+} from './worktree-list-indentation'
 
 export {
   getScrollTopToRevealBounds,
@@ -333,12 +338,7 @@ function getWorktreeVisibilityMenuLabel(repo: Repo): string {
   return visibility === 'show' ? 'Hide non-Orca worktrees' : 'Show hidden worktrees'
 }
 
-const LINEAGE_INDENT = 18
-// Why: top-level worktrees are children of their project header; indent the
-// group one step so the status dots nest under the folder icon for hierarchy.
-const WORKTREE_GROUP_INDENT = 18
-const PROJECT_GROUP_HEADER_BASE_PADDING = 4
-const PROJECT_GROUP_HEADER_INDENT = 10
+const LINEAGE_INDENT = SIDEBAR_TREE_INDENT
 const SIDEBAR_POINTER_DRAG_THRESHOLD_PX = 4
 
 type VirtualizedWorktreeViewportProps = {
@@ -2549,9 +2549,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       row.repo && 'overflow-hidden'
                     )}
                     style={{
-                      paddingLeft:
-                        PROJECT_GROUP_HEADER_BASE_PADDING +
-                        Math.min(projectGroupDepth, 6) * PROJECT_GROUP_HEADER_INDENT
+                      paddingLeft: getProjectGroupHeaderPaddingLeft(projectGroupDepth)
                     }}
                     onDragOver={
                       isPinnedHeader
@@ -2862,10 +2860,13 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
               // Why: child cards render inside the parent card body, so their
               // first nested level starts flush with that inset.
               const paddingDepth = nested ? Math.max(0, itemRow.depth - 1) : itemRow.depth
-              // Why: grouped rows still indent their contents under the header,
-              // but the card surface spans the full sidebar hit/background row.
-              const basePadding = !nested && groupBy !== 'none' ? WORKTREE_GROUP_INDENT : 0
-              const paddingLeft = basePadding + paddingDepth * LINEAGE_INDENT
+              // Why: grouped rows inherit their project/group header depth,
+              // while the card surface still spans the full hit/background row.
+              const paddingLeft = getWorktreeCardContentIndent({
+                isGrouped: !nested && groupBy !== 'none',
+                groupDepth: itemRow.groupDepth,
+                lineageDepth: paddingDepth
+              })
               const worktreeDragGroupKey = groupKeyByWorktreeId.get(itemRow.worktree.id)
               const worktreeDragGroupIndex = groupIndexByWorktreeId.get(itemRow.worktree.id)
               const revealHighlightTone =
@@ -2966,11 +2967,9 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                 }
               }
               const lineageToggleGroupKey = child.lineageGroupKey
+              const childContentIndent = Math.max(0, child.depth - 1) * LINEAGE_INDENT
               return (
-                <div
-                  key={child.worktree.id}
-                  style={{ paddingLeft: `${Math.max(0, child.depth - 1) * LINEAGE_INDENT}px` }}
-                >
+                <div key={child.worktree.id}>
                   <WorktreeContextMenu
                     worktree={child.worktree}
                     selectedWorktrees={selectedWorktrees}
@@ -2984,7 +2983,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       data-worktree-card-surface="true"
                       data-worktree-card-active={isActive ? 'true' : undefined}
                       className={cn(
-                        'relative flex cursor-pointer items-start gap-1.5 rounded-md border border-transparent px-2 py-1.5 transition-colors',
+                        'relative flex w-full cursor-pointer items-start gap-1.5 rounded-lg border border-transparent py-1.5 pr-2 transition-colors',
                         highlightedRevealWorktreeId === child.worktree.id && [
                           'scroll-to-current-workspace-reveal-highlight',
                           revealHighlightTone === 'ai' &&
@@ -3000,88 +2999,97 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                       onClick={handleClick}
                       onDoubleClick={(event) => event.stopPropagation()}
                     >
-                      <span className="mt-[2px] flex w-4 shrink-0 justify-center pt-[2px]">
-                        <WorktreeActivityStatusIndicator worktreeId={child.worktree.id} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[12px] leading-tight text-foreground">
-                          {child.worktree.displayName}
-                        </div>
-                        <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                          {child.repo && groupBy !== 'repo' ? (
-                            <span className="flex h-[16px] shrink-0 items-center gap-1.5 rounded-[4px] border border-border bg-accent px-1.5 text-[10px] font-semibold leading-none text-foreground dark:bg-accent/50 dark:border-border/60">
-                              <RepoBadgeMark color={child.repo.badgeColor} />
-                              <span className="max-w-[6rem] truncate lowercase">
-                                {child.repo.displayName}
-                              </span>
-                            </span>
-                          ) : null}
-                          <span className="truncate text-[10.5px] leading-none text-muted-foreground">
-                            {branchDisplayName(child.worktree.branch)}
-                          </span>
-                        </div>
-                        {child.worktree.linkedIssue || child.worktree.comment ? (
-                          <div className="mt-1.5 truncate text-[10.5px] leading-tight text-muted-foreground">
-                            {child.worktree.linkedIssue ? (
-                              <span className="font-medium text-foreground/80">
-                                #{child.worktree.linkedIssue}
+                      <div
+                        className="flex min-w-0 flex-1 items-start gap-1.5 pl-2"
+                        style={
+                          childContentIndent > 0
+                            ? { paddingLeft: `calc(0.5rem + ${childContentIndent}px)` }
+                            : undefined
+                        }
+                      >
+                        <span className="mt-[2px] flex w-4 shrink-0 justify-center pt-[2px]">
+                          <WorktreeActivityStatusIndicator worktreeId={child.worktree.id} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] leading-tight text-foreground">
+                            {child.worktree.displayName}
+                          </div>
+                          <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                            {child.repo && groupBy !== 'repo' ? (
+                              <span className="flex h-[16px] shrink-0 items-center gap-1.5 rounded-[4px] border border-border bg-accent px-1.5 text-[10px] font-semibold leading-none text-foreground dark:bg-accent/50 dark:border-border/60">
+                                <RepoBadgeMark color={child.repo.badgeColor} />
+                                <span className="max-w-[6rem] truncate lowercase">
+                                  {child.repo.displayName}
+                                </span>
                               </span>
                             ) : null}
-                            {child.worktree.linkedIssue && child.worktree.comment ? '  ' : null}
-                            {child.worktree.comment}
+                            <span className="truncate text-[10.5px] leading-none text-muted-foreground">
+                              {branchDisplayName(child.worktree.branch)}
+                            </span>
                           </div>
-                        ) : null}
-                        {showInlineAgentCards ? (
-                          // Why: nested lineage children use this lightweight
-                          // renderer instead of WorktreeCard, so their inline
-                          // agent rows must be mounted here explicitly.
-                          <WorktreeCardAgents
-                            worktreeId={child.worktree.id}
-                            className="mt-1 divide-y-0"
-                          />
-                        ) : null}
-                        {child.lineageChildCount > 0 && lineageToggleGroupKey ? (
-                          <div className="mt-1.5 flex min-w-0 justify-start">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="xs"
-                                  className="h-[18px] max-w-[8rem] gap-1 rounded-md border border-sidebar-border bg-sidebar px-1.5 text-[10px] font-medium leading-none text-muted-foreground shadow-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring"
-                                  aria-label={`${child.lineageCollapsed ? 'Show' : 'Hide'} ${
-                                    child.lineageChildCount
-                                  } child ${
-                                    child.lineageChildCount === 1 ? 'workspace' : 'workspaces'
-                                  }`}
-                                  aria-expanded={!child.lineageCollapsed}
-                                  onClick={(event) => {
-                                    event.preventDefault()
-                                    event.stopPropagation()
-                                    toggleGroupWithScrollAnchor(lineageToggleGroupKey)
-                                  }}
-                                >
-                                  <Workflow className="size-2.5" />
-                                  <span className="truncate">
-                                    {child.lineageChildCount}{' '}
-                                    {child.lineageChildCount === 1 ? 'child' : 'children'}
-                                  </span>
-                                  <ChevronDown
-                                    className={cn(
-                                      'size-2.5 transition-transform',
-                                      child.lineageCollapsed && '-rotate-90'
-                                    )}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="right" sideOffset={8}>
-                                {child.lineageCollapsed
-                                  ? 'Show child workspaces'
-                                  : 'Hide child workspaces'}
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        ) : null}
+                          {child.worktree.linkedIssue || child.worktree.comment ? (
+                            <div className="mt-1.5 truncate text-[10.5px] leading-tight text-muted-foreground">
+                              {child.worktree.linkedIssue ? (
+                                <span className="font-medium text-foreground/80">
+                                  #{child.worktree.linkedIssue}
+                                </span>
+                              ) : null}
+                              {child.worktree.linkedIssue && child.worktree.comment ? '  ' : null}
+                              {child.worktree.comment}
+                            </div>
+                          ) : null}
+                          {showInlineAgentCards ? (
+                            // Why: nested lineage children use this lightweight
+                            // renderer instead of WorktreeCard, so their inline
+                            // agent rows must be mounted here explicitly.
+                            <WorktreeCardAgents
+                              worktreeId={child.worktree.id}
+                              className="mt-1 divide-y-0"
+                            />
+                          ) : null}
+                          {child.lineageChildCount > 0 && lineageToggleGroupKey ? (
+                            <div className="mt-1.5 flex min-w-0 justify-start">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="xs"
+                                    className="h-[18px] max-w-[8rem] gap-1 rounded-md border border-sidebar-border bg-sidebar px-1.5 text-[10px] font-medium leading-none text-muted-foreground shadow-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+                                    aria-label={`${child.lineageCollapsed ? 'Show' : 'Hide'} ${
+                                      child.lineageChildCount
+                                    } child ${
+                                      child.lineageChildCount === 1 ? 'workspace' : 'workspaces'
+                                    }`}
+                                    aria-expanded={!child.lineageCollapsed}
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      event.stopPropagation()
+                                      toggleGroupWithScrollAnchor(lineageToggleGroupKey)
+                                    }}
+                                  >
+                                    <Workflow className="size-2.5" />
+                                    <span className="truncate">
+                                      {child.lineageChildCount}{' '}
+                                      {child.lineageChildCount === 1 ? 'child' : 'children'}
+                                    </span>
+                                    <ChevronDown
+                                      className={cn(
+                                        'size-2.5 transition-transform',
+                                        child.lineageCollapsed && '-rotate-90'
+                                      )}
+                                    />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" sideOffset={8}>
+                                  {child.lineageCollapsed
+                                    ? 'Show child workspaces'
+                                    : 'Hide child workspaces'}
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </WorktreeContextMenu>

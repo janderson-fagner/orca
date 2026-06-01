@@ -191,8 +191,26 @@ function makeLineage(worktree: Worktree, parent: Worktree): WorktreeLineage {
   }
 }
 
-function setLineageFixtureState(groupBy: 'none' | 'repo' = 'none'): void {
-  const repo = makeRepo()
+function setLineageFixtureState(
+  groupBy: 'none' | 'repo' = 'none',
+  options: { projectGrouped?: boolean } = {}
+): void {
+  const projectGroup: ProjectGroup = {
+    id: 'project-group-1',
+    name: 'Personal',
+    parentPath: '/tmp/lineage-order',
+    parentGroupId: null,
+    createdFrom: 'manual',
+    tabOrder: 0,
+    isCollapsed: false,
+    color: null,
+    createdAt: 1,
+    updatedAt: 1
+  }
+  const repo = {
+    ...makeRepo(),
+    projectGroupId: options.projectGrouped ? projectGroup.id : null
+  }
   const parent = makeWorktree({
     id: 'parent',
     instanceId: 'parent-instance',
@@ -233,6 +251,7 @@ function setLineageFixtureState(groupBy: 'none' | 'repo' = 'none'): void {
     pendingRevealWorktree: null,
     prCache: {},
     prVisibleRefreshGeneration: 0,
+    projectGroups: options.projectGrouped ? [projectGroup] : [],
     ptyIdsByTabId: {},
     reorderRepos: vi.fn(),
     reportVisibleGitHubPRRefreshCandidates: vi.fn(),
@@ -413,6 +432,18 @@ describe('WorktreeList lineage child card renderer', () => {
     expect(parentRow).not.toContain('padding-left')
     expect(markup).toContain(
       '<section data-worktree-card-id="parent" data-content-indent="18" data-flush-surface="true">'
+    )
+  })
+
+  it('adds project group depth to workspace card content indentation', async () => {
+    setLineageFixtureState('repo', { projectGrouped: true })
+    const markup = await renderWorktreeListMarkup()
+
+    const parentRow = markup.match(/<div[^>]*id="worktree-list-option-parent"[^>]*>/)?.[0] ?? ''
+
+    expect(parentRow).not.toContain('padding-left')
+    expect(markup).toContain(
+      '<section data-worktree-card-id="parent" data-content-indent="36" data-flush-surface="true">'
     )
   })
 })

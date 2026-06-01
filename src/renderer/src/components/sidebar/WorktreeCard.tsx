@@ -607,7 +607,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // aligned with the pre-inset layout and the repo header hierarchy.
   const cardStyle = flushSurface
     ? {
-        paddingLeft: contentIndent > 0 ? `calc(${contentIndent}px - 0.125rem)` : '0.125rem'
+        paddingLeft:
+          contentIndent > 0 ? `max(0.125rem, calc(${contentIndent}px - 0.625rem))` : '0.125rem'
       }
     : contentIndent > 0
       ? { paddingLeft: `calc(0.125rem + ${contentIndent}px)` }
@@ -674,7 +675,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const cardBody = (
     <div
       className={cn(
-        'group relative flex items-start gap-1.5 px-1.5 pt-1.5 pb-2 cursor-pointer transition-[background-color,border-color,opacity,box-shadow] duration-200 outline-none select-none',
+        'group relative flex items-start gap-0.5 pl-0 pr-1.5 pt-1.5 pb-2 cursor-pointer transition-[background-color,border-color,opacity,box-shadow] duration-200 outline-none select-none',
         flushSurface ? 'ml-1 w-[calc(100%-0.25rem)]' : 'ml-1',
         isMultiSelected ? 'rounded-sm' : 'rounded-lg',
         isActiveSurface
@@ -725,7 +726,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ) : null}
 
       {/* Content area */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col gap-1.5">
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col gap-1.5',
+          lineageChildren ? 'overflow-visible' : 'overflow-hidden'
+        )}
+      >
         {/* Header row: Title */}
         <div className="flex items-center justify-between min-w-0 gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -977,7 +983,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
           </div>
         )}
 
-        {lineageChildren && <div className="-ml-3 mt-1.5 space-y-1">{lineageChildren}</div>}
+        {lineageChildren && (
+          <div className="-ml-[1.125rem] mt-1.5 w-[calc(100%+1.125rem)] space-y-1">
+            {lineageChildren}
+          </div>
+        )}
       </div>
     </div>
   )

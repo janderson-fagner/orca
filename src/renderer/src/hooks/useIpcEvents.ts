@@ -2204,7 +2204,7 @@ export function useIpcEvents(): void {
       if (!payload) {
         return 'dropped'
       }
-      const {
+      let {
         exists,
         title,
         identityTitle,
@@ -2212,6 +2212,19 @@ export function useIpcEvents(): void {
         repoConnectionResolved,
         owningWorktreeId
       } = resolvePaneKey(store, data.paneKey)
+      if (!exists && data.worktreeId) {
+        // Why: orchestration worker hooks can carry main-side worktree
+        // attribution before this renderer has a terminal tab for the pane.
+        // Accept those only when the worktree is known, then keep the normal
+        // repo connection check below for SSH/local ownership.
+        const fallbackOwnership = resolveWorktreeConnection(store, data.worktreeId)
+        if (fallbackOwnership.worktreeExists) {
+          owningWorktreeId = data.worktreeId
+          repoConnectionId = fallbackOwnership.repoConnectionId
+          repoConnectionResolved = fallbackOwnership.repoConnectionResolved
+          exists = true
+        }
+      }
       if (!exists) {
         // Why: empty paneKeys are dropped in main before IPC fanout. Reaching
         // this branch means a non-empty paneKey escaped without a matching
@@ -2293,12 +2306,21 @@ export function useIpcEvents(): void {
         return 'dropped'
       }
       const terminalTitle = resolveAgentStatusTerminalTitle(statusPayload, title)
-      store.setAgentStatus(data.paneKey, statusPayload, terminalTitle, {
-        updatedAt: data.receivedAt,
-        stateStartedAt: data.stateStartedAt
-      })
-      applyResolvedAgentTerminalTitleToTab(store, data.paneKey, title, terminalTitle)
       const statusWorktreeId = data.worktreeId ?? owningWorktreeId
+      store.setAgentStatus(
+        data.paneKey,
+        statusPayload,
+        terminalTitle,
+        {
+          updatedAt: data.receivedAt,
+          stateStartedAt: data.stateStartedAt
+        },
+        {
+          tabId: data.tabId,
+          worktreeId: statusWorktreeId
+        }
+      )
+      applyResolvedAgentTerminalTitleToTab(store, data.paneKey, title, terminalTitle)
       if (options?.replay !== true && statusWorktreeId) {
         // Why: local Codex/Claude hooks arrive through this main-process IPC
         // path, not the PTY OSC fallback, so task-complete notifications must
@@ -2680,6 +2702,26 @@ function resolvePaneKey(
     repoConnectionId,
     repoConnectionResolved,
     owningWorktreeId
+  }
+}
+
+function resolveWorktreeConnection(
+  store: ReturnType<typeof useAppStore.getState>,
+  worktreeId: string
+): {
+  worktreeExists: boolean
+  repoConnectionId: string | null
+  repoConnectionResolved: boolean
+} {
+  const worktree = getWorktreeMapFromState(store).get(worktreeId)
+  if (!worktree) {
+    return { worktreeExists: false, repoConnectionId: null, repoConnectionResolved: false }
+  }
+  const repo = getRepoMapFromState(store).get(worktree.repoId)
+  return {
+    worktreeExists: true,
+    repoConnectionId: repo?.connectionId ?? null,
+    repoConnectionResolved: repo !== undefined
   }
 }
 

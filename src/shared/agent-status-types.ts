@@ -82,6 +82,13 @@ export type AgentStatusEntry = {
   agentType?: AgentType
   /** Composite key: `${tabId}:${leafId}` where leafId is a stable UUID layout leaf. */
   paneKey: string
+  /** Worktree attribution stamped by main when a hook can be resolved there.
+   *  Why: orchestration workers can report status before their terminal tab is
+   *  present in a renderer; retaining this lets worktree-level UI still show
+   *  the live child agent instead of dropping it as unattributed. */
+  worktreeId?: string
+  /** Tab attribution from the hook IPC payload, when available. */
+  tabId?: string
   terminalTitle?: string
   /** Rolling log of previous states. Each entry records a state the agent was in
    *  before transitioning to the current one. Capped at AGENT_STATE_HISTORY_MAX. */

@@ -296,6 +296,8 @@ const DashboardAgentRow = React.memo(function DashboardAgentRow({
         // their hover wash must stay softer than the parent card highlight.
         // The focused-pane state reuses the same class via data attribute.
         'cursor-pointer rounded-sm worktree-agent-row-hover',
+        hasChildDisclosure && 'worktree-agent-lineage-parent-row',
+        isLineageChild && 'worktree-agent-lineage-child-row',
         sendTargetStatus === 'sending' && 'cursor-progress opacity-75',
         sendTargetStatus === 'disabled' && 'cursor-default opacity-60'
       )}

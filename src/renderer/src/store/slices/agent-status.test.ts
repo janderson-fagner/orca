@@ -107,6 +107,34 @@ describe('agent status freshness expiry', () => {
   })
 })
 
+describe('agent status routing attribution', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('stores worktree and tab attribution from accepted hook events', () => {
+    vi.useFakeTimers()
+    const store = createTestStore()
+
+    store
+      .getState()
+      .setAgentStatus(
+        'tab-child:11111111-1111-4111-8111-111111111111',
+        { state: 'working', prompt: 'child agent', agentType: 'codex' },
+        undefined,
+        undefined,
+        { tabId: 'tab-child', worktreeId: 'wt-1' }
+      )
+
+    expect(
+      store.getState().agentStatusByPaneKey['tab-child:11111111-1111-4111-8111-111111111111']
+    ).toMatchObject({
+      tabId: 'tab-child',
+      worktreeId: 'wt-1'
+    })
+  })
+})
+
 describe('agent status tool + assistant fields', () => {
   // Why: setAgentStatus schedules a real 30-minute freshness setTimeout via
   // queueMicrotask. Without fake timers those handles leak into the test

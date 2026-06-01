@@ -90,7 +90,7 @@ function getLiveEntriesByWorktree(state: WorktreeAgentRowsState): Map<string, Ag
     if (!parsed) {
       continue
     }
-    const worktreeId = tabIdToWorktreeId.get(parsed.tabId)
+    const worktreeId = tabIdToWorktreeId.get(parsed.tabId) ?? entry.worktreeId
     if (!worktreeId) {
       continue
     }

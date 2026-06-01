@@ -1,30 +1,20 @@
 import React, { useCallback, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { AgentStateDot, agentStateLabel, type AgentDotState } from '@/components/AgentStateDot'
+import { AgentStateDot, agentStateLabel } from '@/components/AgentStateDot'
 import type { DashboardAgentRow as DashboardAgentRowData } from '@/components/dashboard/useDashboardData'
 import { AgentIcon } from '@/lib/agent-catalog'
 import { agentTypeToIconAgent, formatAgentTypeLabel } from '@/lib/agent-status'
 import { cn } from '@/lib/utils'
-import type { AgentStatusState } from '../../../../shared/agent-status-types'
 import CommentMarkdown from './CommentMarkdown'
+import {
+  buildSummaryAgentGroups,
+  getAgentDotState,
+  selectSummaryGroupIconAgents,
+  summarizeAgentIdentities,
+  summarizeAgents
+} from './worktree-card-agent-summary'
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]\n]*\]\([^)]+\)/
-
-function asDotState(state: AgentStatusState | 'idle'): AgentDotState {
-  switch (state) {
-    case 'working':
-    case 'blocked':
-    case 'waiting':
-    case 'done':
-    case 'idle':
-      return state
-  }
-  return 'idle'
-}
-
-function getAgentDotState(agent: DashboardAgentRowData): AgentDotState {
-  return agent.entry.interrupted === true ? 'interrupted' : asDotState(agent.state)
-}
 
 function formatShortTimeAgo(ts: number, now: number): string {
   const delta = now - ts
@@ -86,92 +76,12 @@ function getCompactAgentTime(agent: DashboardAgentRowData, now: number): string 
   return startedAt > 0 ? formatShortTimeAgo(startedAt, now) : null
 }
 
-const SUMMARY_STATE_ORDER: AgentDotState[] = [
-  'waiting',
-  'blocked',
-  'interrupted',
-  'working',
-  'done',
-  'idle'
-]
-
 function stopActivationKeyPropagation(e: React.KeyboardEvent): void {
   // Why: the surrounding worktree list handles Enter/Space as row activation.
   // Focused nested buttons need those keys to stay local.
   if (e.key === 'Enter' || e.key === ' ') {
     e.stopPropagation()
   }
-}
-
-function summarizeAgents(agents: DashboardAgentRowData[], subjectLabel: string): string {
-  const counts = new Map<AgentDotState, number>()
-  for (const agent of agents) {
-    const dotState = getAgentDotState(agent)
-    counts.set(dotState, (counts.get(dotState) ?? 0) + 1)
-  }
-  const parts = SUMMARY_STATE_ORDER.flatMap((state) => {
-    const count = counts.get(state) ?? 0
-    if (count === 0) {
-      return []
-    }
-    const label =
-      state === 'waiting'
-        ? 'waiting'
-        : state === 'blocked'
-          ? 'blocked'
-          : state === 'interrupted'
-            ? 'interrupted'
-            : state === 'working'
-              ? 'working'
-              : state === 'done'
-                ? 'done'
-                : 'idle'
-    return `${count} ${label}`
-  })
-  if (parts.length === 1) {
-    const onlyStatusLabel = parts[0].replace(/^\d+\s+/, '')
-    return agents.length === 1
-      ? `${subjectLabel} ${onlyStatusLabel}`
-      : `All ${subjectLabel} ${onlyStatusLabel}`
-  }
-  return `${subjectLabel}: ${parts.join(', ')}`
-}
-
-function selectSummaryIconAgents(
-  agents: DashboardAgentRowData[],
-  maxCount: number
-): DashboardAgentRowData[] {
-  const groups = new Map<string, { agents: DashboardAgentRowData[]; firstIndex: number }>()
-  agents.forEach((agent, index) => {
-    const key = agent.agentType ?? 'unknown'
-    const group = groups.get(key)
-    if (group) {
-      group.agents.push(agent)
-    } else {
-      groups.set(key, { agents: [agent], firstIndex: index })
-    }
-  })
-  const sortedGroups = [...groups.values()].sort(
-    (a, b) => b.agents.length - a.agents.length || a.firstIndex - b.firstIndex
-  )
-  const selected: DashboardAgentRowData[] = []
-  for (const group of sortedGroups) {
-    if (selected.length >= maxCount) {
-      break
-    }
-    selected.push(group.agents[0])
-  }
-  // Why: once every visible agent kind is represented, duplicate slots should
-  // reflect the largest groups instead of arbitrary list order.
-  for (const group of sortedGroups) {
-    for (const agent of group.agents.slice(1)) {
-      if (selected.length >= maxCount) {
-        return selected
-      }
-      selected.push(agent)
-    }
-  }
-  return selected
 }
 
 type CompactAgentSummaryButtonProps = {
@@ -183,11 +93,13 @@ type CompactAgentSummaryButtonProps = {
 
 type CompactAgentExpansionProps = {
   expanded: boolean
+  contentClassName?: string
   children: React.ReactNode
 }
 
 export function CompactAgentExpansion({
   expanded,
+  contentClassName,
   children
 }: CompactAgentExpansionProps): React.JSX.Element {
   const hasRenderedChildrenRef = useRef(expanded)
@@ -209,7 +121,12 @@ export function CompactAgentExpansion({
     >
       <div className="min-h-0 overflow-hidden">
         {shouldRenderChildren && (
-          <div className="compact-agent-expansion-content flex flex-col gap-0.5 pt-0.5">
+          <div
+            className={cn(
+              'compact-agent-expansion-content flex flex-col gap-0.5 pt-0.5',
+              contentClassName
+            )}
+          >
             {children}
           </div>
         )}
@@ -225,8 +142,12 @@ export function CompactAgentSummaryButton({
   onToggle
 }: CompactAgentSummaryButtonProps): React.JSX.Element {
   const summary = summarizeAgents(agents, subjectLabel)
-  const iconAgents = selectSummaryIconAgents(agents, 3)
-  const hiddenIconAgentCount = Math.max(0, agents.length - iconAgents.length)
+  const groups = buildSummaryAgentGroups(agents)
+  const visibleGroups = groups.slice(0, 3)
+  const hiddenGroupAgentCount = groups
+    .slice(visibleGroups.length)
+    .reduce((count, group) => count + group.agents.length, 0)
+  const agentIdentitySummary = summarizeAgentIdentities(agents)
   const stopPointerPropagation = useCallback((e: React.SyntheticEvent) => {
     e.stopPropagation()
   }, [])
@@ -243,11 +164,13 @@ export function CompactAgentSummaryButton({
       type="button"
       draggable={false}
       className={cn(
-        'group/agent-summary flex h-6 w-full min-w-0 items-center gap-1.5 rounded-sm border border-sidebar-border/70',
-        'bg-sidebar-accent/35 px-1.5 text-left text-[11px] leading-none text-muted-foreground',
+        'group/agent-summary flex h-6 w-full min-w-0 items-center gap-1 rounded-sm border border-sidebar-border/70',
+        'bg-sidebar-accent/35 px-1 text-left text-[11px] leading-none text-muted-foreground',
         'hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring'
       )}
-      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${summary}`}
+      aria-label={
+        expanded ? `Collapse ${subjectLabel}` : `Expand ${summary}. ${agentIdentitySummary}`
+      }
       aria-expanded={expanded}
       onClick={handleToggle}
       onKeyDown={stopActivationKeyPropagation}
@@ -255,22 +178,47 @@ export function CompactAgentSummaryButton({
       onPointerDown={stopPointerPropagation}
       onDragStart={stopPointerPropagation}
     >
-      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
-        {iconAgents.map((agent) => (
-          <span
-            key={agent.paneKey}
-            className="inline-flex size-4 items-center justify-center rounded-full border border-sidebar bg-sidebar"
-            title={formatAgentTypeLabel(agent.agentType)}
-          >
-            <AgentIcon agent={agentTypeToIconAgent(agent.agentType)} size={12} />
-          </span>
-        ))}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{summary}</span>
-      {hiddenIconAgentCount > 0 && (
-        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">
-          +{hiddenIconAgentCount}
+      {expanded ? (
+        <span className="min-w-0 flex-1 truncate px-1 font-medium text-muted-foreground">
+          {subjectLabel}
         </span>
+      ) : (
+        <>
+          <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden" aria-hidden>
+            {visibleGroups.map((group) => {
+              const iconAgents = selectSummaryGroupIconAgents(group.agents, 3)
+              const hiddenIconCount = Math.max(0, group.agents.length - iconAgents.length)
+              return (
+                <span
+                  key={group.state}
+                  className="inline-flex min-w-0 shrink-0 items-center gap-0.5 rounded-sm bg-sidebar/70 px-1 py-0.5"
+                >
+                  <AgentStateDot state={group.state} size="sm" />
+                  <span className="inline-flex shrink-0 items-center gap-0.5">
+                    {iconAgents.map((agent) => (
+                      <span
+                        key={agent.paneKey}
+                        className="inline-flex size-3.5 items-center justify-center rounded-full border border-sidebar-border/70 bg-sidebar"
+                      >
+                        <AgentIcon agent={agentTypeToIconAgent(agent.agentType)} size={10} />
+                      </span>
+                    ))}
+                  </span>
+                  {hiddenIconCount > 0 && (
+                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">
+                      +{hiddenIconCount}
+                    </span>
+                  )}
+                </span>
+              )
+            })}
+          </span>
+          {hiddenGroupAgentCount > 0 && (
+            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">
+              +{hiddenGroupAgentCount}
+            </span>
+          )}
+        </>
       )}
       <ChevronRight
         className={cn('size-3 shrink-0 transition-transform duration-150', expanded && 'rotate-90')}
@@ -311,6 +259,7 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
   const primary = getCompactAgentPrimary(agent)
   const assistantMessage = agent.entry.lastAssistantMessage?.trim() ?? ''
   const hasAssistantImage = MARKDOWN_IMAGE_PATTERN.test(assistantMessage)
+  const isLineageChild = agent.lineage?.depth === 1
   const secondary = hasAssistantImage
     ? formatAgentTypeLabel(agent.agentType)
     : getCompactAgentSecondary(agent)
@@ -337,7 +286,7 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       {hasChildDisclosure ? (
         <button
           type="button"
-          className="flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+          className="flex size-4 shrink-0 items-center justify-center rounded-sm border border-sidebar-border/80 bg-sidebar text-foreground/80 shadow-xs hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
           aria-label={`${childAgentsExpanded ? 'Hide' : 'Show'} ${childAgentCount} child ${
             childAgentCount === 1 ? 'agent' : 'agents'
           }`}
@@ -385,6 +334,8 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       className={cn(
         'group/compact-agent-row min-w-0 cursor-pointer rounded-sm px-1 text-[11px] leading-none',
         'text-muted-foreground worktree-agent-row-hover',
+        hasChildDisclosure && 'worktree-agent-lineage-parent-row',
+        isLineageChild && 'worktree-agent-lineage-child-row',
         hasAssistantImage ? 'flex flex-col py-0.5' : 'flex h-6 items-center gap-1',
         isFocusedPane && 'bg-sidebar-accent'
       )}
