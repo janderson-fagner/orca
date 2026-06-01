@@ -42,6 +42,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
   it('hands off from the agent sessions create-worktree step to the workspace-creation tour', () => {
     const openModal = vi.fn()
     const detachContextualTourSource = vi.fn()
+    const completeContextualTour = vi.fn()
     let activeModal: ReturnType<typeof useAppStore.getState>['activeModal'] = 'none'
     vi.spyOn(useAppStore, 'getState').mockImplementation(
       () =>
@@ -53,6 +54,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
           contextualToursSeenIds: [],
           repos: [{ id: 'repo-1' }],
           detachContextualTourSource,
+          completeContextualTour,
           openModal
         }) as unknown as ReturnType<typeof useAppStore.getState>
     )
@@ -63,6 +65,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
       'workspace-agent-sessions',
       'setup_guide_parallel_work'
     )
+    expect(completeContextualTour).toHaveBeenCalledWith('workspace-agent-sessions')
     expect(openModal).toHaveBeenCalledWith('new-workspace-composer', {
       telemetrySource: 'sidebar',
       contextualTourSource: 'workspace_creation_modal'
@@ -85,6 +88,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
   it('opens the composer without re-showing workspace creation when that tour was already seen', () => {
     const openModal = vi.fn()
     const detachContextualTourSource = vi.fn()
+    const completeContextualTour = vi.fn()
     vi.spyOn(useAppStore, 'getState').mockImplementation(
       () =>
         ({
@@ -95,6 +99,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
           contextualToursSeenIds: ['workspace-creation'],
           repos: [{ id: 'repo-1' }],
           detachContextualTourSource,
+          completeContextualTour,
           openModal
         }) as unknown as ReturnType<typeof useAppStore.getState>
     )
@@ -105,6 +110,7 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
       'workspace-agent-sessions',
       'setup_guide_parallel_work'
     )
+    expect(completeContextualTour).toHaveBeenCalledWith('workspace-agent-sessions')
     expect(openModal).toHaveBeenCalledWith('new-workspace-composer', {
       telemetrySource: 'sidebar',
       contextualTourSource: 'workspace_creation_modal'

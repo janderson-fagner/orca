@@ -12,9 +12,11 @@ export function openWorkspaceCreationComposerWithTourHandoff(): void {
     state.activeContextualTourStepIndex === 1
 
   if (shouldHandoffFromAgentSessionsTour && state.activeContextualTourSource) {
-    // Why: the composer modal cancels the terminal-owned tour; detaching first
-    // prevents the source cleanup from treating this intentional handoff as suppression.
+    // Why: clicking the highlighted create button is the final tour action.
+    // Clear it synchronously so the composer tour request is not blocked by
+    // a modal-cancellation effect that may run after the handoff retry window.
     state.detachContextualTourSource('workspace-agent-sessions', state.activeContextualTourSource)
+    state.completeContextualTour('workspace-agent-sessions')
   }
 
   state.openModal('new-workspace-composer', {
