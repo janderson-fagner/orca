@@ -131,6 +131,7 @@
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "emoji-picker-react": "^4.19.1",
+    "happy-dom": "^20.9.0",
     "html-to-image": "^1.11.13",
     "husky": "^9.1.7",
     "katex": "^0.16.45",
