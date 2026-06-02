@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowUpRight, Plus, Save, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { useAppStore } from '@/store'
@@ -20,6 +21,20 @@ import {
 } from '../contextual-tours/request-contextual-tour-when-ready'
 import { isWebRuntimeSessionActive } from '@/runtime/web-runtime-session'
 
+export function SetupPreview(props: {
+  children: ReactNode
+  className?: string
+}): React.JSX.Element {
+  return (
+    <div className={cn('relative', props.className)}>
+      <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-md bg-card/85 px-1.5 py-0.5 text-xs font-semibold leading-none text-muted-foreground shadow-xs backdrop-blur-sm">
+        Preview
+      </div>
+      <div className="h-full [&>*]:h-full [&>*]:pt-8">{props.children}</div>
+    </div>
+  )
+}
+
 export function AddReposAction(props: { reducedMotion: boolean }): React.JSX.Element {
   const openModal = useAppStore((s) => s.openModal)
   return (
@@ -28,7 +43,9 @@ export function AddReposAction(props: { reducedMotion: boolean }): React.JSX.Ele
         <Plus className="size-3.5" />
         Add project
       </Button>
-      <AddReposAnimatedVisual reducedMotion={props.reducedMotion} />
+      <SetupPreview>
+        <AddReposAnimatedVisual reducedMotion={props.reducedMotion} />
+      </SetupPreview>
     </div>
   )
 }
@@ -82,7 +99,9 @@ export function TwoAgentsAction(props: {
           </div>
         </div>
       ) : null}
-      <SetupTwoAgentsVisual reducedMotion={props.reducedMotion} />
+      <SetupPreview>
+        <SetupTwoAgentsVisual reducedMotion={props.reducedMotion} />
+      </SetupPreview>
     </div>
   )
 }
@@ -121,7 +140,9 @@ export function WorkspacesAction(props: {
           Try it out
         </Button>
       ) : null}
-      <SetupWorkspacesVisual reducedMotion={props.reducedMotion} />
+      <SetupPreview>
+        <SetupWorkspacesVisual reducedMotion={props.reducedMotion} />
+      </SetupPreview>
     </div>
   )
 }
@@ -229,7 +250,9 @@ export function SetupScriptAction(props: { reducedMotion: boolean }): React.JSX.
           Add a git project first, then configure the setup script for that repository.
         </p>
       ) : null}
-      <SetupScriptAnimatedVisual reducedMotion={props.reducedMotion} />
+      <SetupPreview>
+        <SetupScriptAnimatedVisual reducedMotion={props.reducedMotion} />
+      </SetupPreview>
     </div>
   )
 }

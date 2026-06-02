@@ -12,6 +12,7 @@ import { TasksAnimatedVisual } from './TasksAnimatedVisual'
 import { AgentCapabilitiesSetupAction } from './AgentCapabilitiesSetupAction'
 import {
   AddReposAction,
+  SetupPreview,
   SetupScriptAction,
   TwoAgentsAction,
   WorkspacesAction
@@ -207,9 +208,9 @@ function TaskSourcesAction(props: { reducedMotion: boolean }): React.JSX.Element
         <ArrowUpRight className="size-3.5" />
         See tasks
       </Button>
-      <div className="mx-auto h-[220px] w-full max-w-[480px]">
+      <SetupPreview className="mx-auto h-[220px] w-full max-w-[480px]">
         <TasksAnimatedVisual reducedMotion={props.reducedMotion} />
-      </div>
+      </SetupPreview>
     </div>
   )
 }

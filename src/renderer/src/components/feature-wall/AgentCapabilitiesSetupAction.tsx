@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, Globe2, Loader2, MonitorCog, Workflow } from 'lucide-react'
+import { Check, Globe2, Loader2, MonitorCog, Terminal, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -177,7 +177,11 @@ function AgentCapabilitySetupControls(props: {
             disabled={!hasSelectedFeatures || Boolean(props.setupBusyLabel)}
             onClick={props.onStartFeatureSetup}
           >
-            {props.setupBusyLabel ? <Loader2 className="size-4 animate-spin" /> : null}
+            {props.setupBusyLabel ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Terminal className="size-4" />
+            )}
             {props.setupBusyLabel ?? 'Install CLI & Skills'}
           </Button>
         </div>
@@ -354,9 +358,7 @@ function AgentCapabilityAnimationCarousel(props: { reducedMotion: boolean }): Re
   return (
     <div className="rounded-xl border border-border bg-muted/20 p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          {activeSlide.title}
-        </div>
+        <div className="text-xs font-semibold leading-none text-muted-foreground">Preview</div>
         <div className="flex items-center gap-1">
           {slides.map((slide, index) => (
             <button
