@@ -55,6 +55,10 @@ import {
   patchPackagedProcessPath,
   shouldInstallManagedHooks
 } from './startup/configure-process'
+import {
+  shouldSuppressDevEducation,
+  suppressDevEducationForStore
+} from './startup/dev-education-suppression'
 import { maybeRedirectAppImageCliLaunch } from './startup/appimage-cli-redirect'
 import { startFirstWindowStartupServices } from './startup/first-window-startup-services'
 import { getDevInstanceIdentity } from './startup/dev-instance-identity'
@@ -198,7 +202,10 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
         return !!meta?.orcaCreationSource && meta.preserveBranchOnDelete !== true
       },
       setDisplayName: (worktreeId, displayName) => {
-        currentStore.setWorktreeMeta(worktreeId, { displayName })
+        currentStore.setWorktreeMeta(worktreeId, {
+          displayName,
+          pendingFirstAgentMessageRename: false
+        })
       },
       resolveWorktreeIdForTab: (tabId) => currentStore.getWorktreeIdForTab(tabId),
       onRenamed: (repoId) => currentRuntime.notifyBranchRenamed(repoId)
@@ -1032,6 +1039,9 @@ app.whenReady().then(async () => {
   }
 
   store = new Store()
+  if (shouldSuppressDevEducation({ isDev: is.dev })) {
+    suppressDevEducationForStore(store)
+  }
   try {
     // Why: Dock/Launchpad launches do not inherit shell proxy env vars, so the
     // persisted proxy must be applied before any app-owned network fetchers run.

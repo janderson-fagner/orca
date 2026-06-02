@@ -186,6 +186,7 @@ function areWorktreesEqual(current: Worktree[] | undefined, next: Worktree[]): b
       worktree.lastActivityAt === candidate.lastActivityAt &&
       worktree.workspaceStatus === candidate.workspaceStatus &&
       worktree.createdWithAgent === candidate.createdWithAgent &&
+      worktree.pendingFirstAgentMessageRename === candidate.pendingFirstAgentMessageRename &&
       worktree.baseRef === candidate.baseRef &&
       worktree.pushTarget?.remoteName === candidate.pushTarget?.remoteName &&
       worktree.pushTarget?.branchName === candidate.pushTarget?.branchName &&
@@ -1001,7 +1002,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     workspaceStatus,
     linkedGitLabMR,
     linkedGitLabIssue,
-    startup
+    startup,
+    pendingFirstAgentMessageRename
   ) => {
     const retryableConflictPatterns = [
       /already exists locally/i,
@@ -1040,6 +1042,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
             ...(linkedPR !== undefined ? { linkedPR } : {}),
             ...(pushTarget ? { pushTarget } : {}),
             ...(createdWithAgent ? { createdWithAgent } : {}),
+            ...(pendingFirstAgentMessageRename === true && createdWithAgent
+              ? { pendingFirstAgentMessageRename: true }
+              : {}),
             ...(linkedLinearIssue !== undefined ? { linkedLinearIssue } : {}),
             ...(manualOrder !== undefined ? { manualOrder } : {}),
             ...(workspaceStatus !== undefined ? { workspaceStatus } : {}),
@@ -1066,6 +1071,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
                     ...(linkedPR !== undefined ? { linkedPR } : {}),
                     ...(pushTarget ? { pushTarget } : {}),
                     ...(createdWithAgent ? { createdWithAgent } : {}),
+                    ...(pendingFirstAgentMessageRename === true && createdWithAgent
+                      ? { pendingFirstAgentMessageRename: true }
+                      : {}),
                     ...(linkedLinearIssue !== undefined ? { linkedLinearIssue } : {}),
                     ...(manualOrder !== undefined ? { manualOrder } : {}),
                     ...(workspaceStatus !== undefined ? { workspaceStatus } : {}),
@@ -1506,10 +1514,12 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     const targetEnriched = resolvedPushTarget
       ? { ...updates, pushTarget: resolvedPushTarget }
       : updates
-    const enriched =
-      'comment' in targetEnriched
-        ? { ...targetEnriched, lastActivityAt: Date.now() }
+    const renameCleared =
+      'displayName' in targetEnriched
+        ? { ...targetEnriched, pendingFirstAgentMessageRename: false }
         : targetEnriched
+    const enriched =
+      'comment' in renameCleared ? { ...renameCleared, lastActivityAt: Date.now() } : renameCleared
 
     let didApply = false
     set((s) => {
