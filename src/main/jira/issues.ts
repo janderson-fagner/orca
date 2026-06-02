@@ -413,7 +413,7 @@ export async function searchIssues(
       } catch (error) {
         if (isAuthError(error)) {
           clearToken(entry.site.id)
-          if (shouldThrowAuthError(siteId)) {
+          if (entries.length === 1 && shouldThrowAuthError(siteId)) {
             throw error
           }
         } else {
