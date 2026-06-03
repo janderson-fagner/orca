@@ -98,4 +98,15 @@ describe('buildOnboardingFolderAgentStartup', () => {
       }
     })
   })
+
+  it('uses legacy launch overrides, not runtime-scoped availability commands', () => {
+    expect(
+      buildOnboardingFolderAgentStartup({
+        ...getDefaultSettings('/tmp/orca-workspaces'),
+        defaultTuiAgent: 'codex',
+        agentCmdOverrides: { codex: 'legacy-codex' },
+        agentCmdOverridesByRuntime: { host: { codex: 'host-codex' } }
+      })
+    ).toMatchObject({ command: 'legacy-codex' })
+  })
 })

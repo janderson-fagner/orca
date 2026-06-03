@@ -275,6 +275,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     opencodeWorkspaceId: '',
     geminiCliOAuthEnabled: false,
     agentCmdOverrides: {},
+    agentCmdOverridesByRuntime: {},
     agentStatusHooksEnabled: true,
     tabAutoGenerateTitle: false,
     keepComputerAwakeWhileAgentsRun: false,

@@ -180,7 +180,7 @@ export function SettingsSegmentedControl<T extends string | number>({
 }
 
 type SettingsBadgeProps = {
-  tone?: 'neutral' | 'accent' | 'muted'
+  tone?: 'neutral' | 'accent' | 'muted' | 'destructive'
   children: React.ReactNode
   className?: string
 }
@@ -199,7 +199,9 @@ export function SettingsBadge({
           ? 'border-foreground/20 bg-foreground/10 text-foreground'
           : tone === 'muted'
             ? 'border-border/40 bg-muted/30 text-muted-foreground'
-            : 'border-border/50 bg-background/50 text-foreground/80',
+            : tone === 'destructive'
+              ? 'border-destructive/30 bg-destructive/10 text-destructive'
+              : 'border-border/50 bg-background/50 text-foreground/80',
         className
       )}
     >

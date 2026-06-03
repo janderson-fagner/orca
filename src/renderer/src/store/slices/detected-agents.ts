@@ -2,12 +2,17 @@ import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { PathSource, ShellHydrationFailureReason, TuiAgent } from '../../../../shared/types'
 import {
+  resolveAgentCmdOverridesForRuntime,
+  type AgentDetectionProvenance
+} from '../../../../shared/agent-command-overrides'
+import {
   getLocalAgentPreflightContext,
   localPreflightContextKey
 } from '@/lib/local-preflight-context'
 
 export type DetectedAgentsSlice = {
   detectedAgentIds: TuiAgent[] | null
+  detectedAgentResults: AgentDetectionProvenance[] | null
   isDetectingAgents: boolean
   isRefreshingAgents: boolean
   /** Telemetry classification of the most recent refreshAgents() run. `null`
@@ -44,11 +49,18 @@ export function _getRemoteDetectPromiseCountForTest(): number {
   return remoteDetectPromises.size
 }
 
+export function _resetDetectedAgentsLocalCacheForTest(): void {
+  detectPromise = null
+  refreshPromise = null
+  detectedContextKey = null
+}
+
 export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedAgentsSlice> = (
   set,
   get
 ) => ({
   detectedAgentIds: null,
+  detectedAgentResults: null,
   isDetectingAgents: false,
   isRefreshingAgents: false,
   pathSource: null,
@@ -56,7 +68,8 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
 
   ensureDetectedAgents: () => {
     const context = getLocalAgentPreflightContext(get())
-    const contextKey = localPreflightContextKey(context)
+    const agentCmdOverrides = resolveAgentCmdOverridesForRuntime(get().settings, context)
+    const contextKey = localAgentDetectionCacheKey(context, agentCmdOverrides)
     const existing = get().detectedAgentIds
     if (existing && detectedContextKey === contextKey) {
       return Promise.resolve(existing)
@@ -67,15 +80,20 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
     const contextChanged = detectedContextKey !== contextKey
     set({
       detectedAgentIds: contextChanged ? null : get().detectedAgentIds,
+      detectedAgentResults: contextChanged ? null : get().detectedAgentResults,
       isDetectingAgents: true
     })
     const pending = window.api.preflight
-      .detectAgents(context)
-      .then((ids) => {
-        const typed = ids as TuiAgent[]
-        set({ detectedAgentIds: typed, isDetectingAgents: false })
+      .detectAgents(buildLocalAgentDetectionArgs(context, agentCmdOverrides))
+      .then((result) => {
+        const normalized = normalizeLocalAgentDetection(result)
+        set({
+          detectedAgentIds: normalized.ids,
+          detectedAgentResults: normalized.results,
+          isDetectingAgents: false
+        })
         detectedContextKey = contextKey
-        return typed
+        return normalized.ids
       })
       .catch(() => {
         // Why: allow a retry on the next call if detection blew up (IPC timeout
@@ -83,6 +101,7 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
         detectPromise = null
         set({
           detectedAgentIds: contextChanged ? [] : get().detectedAgentIds,
+          detectedAgentResults: contextChanged ? [] : get().detectedAgentResults,
           isDetectingAgents: false
         })
         return [] as TuiAgent[]
@@ -93,21 +112,24 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
 
   refreshDetectedAgents: () => {
     const context = getLocalAgentPreflightContext(get())
-    const contextKey = localPreflightContextKey(context)
+    const agentCmdOverrides = resolveAgentCmdOverridesForRuntime(get().settings, context)
+    const contextKey = localAgentDetectionCacheKey(context, agentCmdOverrides)
     if (refreshPromise?.key === contextKey) {
       return refreshPromise.promise
     }
     const contextChanged = detectedContextKey !== contextKey
     set({
       detectedAgentIds: contextChanged ? null : get().detectedAgentIds,
+      detectedAgentResults: contextChanged ? null : get().detectedAgentResults,
       isRefreshingAgents: true
     })
     const pending = window.api.preflight
-      .refreshAgents(context)
+      .refreshAgents(buildLocalAgentDetectionArgs(context, agentCmdOverrides))
       .then((result) => {
-        const typed = result.agents as TuiAgent[]
+        const normalized = normalizeLocalAgentDetection(result.agentResults ?? result.agents)
         set({
-          detectedAgentIds: typed,
+          detectedAgentIds: normalized.ids,
+          detectedAgentResults: normalized.results,
           isRefreshingAgents: false,
           pathSource: result.pathSource,
           pathFailureReason: result.pathFailureReason
@@ -115,13 +137,14 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
         // Why: once refresh has run, treat its result as the current detection
         // snapshot so `ensureDetectedAgents` short-circuits.
         detectedContextKey = contextKey
-        detectPromise = { key: contextKey, promise: Promise.resolve(typed) }
-        return typed
+        detectPromise = { key: contextKey, promise: Promise.resolve(normalized.ids) }
+        return normalized.ids
       })
       .catch(() => {
         const fallback = contextChanged ? [] : (get().detectedAgentIds ?? [])
         set({
           detectedAgentIds: fallback,
+          detectedAgentResults: contextChanged ? [] : get().detectedAgentResults,
           isRefreshingAgents: false
         })
         return fallback
@@ -195,3 +218,53 @@ export const createDetectedAgentsSlice: StateCreator<AppState, [], [], DetectedA
     })
   }
 })
+
+function buildLocalAgentDetectionArgs(
+  context: ReturnType<typeof getLocalAgentPreflightContext>,
+  agentCmdOverrides: Partial<Record<TuiAgent, string>>
+):
+  | {
+      wslDistro?: string | null
+      wslDefault?: boolean
+      agentCmdOverrides?: Partial<Record<TuiAgent, string>>
+    }
+  | undefined {
+  const hasOverrides = Object.keys(agentCmdOverrides).length > 0
+  if (!context && !hasOverrides) {
+    return undefined
+  }
+  return {
+    ...context,
+    ...(hasOverrides ? { agentCmdOverrides } : {})
+  }
+}
+
+function localAgentDetectionCacheKey(
+  context: ReturnType<typeof getLocalAgentPreflightContext>,
+  agentCmdOverrides: Partial<Record<TuiAgent, string>>
+): string {
+  const overrideKey = Object.entries(agentCmdOverrides)
+    .filter((entry): entry is [TuiAgent, string] => typeof entry[1] === 'string')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([agent, command]) => `${agent}=${command}`)
+    .join('\n')
+  return `${localPreflightContextKey(context)}\n${overrideKey}`
+}
+
+function normalizeLocalAgentDetection(
+  result: readonly string[] | readonly AgentDetectionProvenance[]
+): { ids: TuiAgent[]; results: AgentDetectionProvenance[] } {
+  const first = result[0]
+  if (typeof first === 'string' || first === undefined) {
+    const ids = result as readonly TuiAgent[]
+    return {
+      ids: [...ids],
+      results: ids.map((id) => ({ id, catalogFound: true, overrideFound: false }))
+    }
+  }
+  const results = [...(result as readonly AgentDetectionProvenance[])]
+  return {
+    ids: results.map((entry) => entry.id),
+    results
+  }
+}

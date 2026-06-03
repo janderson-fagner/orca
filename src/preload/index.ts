@@ -1561,11 +1561,15 @@ const api = {
       }
       linear: { connected: boolean }
     }> => ipcRenderer.invoke('preflight:check', args),
-    detectAgents: (args?: { wslDistro?: string | null; wslDefault?: boolean }): Promise<string[]> =>
-      ipcRenderer.invoke('preflight:detectAgents', args),
+    detectAgents: (args?: {
+      wslDistro?: string | null
+      wslDefault?: boolean
+      agentCmdOverrides?: Record<string, string>
+    }) => ipcRenderer.invoke('preflight:detectAgents', args),
     refreshAgents: (args?: {
       wslDistro?: string | null
       wslDefault?: boolean
+      agentCmdOverrides?: Record<string, string>
     }): Promise<RefreshAgentsResult> => ipcRenderer.invoke('preflight:refreshAgents', args),
     detectRemoteAgents: (args: { connectionId: string }): Promise<string[]> =>
       ipcRenderer.invoke('preflight:detectRemoteAgents', args)

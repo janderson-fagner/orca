@@ -2168,6 +2168,9 @@ export type GlobalSettings = {
   geminiCliOAuthEnabled: boolean
   /** Per-agent CLI command overrides. A missing key means use the catalog default binary name. */
   agentCmdOverrides: Partial<Record<TuiAgent, string>>
+  /** Runtime-scoped local agent detection commands. These make detection
+   *  runtime-aware; launch remains controlled by the legacy flat map above. */
+  agentCmdOverridesByRuntime?: Record<string, Partial<Record<TuiAgent, string>>>
   /** Why: disabling must persist so startup does not reinstall global agent
    *  hook entries right after the user removes them from Settings or CLI. */
   agentStatusHooksEnabled: boolean

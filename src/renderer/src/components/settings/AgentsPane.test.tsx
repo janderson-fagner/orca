@@ -24,12 +24,14 @@ import { matchesSettingsSearch } from './settings-search'
 
 const detectedAgentsMock = vi.hoisted(() => ({
   detectedIds: ['claude'] as TuiAgent[] | null,
+  detectedResults: null as { id: TuiAgent; catalogFound: boolean; overrideFound: boolean }[] | null,
   refresh: vi.fn()
 }))
 
 vi.mock('@/hooks/useDetectedAgents', () => ({
   useDetectedAgents: () => ({
     detectedIds: detectedAgentsMock.detectedIds,
+    detectedResults: detectedAgentsMock.detectedResults,
     isLoading: detectedAgentsMock.detectedIds === null,
     isRefreshing: false,
     refresh: detectedAgentsMock.refresh
@@ -120,6 +122,7 @@ function findSwitchRow(node: unknown, ariaLabel: string): ReactElementLike {
 describe('AgentsPane', () => {
   beforeEach(() => {
     detectedAgentsMock.detectedIds = ['claude']
+    detectedAgentsMock.detectedResults = null
     detectedAgentsMock.refresh.mockReset()
     useAppStore.setState({
       settingsSearchQuery: '',
@@ -287,6 +290,31 @@ describe('AgentsPane', () => {
     expect(markup).not.toContain('aria-label="Disable Claude"')
   })
 
+  it('shows custom availability checks ahead of catalog detection', () => {
+    detectedAgentsMock.detectedIds = ['codex']
+    detectedAgentsMock.detectedResults = [{ id: 'codex', catalogFound: true, overrideFound: true }]
+    const markup = renderPane({
+      ...getDefaultSettings('/tmp'),
+      agentCmdOverridesByRuntime: {
+        host: { codex: 'custom-codex --profile work' }
+      }
+    })
+
+    expect(markup).toContain('Detected via path')
+    expect(markup).toContain('custom-codex --profile work')
+    expect(markup).toContain('Edit detection path')
+  })
+
+  it('shows a progressive detection path action for not-installed agents', () => {
+    detectedAgentsMock.detectedIds = []
+    detectedAgentsMock.detectedResults = []
+    const markup = renderPane(getDefaultSettings('/tmp'))
+
+    expect(markup).toContain('Not installed')
+    expect(markup).toContain('Already installed? Add detection path')
+    expect(markup).not.toContain('Install to use in launch and default choices.')
+  })
+
   it('only toggles agent availability when the segmented value changes', () => {
     const onSetEnabled = vi.fn()
     const control = AgentAvailabilityControl({
@@ -449,5 +477,22 @@ describe('AgentsPane', () => {
 
     writes[1].resolve()
     await secondWrite
+  })
+
+  it('shows a warning message when a saved detection path is not found', () => {
+    detectedAgentsMock.detectedIds = ['codex']
+    detectedAgentsMock.detectedResults = [
+      { id: 'codex', catalogFound: false, overrideFound: false }
+    ]
+    const markup = renderPane({
+      ...getDefaultSettings('/tmp'),
+      agentCmdOverridesByRuntime: {
+        host: { codex: 'invalid-command' }
+      }
+    })
+
+    expect(markup).toContain('Path not found')
+    expect(markup).toContain('Detection path for')
+    expect(markup).toContain('Path not found. Paste the result of which codex from')
   })
 })

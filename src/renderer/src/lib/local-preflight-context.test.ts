@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AppState } from '@/store/types'
 import {
   getLocalAgentPreflightContext,
+  getLocalAgentPreflightContextForPath,
   getLocalPreflightContext,
   getWslDistroFromPath,
   localPreflightContextKey
@@ -133,5 +134,36 @@ describe('local preflight context', () => {
 
     expect(context).toEqual({ wslDistro: 'Ubuntu' })
     expect(localPreflightContextKey(context)).toBe('wsl:Ubuntu')
+  })
+
+  it('uses a supplied workspace path when resolving local agent checks for launch', () => {
+    const state = {
+      ...makeState({ repoPath: 'C:\\Users\\alice\\repo' }),
+      settings: {}
+    } as AppState
+
+    const context = getLocalAgentPreflightContextForPath(
+      state,
+      String.raw`\\wsl.localhost\Fedora\home\alice\repo`
+    )
+
+    expect(context).toEqual({ wslDistro: 'Fedora' })
+    expect(localPreflightContextKey(context)).toBe('wsl:Fedora')
+  })
+
+  it('lets explicit agent location override a supplied workspace path', () => {
+    const state = {
+      ...makeState({ repoPath: 'C:\\Users\\alice\\repo' }),
+      settings: {
+        localAgentRuntime: 'host'
+      }
+    } as AppState
+
+    expect(
+      getLocalAgentPreflightContextForPath(
+        state,
+        String.raw`\\wsl.localhost\Fedora\home\alice\repo`
+      )
+    ).toBeUndefined()
   })
 })

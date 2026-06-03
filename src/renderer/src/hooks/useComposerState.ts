@@ -1,7 +1,8 @@
-/* eslint-disable max-lines -- Why: this hook co-locates every piece of state
+/* eslint-disable max-lines, react-doctor/no-adjust-state-on-prop-change -- Why: this hook co-locates every piece of state
 the NewWorkspaceComposerCard reads or mutates, so both the full-page composer
 and the global quick-composer modal can consume a single unified source of
-truth without duplicating effects, derivation, or the create side-effect. */
+truth without duplicating effects, derivation, or the create side-effect. The
+existing state-sync effects are intentional until the composer is split. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'

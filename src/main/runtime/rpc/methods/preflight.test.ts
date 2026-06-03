@@ -5,19 +5,19 @@ import type { OrcaRuntimeService } from '../../orca-runtime'
 import { PREFLIGHT_METHODS } from './preflight'
 
 const {
-  detectInstalledAgentsMock,
+  detectInstalledAgentProvenanceMock,
   detectRemoteAgentsMock,
   refreshShellPathAndDetectAgentsMock,
   runPreflightCheckMock
 } = vi.hoisted(() => ({
-  detectInstalledAgentsMock: vi.fn(),
+  detectInstalledAgentProvenanceMock: vi.fn(),
   detectRemoteAgentsMock: vi.fn(),
   refreshShellPathAndDetectAgentsMock: vi.fn(),
   runPreflightCheckMock: vi.fn()
 }))
 
 vi.mock('../../../ipc/preflight', () => ({
-  detectInstalledAgents: detectInstalledAgentsMock,
+  detectInstalledAgentProvenance: detectInstalledAgentProvenanceMock,
   detectRemoteAgents: detectRemoteAgentsMock,
   refreshShellPathAndDetectAgents: refreshShellPathAndDetectAgentsMock,
   runPreflightCheck: runPreflightCheckMock
@@ -46,7 +46,9 @@ describe('preflight RPC methods', () => {
   })
 
   it('detects agents and refreshes PATH on the server through runtime RPC', async () => {
-    detectInstalledAgentsMock.mockResolvedValueOnce(['codex'])
+    detectInstalledAgentProvenanceMock.mockResolvedValueOnce([
+      { id: 'codex', catalogFound: true, overrideFound: false }
+    ])
     refreshShellPathAndDetectAgentsMock.mockResolvedValueOnce({
       agents: ['codex', 'claude'],
       addedPathSegments: ['/opt/bin'],
@@ -60,9 +62,12 @@ describe('preflight RPC methods', () => {
     const detected = await dispatcher.dispatch(makeRequest('preflight.detectAgents'))
     const refreshed = await dispatcher.dispatch(makeRequest('preflight.refreshAgents'))
 
-    expect(detectInstalledAgentsMock).toHaveBeenCalled()
+    expect(detectInstalledAgentProvenanceMock).toHaveBeenCalled()
     expect(refreshShellPathAndDetectAgentsMock).toHaveBeenCalled()
-    expect(detected).toMatchObject({ ok: true, result: ['codex'] })
+    expect(detected).toMatchObject({
+      ok: true,
+      result: [{ id: 'codex', catalogFound: true, overrideFound: false }]
+    })
     expect(refreshed).toMatchObject({
       ok: true,
       result: { agents: ['codex', 'claude'], shellHydrationOk: true }

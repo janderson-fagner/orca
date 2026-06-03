@@ -9,9 +9,13 @@ const mockPasteDraftWhenAgentReady = vi.fn()
 const mockTrack = vi.fn()
 
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
+type MockSettings = {
+  agentCmdOverrides: Record<string, string>
+  agentCmdOverridesByRuntime?: Record<string, Record<string, string>>
+}
 
 const store = {
-  settings: { agentCmdOverrides: {} },
+  settings: { agentCmdOverrides: {} } as MockSettings,
   tabsByWorktree: {
     'wt-1': [{ id: 'tab-1' }]
   },
@@ -143,6 +147,30 @@ describe('launchAgentInNewTab', () => {
       'tab-1',
       expect.objectContaining({
         command: "claude --prefill 'review Bob''s change'"
+      })
+    )
+  })
+
+  it('does not use runtime-scoped availability commands for launch commands', async () => {
+    store.settings = {
+      agentCmdOverrides: {},
+      agentCmdOverridesByRuntime: {
+        host: {
+          claude: 'C:\\Tools\\claude.cmd'
+        }
+      }
+    }
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+
+    launchAgentInNewTab({
+      agent: 'claude',
+      worktreeId: 'wt-1'
+    })
+
+    expect(mockQueueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({
+        command: 'claude'
       })
     )
   })

@@ -86,6 +86,8 @@ import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '../../shared/t
 import { isExpectedAgentProcess } from '../../shared/agent-process-recognition'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
 import { TUI_AGENT_CONFIG, isTuiAgent } from '../../shared/tui-agent-config'
+import { resolveAgentCmdOverridesForRuntime } from '../../shared/agent-command-overrides'
+import { parseWslUncPath } from '../../shared/wsl-paths'
 import { detectInstalledAgents, detectRemoteAgents } from '../ipc/preflight'
 import {
   markCodexProjectTrusted,
@@ -526,6 +528,11 @@ type RuntimeStore = {
     defaultTuiAgent?: GlobalSettings['defaultTuiAgent']
     disabledTuiAgents?: GlobalSettings['disabledTuiAgents']
     agentCmdOverrides?: GlobalSettings['agentCmdOverrides']
+    agentCmdOverridesByRuntime?: GlobalSettings['agentCmdOverridesByRuntime']
+    localAgentRuntime?: GlobalSettings['localAgentRuntime']
+    localAgentWslDistro?: GlobalSettings['localAgentWslDistro']
+    terminalWindowsShell?: GlobalSettings['terminalWindowsShell']
+    terminalWindowsWslDistro?: GlobalSettings['terminalWindowsWslDistro']
     agentStatusHooksEnabled?: GlobalSettings['agentStatusHooksEnabled']
     defaultTaskSource?: GlobalSettings['defaultTaskSource']
     defaultTaskViewPreset?: GlobalSettings['defaultTaskViewPreset']
@@ -545,6 +552,47 @@ type RuntimeStore = {
     updates: Partial<GlobalSettings>,
     options?: { notifyListeners?: boolean; originWebContentsId?: number }
   ) => unknown
+}
+
+type RuntimeHostAgentAvailabilitySettings = {
+  agentCmdOverrides?: GlobalSettings['agentCmdOverrides']
+  agentCmdOverridesByRuntime?: GlobalSettings['agentCmdOverridesByRuntime']
+  localAgentRuntime?: GlobalSettings['localAgentRuntime']
+  localAgentWslDistro?: GlobalSettings['localAgentWslDistro']
+  terminalWindowsShell?: GlobalSettings['terminalWindowsShell']
+  terminalWindowsWslDistro?: GlobalSettings['terminalWindowsWslDistro']
+}
+
+function resolveRuntimeHostAgentAvailabilityCommands(
+  settings: RuntimeHostAgentAvailabilitySettings,
+  workspacePath?: string | null
+): Partial<Record<TuiAgent, string>> {
+  return resolveAgentCmdOverridesForRuntime(
+    settings,
+    getRuntimeHostAgentOverrideContext(settings, workspacePath)
+  )
+}
+
+function getRuntimeHostAgentOverrideContext(
+  settings: RuntimeHostAgentAvailabilitySettings,
+  workspacePath?: string | null
+): { wslDistro?: string | null; wslDefault?: boolean } | undefined {
+  if (settings.localAgentRuntime === 'host') {
+    return undefined
+  }
+  if (settings.localAgentRuntime === 'wsl') {
+    const distro = settings.localAgentWslDistro?.trim() || settings.terminalWindowsWslDistro?.trim()
+    return distro ? { wslDistro: distro } : { wslDefault: true }
+  }
+  const pathDistro = workspacePath ? (parseWslUncPath(workspacePath)?.distro ?? null) : null
+  if (pathDistro) {
+    return { wslDistro: pathDistro }
+  }
+  if (settings.terminalWindowsShell === 'wsl.exe') {
+    const distro = settings.terminalWindowsWslDistro?.trim()
+    return distro ? { wslDistro: distro } : { wslDefault: true }
+  }
+  return undefined
 }
 
 export type RuntimeAutomationCreateInput = Omit<
@@ -1558,6 +1606,7 @@ export class OrcaRuntimeService {
     | 'defaultTuiAgent'
     | 'disabledTuiAgents'
     | 'agentCmdOverrides'
+    | 'agentCmdOverridesByRuntime'
     | 'agentStatusHooksEnabled'
     | 'defaultTaskSource'
     | 'defaultTaskViewPreset'
@@ -1574,6 +1623,7 @@ export class OrcaRuntimeService {
       defaultTuiAgent: settings.defaultTuiAgent ?? null,
       disabledTuiAgents: settings.disabledTuiAgents ?? [],
       agentCmdOverrides: settings.agentCmdOverrides ?? {},
+      agentCmdOverridesByRuntime: settings.agentCmdOverridesByRuntime ?? {},
       agentStatusHooksEnabled: settings.agentStatusHooksEnabled !== false,
       defaultTaskSource: settings.defaultTaskSource ?? 'github',
       defaultTaskViewPreset: settings.defaultTaskViewPreset ?? 'issues',
@@ -1588,6 +1638,8 @@ export class OrcaRuntimeService {
     updates: Pick<
       Partial<GlobalSettings>,
       | 'agentStatusHooksEnabled'
+      | 'agentCmdOverrides'
+      | 'agentCmdOverridesByRuntime'
       | 'defaultTuiAgent'
       | 'disabledTuiAgents'
       | 'defaultTaskSource'
@@ -1602,6 +1654,7 @@ export class OrcaRuntimeService {
     | 'defaultTuiAgent'
     | 'disabledTuiAgents'
     | 'agentCmdOverrides'
+    | 'agentCmdOverridesByRuntime'
     | 'agentStatusHooksEnabled'
     | 'defaultTaskSource'
     | 'defaultTaskViewPreset'
@@ -7460,7 +7513,9 @@ export class OrcaRuntimeService {
       try {
         detected = repo.connectionId
           ? await detectRemoteAgents({ connectionId: repo.connectionId })
-          : await detectInstalledAgents()
+          : await detectInstalledAgents({
+              agentCmdOverrides: resolveRuntimeHostAgentAvailabilityCommands(settings, repo.path)
+            })
       } catch {
         detected = []
       }
@@ -7474,10 +7529,11 @@ export class OrcaRuntimeService {
     // Why: a mobile client can run on Windows while the workspace shell is
     // Linux over SSH. Startup command quoting must target the shell that runs it.
     const agentLaunchPlatform = getAgentLaunchPlatformForRepo(repo)
+    const cmdOverrides = settings.agentCmdOverrides ?? {}
     const draftLaunchPlan = buildAgentDraftLaunchPlan({
       agent,
       draft: content,
-      cmdOverrides: settings.agentCmdOverrides ?? {},
+      cmdOverrides,
       platform: agentLaunchPlatform
     })
     if (draftLaunchPlan) {
@@ -7493,7 +7549,7 @@ export class OrcaRuntimeService {
     const startupPlan = buildAgentStartupPlan({
       agent,
       prompt: '',
-      cmdOverrides: settings.agentCmdOverrides ?? {},
+      cmdOverrides,
       platform: agentLaunchPlatform,
       allowEmptyPromptLaunch: true
     })
@@ -10085,10 +10141,11 @@ export class OrcaRuntimeService {
     // Why: mobile may be running on iOS while the actual terminal shell is
     // Windows/macOS/Linux or an SSH Linux host; quote for the host shell.
     const platform = repo ? getAgentLaunchPlatformForRepo(repo) : process.platform
+    const cmdOverrides = settings.agentCmdOverrides ?? {}
     const startupPlan = buildAgentStartupPlan({
       agent: opts.agent,
       prompt: '',
-      cmdOverrides: settings.agentCmdOverrides ?? {},
+      cmdOverrides,
       platform,
       allowEmptyPromptLaunch: true
     })

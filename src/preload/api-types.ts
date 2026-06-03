@@ -7,6 +7,7 @@ import type {
   HostedReviewForBranchArgs,
   HostedReviewInfo
 } from '../shared/hosted-review'
+import type { AgentDetectionProvenance } from '../shared/agent-command-overrides'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
 import type { AppIdentity } from '../shared/app-identity'
 import type { TerminalPaneSplitSource } from '../shared/feature-education-telemetry'
@@ -455,6 +456,7 @@ export type PreflightStatus = {
 
 export type RefreshAgentsResult = {
   agents: string[]
+  agentResults: AgentDetectionProvenance[]
   addedPathSegments: string[]
   shellHydrationOk: boolean
   /** Why: drives the agent_picks `on_path:false` triage in dashboard 1562016
@@ -474,10 +476,15 @@ export type PreflightApi = {
     wslDistro?: string | null
     wslDefault?: boolean
   }) => Promise<PreflightStatus>
-  detectAgents: (args?: { wslDistro?: string | null; wslDefault?: boolean }) => Promise<string[]>
+  detectAgents: (args?: {
+    wslDistro?: string | null
+    wslDefault?: boolean
+    agentCmdOverrides?: Record<string, string>
+  }) => Promise<AgentDetectionProvenance[]>
   refreshAgents: (args?: {
     wslDistro?: string | null
     wslDefault?: boolean
+    agentCmdOverrides?: Record<string, string>
   }) => Promise<RefreshAgentsResult>
   detectRemoteAgents: (args: { connectionId: string }) => Promise<string[]>
 }

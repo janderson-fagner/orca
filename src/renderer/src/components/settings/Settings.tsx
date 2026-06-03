@@ -914,7 +914,7 @@ function Settings(): React.JSX.Element {
                 <SettingsSection
                   id="agents"
                   title="Agents"
-                  description="Manage AI agents, set a default, and customize commands."
+                  description="Manage AI agents, set a default, and configure availability."
                   searchEntries={getSectionSearchEntries('agents')}
                 >
                   {isSectionMounted('agents') ? (

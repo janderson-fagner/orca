@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { create } from 'zustand'
 import type { AppState } from '../types'
 import type { Repo, Worktree } from '../../../../shared/types'
-import { _getRemoteDetectPromiseCountForTest, createDetectedAgentsSlice } from './detected-agents'
+import {
+  _getRemoteDetectPromiseCountForTest,
+  _resetDetectedAgentsLocalCacheForTest,
+  createDetectedAgentsSlice
+} from './detected-agents'
 
 const detectAgents = vi.fn()
 const refreshAgents = vi.fn()
@@ -70,6 +74,7 @@ function makeWorktree(
 
 describe('createDetectedAgentsSlice WSL context', () => {
   beforeEach(() => {
+    _resetDetectedAgentsLocalCacheForTest()
     detectAgents.mockReset().mockResolvedValue(['claude'])
     refreshAgents.mockReset().mockResolvedValue({
       agents: ['codex'],
@@ -204,10 +209,49 @@ describe('createDetectedAgentsSlice WSL context', () => {
     await expect(detected).resolves.toEqual([])
     expect(store.getState().detectedAgentIds).toEqual([])
   })
+
+  it('passes effective runtime overrides and re-detects when they change', async () => {
+    detectAgents
+      .mockReset()
+      .mockResolvedValueOnce([{ id: 'codex', catalogFound: false, overrideFound: true }])
+      .mockResolvedValueOnce([{ id: 'claude', catalogFound: true, overrideFound: false }])
+    const store = createTestStore({
+      settings: {
+        agentCmdOverrides: { codex: 'legacy-codex' },
+        agentCmdOverridesByRuntime: {
+          host: { codex: 'custom-codex --profile work' }
+        }
+      } as unknown as AppState['settings']
+    })
+
+    await expect(store.getState().ensureDetectedAgents()).resolves.toEqual(['codex'])
+    expect(store.getState().detectedAgentResults).toEqual([
+      { id: 'codex', catalogFound: false, overrideFound: true }
+    ])
+    expect(detectAgents).toHaveBeenLastCalledWith({
+      agentCmdOverrides: { codex: 'custom-codex --profile work' }
+    })
+
+    store.setState({
+      settings: {
+        agentCmdOverrides: { codex: 'legacy-codex' },
+        agentCmdOverridesByRuntime: {
+          host: { codex: 'other-codex' }
+        }
+      } as unknown as AppState['settings']
+    })
+
+    await expect(store.getState().ensureDetectedAgents()).resolves.toEqual(['claude'])
+    expect(detectAgents).toHaveBeenCalledTimes(2)
+    expect(detectAgents).toHaveBeenLastCalledWith({
+      agentCmdOverrides: { codex: 'other-codex' }
+    })
+  })
 })
 
 describe('createDetectedAgentsSlice remote detection', () => {
   beforeEach(() => {
+    _resetDetectedAgentsLocalCacheForTest()
     detectAgents.mockReset().mockResolvedValue(['claude'])
     refreshAgents.mockReset().mockResolvedValue({
       agents: ['codex'],

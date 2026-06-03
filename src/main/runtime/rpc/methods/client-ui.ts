@@ -114,6 +114,8 @@ const SettingsUpdate = z
       .unknown()
       .transform((value) => normalizeDisabledTuiAgents(value))
       .optional(),
+    agentCmdOverrides: z.record(z.string(), z.string()).optional(),
+    agentCmdOverridesByRuntime: z.record(z.string(), z.record(z.string(), z.string())).optional(),
     defaultTaskSource: TaskProviderParam.optional(),
     visibleTaskProviders: z.array(TaskProviderParam).optional(),
     defaultTaskViewPreset: z

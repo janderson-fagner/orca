@@ -1,4 +1,5 @@
 import type { AppState } from '@/store/types'
+import { getAgentCommandOverrideRuntimeKey } from '../../../shared/agent-command-overrides'
 import { parseWslUncPath } from '../../../shared/wsl-paths'
 
 export type LocalPreflightContext = { wslDistro?: string | null; wslDefault?: boolean } | undefined
@@ -29,6 +30,35 @@ export function getLocalPreflightContext(state: AppState): LocalPreflightContext
 }
 
 export function getLocalAgentPreflightContext(state: AppState): LocalPreflightContext {
+  const explicitContext = getExplicitLocalAgentPreflightContext(state)
+  if (explicitContext !== null) {
+    return explicitContext
+  }
+
+  const wslDistro = getLocalPreflightWslDistro(state)
+  if (wslDistro) {
+    return getWslPreflightContext(wslDistro)
+  }
+  return getTerminalShellLocalAgentPreflightContext(state)
+}
+
+export function getLocalAgentPreflightContextForPath(
+  state: AppState,
+  path?: string | null
+): LocalPreflightContext {
+  const explicitContext = getExplicitLocalAgentPreflightContext(state)
+  if (explicitContext !== null) {
+    return explicitContext
+  }
+
+  const wslDistro = getWslDistroFromPath(path)
+  if (wslDistro) {
+    return getWslPreflightContext(wslDistro)
+  }
+  return getTerminalShellLocalAgentPreflightContext(state)
+}
+
+function getExplicitLocalAgentPreflightContext(state: AppState): LocalPreflightContext | null {
   const explicitAgentRuntime = state.settings?.localAgentRuntime
   if (explicitAgentRuntime === 'host') {
     return undefined
@@ -42,11 +72,10 @@ export function getLocalAgentPreflightContext(state: AppState): LocalPreflightCo
     }
     return wslDefaultPreflightContext
   }
+  return null
+}
 
-  const wslDistro = getLocalPreflightWslDistro(state)
-  if (wslDistro) {
-    return getWslPreflightContext(wslDistro)
-  }
+function getTerminalShellLocalAgentPreflightContext(state: AppState): LocalPreflightContext {
   if (state.settings?.terminalWindowsShell === 'wsl.exe') {
     const preferredDistro = state.settings.terminalWindowsWslDistro?.trim()
     if (preferredDistro) {
@@ -69,8 +98,5 @@ function getLocalPreflightWslDistro(state: AppState): string | null {
 }
 
 export function localPreflightContextKey(context: LocalPreflightContext): string {
-  if (context?.wslDistro) {
-    return `wsl:${context.wslDistro}`
-  }
-  return context?.wslDefault ? 'wsl:default' : 'host'
+  return getAgentCommandOverrideRuntimeKey(context)
 }

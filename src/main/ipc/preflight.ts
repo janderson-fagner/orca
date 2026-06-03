@@ -1,21 +1,30 @@
+/* eslint-disable max-lines -- Why: preflight IPC coordinates local, WSL, SSH,
+   source-control auth, and agent checks; focused helpers live in sibling modules. */
 import { ipcMain } from 'electron'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
-import { getTuiAgentDetectCommands, TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
-import type { PathSource, ShellHydrationFailureReason } from '../../shared/types'
+import type { PathSource, ShellHydrationFailureReason, TuiAgent } from '../../shared/types'
+import type { AgentDetectionProvenance } from '../../shared/agent-command-overrides'
 import { hydrateShellPath, mergePathSegments } from '../startup/hydrate-shell-path'
 import { getAzureDevOpsAuthStatus } from '../azure-devops/client'
 import { getBitbucketAuthStatus } from '../bitbucket/client'
 import { getGiteaAuthStatus } from '../gitea/client'
 import { _resetKnownHostsCache } from '../gitlab/gl-utils'
 import { getActiveMultiplexer } from './ssh'
+import {
+  buildAgentDetectionProvenance,
+  getOverrideExecutableChecks,
+  KNOWN_AGENT_COMMANDS
+} from './preflight-agent-detection'
+import { detectWslCommandsOnPath, type WslPreflightTarget } from './preflight-wsl-agent-detection'
 const execFileAsync = promisify(execFile)
 const PREFLIGHT_COMMAND_TIMEOUT_MS = 5000
 
 type PreflightRuntimeContext = {
   wslDistro?: string | null
   wslDefault?: boolean
+  agentCmdOverrides?: Partial<Record<TuiAgent, string>>
 }
 
 export type PreflightStatus = {
@@ -50,10 +59,6 @@ let cached: PreflightStatus | null = null
 /** @internal - tests need a clean preflight cache between cases. */
 export function _resetPreflightCache(): void {
   cached = null
-}
-
-type WslPreflightTarget = {
-  distro?: string
 }
 
 function shellQuote(value: string): string {
@@ -105,7 +110,9 @@ async function execCommandInWsl(
   command: string
 ): Promise<{ stdout: string; stderr: string }> {
   const distroArgs = target.distro ? ['-d', target.distro] : []
-  const commandPromise = execFileAsync('wsl.exe', [...distroArgs, '--', 'bash', '-lc', command], {
+  // Why: nvm/asdf/mise installs are commonly initialized from .bashrc. Match
+  // the interactive WSL terminal environment instead of bare `bash -lc`.
+  const commandPromise = execFileAsync('wsl.exe', [...distroArgs, '--', 'bash', '-ic', command], {
     encoding: 'utf-8',
     timeout: PREFLIGHT_COMMAND_TIMEOUT_MS
   }) as Promise<{ stdout: string; stderr: string }>
@@ -144,12 +151,30 @@ async function isCommandOnPath(command: string, wslTarget?: WslPreflightTarget):
   }
 }
 
-const KNOWN_AGENT_COMMANDS = Object.entries(TUI_AGENT_CONFIG).flatMap(([id, config]) =>
-  getTuiAgentDetectCommands(config).map((cmd) => ({
+type AgentCommandPathCheck = { id: TuiAgent; command: string }
+
+async function detectAgentCommandsOnPath(
+  checks: readonly AgentCommandPathCheck[],
+  wslTarget?: WslPreflightTarget
+): Promise<{ id: TuiAgent; installed: boolean }[]> {
+  if (!wslTarget) {
+    return Promise.all(
+      checks.map(async ({ id, command }) => ({
+        id,
+        installed: await isCommandOnPath(command)
+      }))
+    )
+  }
+
+  const installedCommands = await detectWslCommandsOnPath(
+    wslTarget,
+    checks.map((check) => check.command)
+  )
+  return checks.map(({ id, command }) => ({
     id,
-    cmd
+    installed: installedCommands.has(command)
   }))
-)
+}
 
 function uniqueAgentIds(ids: Iterable<string>): string[] {
   return [...new Set(ids)]
@@ -182,20 +207,39 @@ async function detectCommandRuntime(
   return { installed: false }
 }
 
-export async function detectInstalledAgents(context?: PreflightRuntimeContext): Promise<string[]> {
+export async function detectInstalledAgentProvenance(
+  context?: PreflightRuntimeContext
+): Promise<AgentDetectionProvenance[]> {
   const wslTarget = getPreflightWslTarget(context)
-  const checks = await Promise.all(
-    KNOWN_AGENT_COMMANDS.map(async ({ id, cmd }) => ({
+  const catalogInputs = KNOWN_AGENT_COMMANDS.map(({ id, cmd }) => ({
+    id: id as TuiAgent,
+    command: cmd
+  }))
+  const overrideInputs = getOverrideExecutableChecks(context?.agentCmdOverrides).map(
+    ({ id, executable }) => ({
       id,
-      installed: await isCommandOnPath(cmd, wslTarget ?? undefined)
-    }))
+      command: executable
+    })
   )
-  return uniqueAgentIds(checks.filter((c) => c.installed).map((c) => c.id))
+  const checks = await detectAgentCommandsOnPath(
+    [...catalogInputs, ...overrideInputs],
+    wslTarget ?? undefined
+  )
+  const catalogChecks = checks.slice(0, catalogInputs.length)
+  const overrideChecks = checks.slice(catalogInputs.length)
+  return buildAgentDetectionProvenance(catalogChecks, overrideChecks)
+}
+
+export async function detectInstalledAgents(context?: PreflightRuntimeContext): Promise<string[]> {
+  const checks = await detectInstalledAgentProvenance(context)
+  return uniqueAgentIds(checks.map((c) => c.id))
 }
 
 export type RefreshAgentsResult = {
   /** Agents detected after hydrating PATH from the user's login shell. */
   agents: string[]
+  /** Provenance for local availability badges and custom-command state. */
+  agentResults: AgentDetectionProvenance[]
   /** PATH segments that were added this refresh (empty if nothing new). */
   addedPathSegments: string[]
   /** True when the shell spawn succeeded. False = relied on existing PATH. */
@@ -221,9 +265,10 @@ export async function refreshShellPathAndDetectAgents(
 ): Promise<RefreshAgentsResult> {
   const hydration = await hydrateShellPath({ force: true })
   const added = hydration.ok ? mergePathSegments(hydration.segments) : []
-  const agents = await detectInstalledAgents(context)
+  const agentResults = await detectInstalledAgentProvenance(context)
   return {
-    agents,
+    agents: uniqueAgentIds(agentResults.map((entry) => entry.id)),
+    agentResults,
     addedPathSegments: added,
     shellHydrationOk: hydration.ok,
     pathSource: hydration.ok ? 'shell_hydrate' : 'sync_seed_only',
@@ -339,8 +384,8 @@ export function registerPreflightHandlers(): void {
 
   ipcMain.handle(
     'preflight:detectAgents',
-    async (_event, args?: PreflightRuntimeContext): Promise<string[]> => {
-      return detectInstalledAgents(args)
+    async (_event, args?: PreflightRuntimeContext): Promise<AgentDetectionProvenance[]> => {
+      return detectInstalledAgentProvenance(args)
     }
   )
 

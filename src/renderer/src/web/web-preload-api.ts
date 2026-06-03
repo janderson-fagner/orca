@@ -1837,6 +1837,7 @@ function createPreflightApi(): NonNullable<Partial<PreloadApi>['preflight']> {
   }
   const fallbackRefreshAgents: RefreshAgentsResult = {
     agents: [],
+    agentResults: [],
     addedPathSegments: [],
     shellHydrationOk: false,
     pathSource: 'sync_seed_only',
@@ -1853,7 +1854,9 @@ function createPreflightApi(): NonNullable<Partial<PreloadApi>['preflight']> {
       if (!requireActiveEnvironmentOrNull()) {
         return []
       }
-      return callRuntimeResult<string[]>('preflight.detectAgents').catch(() => [])
+      return callRuntimeResult<Awaited<ReturnType<PreloadApi['preflight']['detectAgents']>>>(
+        'preflight.detectAgents'
+      ).catch(() => [])
     },
     refreshAgents: () =>
       requireActiveEnvironmentOrNull()

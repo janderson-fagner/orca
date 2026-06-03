@@ -23,6 +23,9 @@ function buildAgentSettingsKeywords(): string[] {
     'agent',
     'default',
     'command',
+    'availability',
+    'detection',
+    'path',
     'override',
     'install',
     'detected',
@@ -53,7 +56,7 @@ function expandAgentSearchText(value: string): string[] {
 export const AGENTS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   {
     title: 'Agents',
-    description: 'Configure AI coding agents, default agent, and command overrides.',
+    description: 'Configure AI coding agents, default agent, and detection paths.',
     keywords: AGENT_SETTINGS_KEYWORDS
   },
   {

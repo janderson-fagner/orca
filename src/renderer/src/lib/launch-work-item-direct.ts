@@ -310,13 +310,14 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
     // back to launching with no prompt + bracketed-paste-after-ready for
     // every other agent so the context still lands as a draft (not auto-
     // submitted as the first turn).
+    const cmdOverrides = settings?.agentCmdOverrides ?? {}
     const draftLaunchPlan =
       effectiveAgent === null
         ? null
         : buildAgentDraftLaunchPlan({
             agent: effectiveAgent,
             draft: draftContent,
-            cmdOverrides: settings?.agentCmdOverrides ?? {},
+            cmdOverrides,
             platform: CLIENT_PLATFORM
           })
     if (draftLaunchPlan) {
@@ -332,7 +333,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       startupPlan = buildAgentStartupPlan({
         agent: effectiveAgent,
         prompt: '',
-        cmdOverrides: settings?.agentCmdOverrides ?? {},
+        cmdOverrides,
         platform: CLIENT_PLATFORM,
         allowEmptyPromptLaunch: true
       })

@@ -913,7 +913,9 @@ export class CodexAccountService {
           wslInfo.distro,
           '--',
           'bash',
-          '-lc',
+          // Why: Codex installed through nvm is usually added from .bashrc,
+          // which `bash -lc` skips even though the user's WSL terminal sees it.
+          '-ic',
           buildEncodedWslBashCommand('command -v codex >/dev/null 2>&1')
         ],
         { encoding: 'utf-8', timeout: 5000 }

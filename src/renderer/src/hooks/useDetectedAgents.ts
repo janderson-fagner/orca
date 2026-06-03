@@ -1,10 +1,16 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/store'
 import type { TuiAgent } from '../../../shared/types'
+import {
+  resolveAgentCmdOverridesForRuntime,
+  type AgentDetectionProvenance
+} from '../../../shared/agent-command-overrides'
+import { getLocalAgentPreflightContext } from '@/lib/local-preflight-context'
 
 export type UseDetectedAgentsResult = {
   /** Null while detection is in flight on first load. */
   detectedIds: TuiAgent[] | null
+  detectedResults: AgentDetectionProvenance[] | null
   isLoading: boolean
   isRefreshing: boolean
   /** Re-runs `preflight.refreshAgents` and updates every subscribed surface in
@@ -45,6 +51,9 @@ export function useDetectedAgents(
     }
     return s.detectedAgentIds
   })
+  const detectedResults = useAppStore((s) =>
+    isRemote || isUnknown ? null : s.detectedAgentResults
+  )
   const isLoading = useAppStore((s) => {
     if (isUnknown) {
       return true
@@ -59,6 +68,23 @@ export function useDetectedAgents(
   const ensureRemote = useAppStore((s) => s.ensureRemoteDetectedAgents)
   const refresh = useAppStore((s) => s.refreshDetectedAgents)
 
+  // Why: Select local overrides key so that any changes to agent override settings
+  // or the preflight context (like switching WSL distros) immediately invalidate the
+  // detection cache and trigger re-detection reactively.
+  const localOverridesKey = useAppStore((s) => {
+    if (isRemote || isUnknown) {
+      return ''
+    }
+    const context = getLocalAgentPreflightContext(s)
+    const resolved = resolveAgentCmdOverridesForRuntime(s.settings, context)
+    const contextPart = context ? `${context.wslDistro ?? ''}:${context.wslDefault ?? ''}` : ''
+    const overridesPart = Object.entries(resolved)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(',')
+    return `${contextPart}|${overridesPart}`
+  })
+
   useEffect(() => {
     if (isUnknown) {
       return
@@ -68,11 +94,9 @@ export function useDetectedAgents(
         void ensureRemote(connectionId)
       }
     } else {
-      if (detectedIds === null) {
-        void ensureLocal()
-      }
+      void ensureLocal()
     }
-  }, [isRemote, isUnknown, connectionId, detectedIds, ensureLocal, ensureRemote])
+  }, [isRemote, isUnknown, connectionId, detectedIds, localOverridesKey, ensureLocal, ensureRemote])
 
-  return { detectedIds, isLoading, isRefreshing, refresh }
+  return { detectedIds, detectedResults, isLoading, isRefreshing, refresh }
 }

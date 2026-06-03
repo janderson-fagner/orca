@@ -1,8 +1,8 @@
 /* eslint-disable max-lines -- Why: the Agents pane keeps catalog rows, default
    selection, per-agent controls, and runtime location together so settings
    reconciliation stays visible in one file. */
-import { useMemo, useState } from 'react'
-import { Check, ChevronDown, ExternalLink, RefreshCw, Terminal } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Check, ExternalLink, RefreshCw, Terminal } from 'lucide-react'
 import type { GlobalSettings, TuiAgent } from '../../../../shared/types'
 import { AGENT_CATALOG, AgentIcon } from '@/lib/agent-catalog'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
@@ -27,6 +27,16 @@ import {
   isTuiAgentEnabled,
   normalizeDisabledTuiAgents
 } from '../../../../shared/tui-agent-selection'
+import {
+  resolveAgentCmdOverridesForRuntime,
+  resetEffectiveAgentCmdOverride,
+  setAgentCmdOverrideForRuntime
+} from '../../../../shared/agent-command-overrides'
+import {
+  getLocalAgentPreflightContext,
+  type LocalPreflightContext
+} from '@/lib/local-preflight-context'
+import { CLIENT_PLATFORM } from '@/lib/new-workspace'
 
 export { AGENTS_PANE_SEARCH_ENTRIES } from './agents-search'
 
@@ -54,19 +64,18 @@ type AgentRowProps = {
   label: string
   homepageUrl: string
   defaultCmd: string
-  isDetected: boolean
+  isAvailable: boolean
+  catalogFound: boolean
+  overrideFound: boolean
   isEnabled: boolean
   isDefault: boolean
   cmdOverride: string | undefined
+  detectionPathScopeLabel: string
+  detectionPathScopeName: string
   onSetDefault: () => void
   onSetEnabled: (enabled: boolean) => void
   onSaveOverride: (value: string) => void
-}
-
-type AgentCommandOverrideInputProps = {
-  defaultCmd: string
-  cmdOverride: string | undefined
-  onSaveOverride: (value: string) => void
+  onResetOverride: () => void
 }
 
 type AgentAvailability = 'enabled' | 'disabled'
@@ -141,44 +150,62 @@ export function AgentAvailabilityControl({
   )
 }
 
+type AgentCommandOverrideInputProps = {
+  label: string
+  defaultCmd: string
+  cmdOverride: string | undefined
+  detectionPathScopeLabel: string
+  onSaveOverride: (value: string) => void
+  onResetOverride: () => void
+}
+
 function AgentCommandOverrideInput({
+  label,
   defaultCmd,
   cmdOverride,
-  onSaveOverride
+  detectionPathScopeLabel,
+  onSaveOverride,
+  onResetOverride
 }: AgentCommandOverrideInputProps): React.JSX.Element {
-  const draftSeed = cmdOverride ?? defaultCmd
+  const draftSeed = cmdOverride ?? ''
   const [cmdDraft, setCmdDraft] = useState(draftSeed)
+  const isCancelingRef = useRef(false)
 
   const commitCmd = (): void => {
+    if (isCancelingRef.current) {
+      isCancelingRef.current = false
+      return
+    }
     const trimmed = cmdDraft.trim()
     if (!trimmed || trimmed === defaultCmd) {
-      onSaveOverride('')
-      setCmdDraft(defaultCmd)
+      onResetOverride()
+      setCmdDraft('')
     } else {
       onSaveOverride(trimmed)
     }
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0 text-xs text-muted-foreground">Command</span>
+    <div className="space-y-1.5">
+      <span className="block text-xs text-muted-foreground">{detectionPathScopeLabel}</span>
       <Input
         value={cmdDraft}
         onChange={(e) => setCmdDraft(e.target.value)}
         onBlur={commitCmd}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
-            commitCmd()
             e.currentTarget.blur()
           }
           if (e.key === 'Escape') {
+            // Why: set ref to prevent the synchronous blur event from committing the canceled draft.
+            isCancelingRef.current = true
             setCmdDraft(draftSeed)
             e.currentTarget.blur()
           }
         }}
         placeholder={defaultCmd}
         spellCheck={false}
-        className="h-7 flex-1 font-mono text-xs"
+        className="h-8 font-mono text-xs"
       />
       {cmdOverride && (
         <Button
@@ -186,14 +213,18 @@ function AgentCommandOverrideInput({
           variant="ghost"
           size="xs"
           onClick={() => {
-            onSaveOverride('')
-            setCmdDraft(defaultCmd)
+            onResetOverride()
+            setCmdDraft('')
           }}
-          className="h-7 shrink-0 text-xs text-muted-foreground hover:text-foreground"
+          className="h-auto p-0 text-[11px] text-muted-foreground hover:text-foreground"
         >
           Reset
         </Button>
       )}
+      <p className="text-[11px] text-muted-foreground">
+        Used only to detect {label}. Launch still runs{' '}
+        <span className="font-mono text-foreground/80">{defaultCmd}</span>.
+      </p>
     </div>
   )
 }
@@ -203,25 +234,48 @@ function AgentRow({
   label,
   homepageUrl,
   defaultCmd,
-  isDetected,
+  isAvailable,
+  catalogFound,
+  overrideFound,
   isEnabled,
   isDefault,
   cmdOverride,
+  detectionPathScopeLabel,
+  detectionPathScopeName,
   onSetDefault,
   onSetEnabled,
-  onSaveOverride
+  onSaveOverride,
+  onResetOverride
 }: AgentRowProps): React.JSX.Element {
-  const [cmdOpen, setCmdOpen] = useState(Boolean(cmdOverride))
+  const [cmdOpen, setCmdOpen] = useState(Boolean(cmdOverride && !overrideFound))
   const availabilityDescription = isEnabled
-    ? isDetected
+    ? isAvailable
       ? 'Shown in launch and default choices.'
-      : 'Install to use in launch and default choices.'
-    : isDetected
+      : null
+    : isAvailable
       ? 'Hidden from launch and default choices.'
       : 'Hidden from launch and default choices if installed.'
+  const statusBadge = cmdOverride ? (
+    overrideFound ? (
+      <SettingsBadge tone="accent">Detected via path</SettingsBadge>
+    ) : (
+      <SettingsBadge tone="destructive">Path not found</SettingsBadge>
+    )
+  ) : catalogFound ? (
+    <SettingsBadge tone="accent">Detected</SettingsBadge>
+  ) : (
+    <SettingsBadge tone="muted">Not installed</SettingsBadge>
+  )
+  const showAddDetectionPathLink = isEnabled && !cmdOverride && !isAvailable
+  const showEditDetectionPathLink = Boolean(cmdOverride)
+  const detectionPathActionLabel = cmdOpen
+    ? 'Hide detection path'
+    : showEditDetectionPathLink
+      ? 'Edit detection path'
+      : 'Already installed? Add detection path'
 
   return (
-    <div className={cn('py-3', !isDetected && 'opacity-70')}>
+    <div className={cn('py-3', !isAvailable && 'opacity-70')}>
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-background/50">
           <AgentIcon agent={agentId} size={16} />
@@ -230,24 +284,32 @@ function AgentRow({
         <div className="min-w-0 flex-1 sm:min-w-[12rem]">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium leading-none">{label}</span>
-            {isDetected ? (
-              <SettingsBadge tone="accent">Detected</SettingsBadge>
-            ) : (
-              <SettingsBadge tone="muted">Not installed</SettingsBadge>
-            )}
+            {statusBadge}
             {!isEnabled && <SettingsBadge tone="muted">Disabled</SettingsBadge>}
           </div>
           <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-            {cmdOverride ? (
-              <span>
-                <span className="text-muted-foreground/60 line-through">{defaultCmd}</span>
-                <span className="ml-1.5 text-foreground/80">{cmdOverride}</span>
-              </span>
-            ) : (
-              defaultCmd
-            )}
+            {defaultCmd}
           </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">{availabilityDescription}</div>
+          {cmdOverride && (
+            <div className="mt-1 truncate text-[11px] text-muted-foreground">
+              Detection path: <span className="font-mono text-foreground/80">{cmdOverride}</span>
+            </div>
+          )}
+          {availabilityDescription && (
+            <div className="mt-1 text-[11px] text-muted-foreground">{availabilityDescription}</div>
+          )}
+          {(showAddDetectionPathLink || showEditDetectionPathLink) && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              onClick={() => setCmdOpen((prev) => !prev)}
+              aria-expanded={cmdOpen}
+              className="mt-1 h-auto p-0 text-[11px] text-muted-foreground underline hover:text-foreground"
+            >
+              {detectionPathActionLabel}
+            </Button>
+          )}
         </div>
 
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -257,7 +319,7 @@ function AgentRow({
             onSetEnabled={onSetEnabled}
           />
 
-          {isDetected && isEnabled && (
+          {isAvailable && isEnabled && (
             <Button
               type="button"
               variant={isDefault ? 'secondary' : 'ghost'}
@@ -271,62 +333,35 @@ function AgentRow({
             </Button>
           )}
 
-          {isDetected && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setCmdOpen((prev) => !prev)}
-              title="Customize command"
-              aria-expanded={cmdOpen}
-              className={cn(
-                'size-7 text-muted-foreground hover:text-foreground',
-                (cmdOpen || cmdOverride) && 'text-foreground'
-              )}
-            >
-              <Terminal className="size-3.5" />
-            </Button>
-          )}
-
           <a
             href={homepageUrl}
             target="_blank"
             rel="noopener noreferrer"
-            title={isDetected ? 'Docs' : 'Install'}
+            title={isAvailable ? 'Docs' : 'Install'}
             className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             <ExternalLink className="size-3.5" />
           </a>
-
-          {isDetected && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setCmdOpen((prev) => !prev)}
-              aria-label={cmdOpen ? 'Collapse command override' : 'Expand command override'}
-              className="size-7 text-muted-foreground hover:text-foreground"
-            >
-              <ChevronDown
-                className={cn('size-3.5 transition-transform', cmdOpen && 'rotate-180')}
-              />
-            </Button>
-          )}
         </div>
       </div>
 
-      {isDetected && cmdOpen && (
+      {cmdOpen && (
         <div className="mt-3 pl-10">
           {/* Why: key by the persisted seed so settings changes reset the draft during reconciliation, not in a follow-up effect commit. */}
           <AgentCommandOverrideInput
             key={cmdOverride ?? defaultCmd}
+            label={label}
             defaultCmd={defaultCmd}
             cmdOverride={cmdOverride}
+            detectionPathScopeLabel={detectionPathScopeLabel}
             onSaveOverride={onSaveOverride}
+            onResetOverride={onResetOverride}
           />
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            Override the binary path or name used to launch this agent.
-          </p>
+          {cmdOverride && !overrideFound && (
+            <p className="mt-1 text-[11px] text-destructive">
+              Path not found. Paste the result of which {defaultCmd} from {detectionPathScopeName}.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -357,6 +392,20 @@ function DefaultAgentPill({ active, onClick, children }: DefaultAgentPillProps):
   )
 }
 
+function getDetectionPathScopeName(context: LocalPreflightContext): string {
+  if (context?.wslDistro) {
+    return `WSL ${context.wslDistro}`
+  }
+  if (context?.wslDefault) {
+    return 'WSL default'
+  }
+  return CLIENT_PLATFORM === 'win32' ? 'Windows' : 'this computer'
+}
+
+function getDetectionPathScopeLabel(context: LocalPreflightContext): string {
+  return `Detection path for ${getDetectionPathScopeName(context)}`
+}
+
 export function AgentsPane({
   settings,
   updateSettings,
@@ -365,7 +414,8 @@ export function AgentsPane({
   wslDistros = EMPTY_WSL_DISTROS,
   wslCapabilitiesLoading = false
 }: AgentsPaneProps): React.JSX.Element {
-  const { detectedIds: detectedList, isRefreshing, refresh } = useDetectedAgents()
+  const { detectedIds: detectedList, detectedResults, isRefreshing, refresh } = useDetectedAgents()
+  const localAgentContext = useAppStore(getLocalAgentPreflightContext)
   // Why: refresh re-spawns the user's login shell to re-capture PATH
   // (preflight:refreshAgents on the main side). This handles the
   // "installed a new CLI, Orca doesn't see it yet" case without a restart.
@@ -376,9 +426,15 @@ export function AgentsPane({
     () => (detectedList ? new Set(detectedList) : null),
     [detectedList]
   )
+  const detectedByAgent = useMemo(
+    () => new Map((detectedResults ?? []).map((entry) => [entry.id, entry])),
+    [detectedResults]
+  )
 
   const defaultAgent = settings.defaultTuiAgent
-  const cmdOverrides = settings.agentCmdOverrides ?? {}
+  const cmdOverrides = resolveAgentCmdOverridesForRuntime(settings, localAgentContext)
+  const detectionPathScopeName = getDetectionPathScopeName(localAgentContext)
+  const detectionPathScopeLabel = getDetectionPathScopeLabel(localAgentContext)
   const disabledAgents = normalizeDisabledTuiAgents(settings.disabledTuiAgents)
 
   const setDefault = (id: TuiAgent | 'blank' | null): void => {
@@ -396,21 +452,19 @@ export function AgentsPane({
   }
 
   const saveOverride = (id: TuiAgent, value: string): void => {
-    const next = { ...cmdOverrides }
-    if (value) {
-      next[id] = value
-    } else {
-      delete next[id]
-    }
-    updateSettings({ agentCmdOverrides: next })
+    updateSettings(setAgentCmdOverrideForRuntime(settings, localAgentContext, id, value))
+  }
+
+  const resetOverride = (id: TuiAgent): void => {
+    updateSettings(resetEffectiveAgentCmdOverride(settings, localAgentContext, id))
   }
 
   // Why: null means detection is in flight, not "all agents are installed".
   // Showing the full catalog here makes the default-agent picker flash invalid
   // options while switching between Windows and WSL detection contexts.
-  const detectedAgents =
+  const availableAgents =
     detectedIds === null ? [] : AGENT_CATALOG.filter((agent) => detectedIds.has(agent.id))
-  const enabledDetectedAgents = detectedAgents.filter((agent) =>
+  const enabledAvailableAgents = availableAgents.filter((agent) =>
     isTuiAgentEnabled(agent.id, disabledAgents)
   )
   const undetectedAgents = AGENT_CATALOG.filter(
@@ -451,7 +505,7 @@ export function AgentsPane({
           </DefaultAgentPill>
 
           {/* Why: users who prefer to open a raw shell by default need a
-              first-class "no agent" choice here — without it, the Auto pill
+              first-class "no agent" choice here - without it, the Auto pill
               is the closest option but silently launches the first detected
               agent, which is the opposite of what they want. */}
           <DefaultAgentPill active={isBlankDefault} onClick={() => setDefault('blank')}>
@@ -460,7 +514,7 @@ export function AgentsPane({
             {isBlankDefault && <Check className="size-3.5" />}
           </DefaultAgentPill>
 
-          {enabledDetectedAgents.map((agent) => {
+          {enabledAvailableAgents.map((agent) => {
             const isActive = defaultAgent === agent.id
             return (
               <DefaultAgentPill
@@ -483,13 +537,13 @@ export function AgentsPane({
 
       <AgentAwakeSetting settings={settings} updateSettings={updateSettings} />
 
-      {detectedAgents.length > 0 && (
+      {availableAgents.length > 0 && (
         <section className="space-y-3">
           <SettingsSubsectionHeader
             title={
               <span className="flex items-center gap-2">
-                Installed
-                <SettingsBadge tone="accent">{detectedAgents.length} detected</SettingsBadge>
+                Available
+                <SettingsBadge tone="accent">{availableAgents.length} available</SettingsBadge>
               </span>
             }
             action={
@@ -503,28 +557,36 @@ export function AgentsPane({
                 className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
                 <RefreshCw className={cn('size-3', isRefreshing && 'animate-spin')} />
-                {isRefreshing ? 'Refreshing…' : 'Refresh'}
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
               </Button>
             }
           />
 
           <div className="divide-y divide-border/40">
-            {detectedAgents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agentId={agent.id}
-                label={agent.label}
-                homepageUrl={agent.homepageUrl}
-                defaultCmd={agent.cmd}
-                isDetected
-                isEnabled={isTuiAgentEnabled(agent.id, disabledAgents)}
-                isDefault={defaultAgent === agent.id}
-                cmdOverride={cmdOverrides[agent.id]}
-                onSetDefault={() => setDefault(agent.id)}
-                onSetEnabled={(enabled) => setAgentEnabled(agent.id, enabled)}
-                onSaveOverride={(v) => saveOverride(agent.id, v)}
-              />
-            ))}
+            {availableAgents.map((agent) => {
+              const detection = detectedByAgent.get(agent.id)
+              return (
+                <AgentRow
+                  key={agent.id}
+                  agentId={agent.id}
+                  label={agent.label}
+                  homepageUrl={agent.homepageUrl}
+                  defaultCmd={agent.cmd}
+                  isAvailable
+                  catalogFound={detection?.catalogFound ?? true}
+                  overrideFound={detection?.overrideFound ?? false}
+                  isEnabled={isTuiAgentEnabled(agent.id, disabledAgents)}
+                  isDefault={defaultAgent === agent.id}
+                  cmdOverride={cmdOverrides[agent.id]}
+                  detectionPathScopeLabel={detectionPathScopeLabel}
+                  detectionPathScopeName={detectionPathScopeName}
+                  onSetDefault={() => setDefault(agent.id)}
+                  onSetEnabled={(enabled) => setAgentEnabled(agent.id, enabled)}
+                  onSaveOverride={(v) => saveOverride(agent.id, v)}
+                  onResetOverride={() => resetOverride(agent.id)}
+                />
+              )
+            })}
           </div>
         </section>
       )}
@@ -548,13 +610,18 @@ export function AgentsPane({
                 label={agent.label}
                 homepageUrl={agent.homepageUrl}
                 defaultCmd={agent.cmd}
-                isDetected={false}
+                isAvailable={false}
+                catalogFound={false}
+                overrideFound={false}
                 isEnabled={isTuiAgentEnabled(agent.id, disabledAgents)}
                 isDefault={false}
-                cmdOverride={undefined}
+                cmdOverride={cmdOverrides[agent.id]}
+                detectionPathScopeLabel={detectionPathScopeLabel}
+                detectionPathScopeName={detectionPathScopeName}
                 onSetDefault={() => {}}
                 onSetEnabled={(enabled) => setAgentEnabled(agent.id, enabled)}
-                onSaveOverride={() => {}}
+                onSaveOverride={(v) => saveOverride(agent.id, v)}
+                onResetOverride={() => resetOverride(agent.id)}
               />
             ))}
           </div>
@@ -563,7 +630,7 @@ export function AgentsPane({
 
       {detectedIds === null && (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border/50 py-6 text-sm text-muted-foreground">
-          Detecting installed agents…
+          Detecting installed agents...
         </div>
       )}
     </div>

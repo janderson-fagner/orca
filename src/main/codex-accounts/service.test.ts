@@ -811,6 +811,7 @@ describe('CodexAccountService config sync', () => {
         return `${wslLinuxHomePath}\n`
       }
       if (script.includes('command -v codex')) {
+        expect(args.slice(0, 5)).toEqual(['-d', 'Debian', '--', 'bash', '-ic'])
         throw new Error('codex missing')
       }
       mkdirSync(wslManagedHomePath, { recursive: true })
