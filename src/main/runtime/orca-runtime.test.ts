@@ -36,7 +36,8 @@ import {
   appendNormalizedToTailBuffer,
   appendRecentPtyOutput,
   buildPreview,
-  OrcaRuntimeService
+  OrcaRuntimeService,
+  type RuntimeTerminalAgentStatusEvent
 } from './orca-runtime'
 import {
   registerSshFilesystemProvider,
@@ -3431,6 +3432,94 @@ describe('OrcaRuntimeService', () => {
     expect((await runtime.listTerminals()).terminals[0]).toMatchObject({
       title: 'Codex'
     })
+  })
+
+  it('emits explicit OSC 9999 agent status from runtime PTY data', () => {
+    const statuses: RuntimeTerminalAgentStatusEvent[] = []
+    const runtime = new OrcaRuntimeService(store, undefined, {
+      onTerminalAgentStatus: (event) => statuses.push(event)
+    })
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    const paneKey = `tab-1:${leafId}`
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Terminal',
+          activeLeafId: leafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId,
+          paneRuntimeId: 1,
+          ptyId: 'pty-1'
+        }
+      ]
+    })
+
+    runtime.onPtyData(
+      'pty-1',
+      'before\x1b]9999;{"state":"working","prompt":"ship it","agentType":"codex"}\x07after',
+      123
+    )
+
+    expect(statuses).toEqual([
+      {
+        ptyId: 'pty-1',
+        paneKey,
+        tabId: 'tab-1',
+        worktreeId: TEST_WORKTREE_ID,
+        payload: {
+          state: 'working',
+          prompt: 'ship it',
+          agentType: 'codex'
+        }
+      }
+    ])
+  })
+
+  it('preserves OSC 9999 parser state for rendererless background PTYs', async () => {
+    const statuses: RuntimeTerminalAgentStatusEvent[] = []
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-bg' })
+    const runtime = new OrcaRuntimeService(store, undefined, {
+      onTerminalAgentStatus: (event) => statuses.push(event)
+    })
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: 'codex',
+      title: 'worker'
+    })
+    const spawnedEnv =
+      (spawn.mock.calls[0]?.[0] as { env?: Record<string, string> } | undefined)?.env ?? {}
+    const paneKey = expectStablePaneKeyEnv(spawnedEnv)
+
+    runtime.onPtyData('pty-bg', 'before\x1b]999', 123)
+    runtime.onPtyData('pty-bg', '9;{"state":"done","prompt":"ok"}\x1b\\after', 124)
+
+    expect(statuses).toEqual([
+      {
+        ptyId: 'pty-bg',
+        paneKey,
+        tabId: spawnedEnv.ORCA_TAB_ID,
+        worktreeId: TEST_WORKTREE_ID,
+        payload: {
+          state: 'done',
+          prompt: 'ok'
+        }
+      }
+    ])
   })
 
   it('reads bounded terminal output and writes through the PTY controller', async () => {

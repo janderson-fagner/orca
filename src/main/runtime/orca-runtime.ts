@@ -9,8 +9,13 @@ import {
 import type { AgentStatus } from '../../shared/agent-detection'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
+  type ParsedAgentStatusPayload,
   type AgentStatusOrchestrationContext
 } from '../../shared/agent-status-types'
+import {
+  createAgentStatusOscProcessor,
+  type ProcessedAgentStatusChunk
+} from '../../shared/agent-status-osc'
 import { gitExecFileAsync, wslAwareSpawn } from '../git/runner'
 import {
   cleanupClaimedCloneTarget,
@@ -676,6 +681,14 @@ type RuntimePtyWorktreeRecord = {
   preview: string
 }
 
+export type RuntimeTerminalAgentStatusEvent = {
+  ptyId: string
+  paneKey: string
+  tabId?: string
+  worktreeId?: string
+  payload: ParsedAgentStatusPayload
+}
+
 type RuntimeHeadlessTerminal = {
   emulator: HeadlessEmulator
   // Why: serialize can race with newer writes appended to writeChain; return
@@ -1327,6 +1340,13 @@ export class OrcaRuntimeService {
   private ptysById = new Map<string, RuntimePtyWorktreeRecord>()
   private headlessTerminals = new Map<string, RuntimeHeadlessTerminal>()
   private ptyOutputSequenceById = new Map<string, number>()
+  // Why: OSC 9999 status can span PTY chunks. Keeping parser state in the
+  // runtime lets hidden/model-owned terminals observe agent state without a
+  // mounted xterm view.
+  private agentStatusOscProcessorsByPtyId = new Map<
+    string,
+    ReturnType<typeof createAgentStatusOscProcessor>
+  >()
   // Why: per-PTY hydration state guards against double-hydration. Keys:
   //   'pending'  → maybeHydrateHeadlessFromRenderer is in flight
   //   'done'     → hydration completed (success or skip); never run again
@@ -1529,6 +1549,7 @@ export class OrcaRuntimeService {
   private preservedBranchCleanupByWorktreeId = new Map<string, PreservedBranchCleanupTarget>()
   private readonly getLocalProviderFn: (() => IPtyProvider) | null
   private readonly onPtyStopped: ((ptyId: string) => void) | null
+  private readonly onTerminalAgentStatus: ((event: RuntimeTerminalAgentStatusEvent) => void) | null
   private accountServices: RuntimeAccountServices | null = null
   private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private automationService: AutomationService | null = null
@@ -1546,7 +1567,11 @@ export class OrcaRuntimeService {
   constructor(
     store: RuntimeStore | null = null,
     stats?: StatsCollector,
-    deps?: { getLocalProvider?: () => IPtyProvider; onPtyStopped?: (ptyId: string) => void }
+    deps?: {
+      getLocalProvider?: () => IPtyProvider
+      onPtyStopped?: (ptyId: string) => void
+      onTerminalAgentStatus?: (event: RuntimeTerminalAgentStatusEvent) => void
+    }
   ) {
     this.store = store
     if (stats) {
@@ -1561,6 +1586,7 @@ export class OrcaRuntimeService {
     // provider (design §4.3 wire-up).
     this.getLocalProviderFn = deps?.getLocalProvider ?? null
     this.onPtyStopped = deps?.onPtyStopped ?? null
+    this.onTerminalAgentStatus = deps?.onTerminalAgentStatus ?? null
   }
 
   getLocalProvider(): IPtyProvider | null {
@@ -2967,6 +2993,7 @@ export class OrcaRuntimeService {
   onPtyData(ptyId: string, data: string, at: number): number {
     const outputSequence = (this.ptyOutputSequenceById.get(ptyId) ?? 0) + data.length
     this.ptyOutputSequenceById.set(ptyId, outputSequence)
+    const agentStatusChunk = this.processAgentStatusOscForPty(ptyId, data)
     this.recentPtyOutputById.set(
       ptyId,
       appendRecentPtyOutput(this.recentPtyOutputById.get(ptyId), data)
@@ -3107,6 +3134,8 @@ export class OrcaRuntimeService {
       }
     }
 
+    this.emitTerminalAgentStatusEvents(ptyId, agentStatusChunk)
+
     const listeners = this.dataListeners.get(ptyId)
     if (listeners) {
       const meta = { seq: outputSequence, rawLength: data.length }
@@ -3115,6 +3144,54 @@ export class OrcaRuntimeService {
       }
     }
     return outputSequence
+  }
+
+  private processAgentStatusOscForPty(ptyId: string, data: string): ProcessedAgentStatusChunk {
+    let processor = this.agentStatusOscProcessorsByPtyId.get(ptyId)
+    if (!processor) {
+      processor = createAgentStatusOscProcessor()
+      this.agentStatusOscProcessorsByPtyId.set(ptyId, processor)
+    }
+    return processor(data)
+  }
+
+  private emitTerminalAgentStatusEvents(ptyId: string, chunk: ProcessedAgentStatusChunk): void {
+    if (!this.onTerminalAgentStatus || chunk.payloads.length === 0) {
+      return
+    }
+    const targets = new Map<
+      string,
+      {
+        paneKey: string
+        tabId?: string
+        worktreeId?: string
+      }
+    >()
+    for (const leaf of this.getLeavesForPty(ptyId)) {
+      const paneKey = this.makeRuntimePaneKey(leaf)
+      targets.set(paneKey, {
+        paneKey,
+        tabId: leaf.tabId,
+        worktreeId: leaf.worktreeId
+      })
+    }
+    const pty = this.ptysById.get(ptyId)
+    if (targets.size === 0 && pty?.paneKey) {
+      targets.set(pty.paneKey, {
+        paneKey: pty.paneKey,
+        tabId: pty.tabId ?? undefined,
+        worktreeId: pty.worktreeId
+      })
+    }
+    for (const payload of chunk.payloads) {
+      for (const target of targets.values()) {
+        this.onTerminalAgentStatus({
+          ptyId,
+          ...target,
+          payload
+        })
+      }
+    }
   }
 
   getPtyOutputSequence(ptyId: string): number {
@@ -4188,6 +4265,7 @@ export class OrcaRuntimeService {
     this.lastRendererSizes.delete(ptyId)
     this.recentPtyOutputById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     // Layout state machine: clear `layouts` and `layoutQueues`. Any
     // already-queued applyLayout work for this ptyId will run, but every
     // applyLayout re-checks `layouts.has(ptyId)` (or fresh-subscribe) and
@@ -12071,6 +12149,7 @@ export class OrcaRuntimeService {
     this.ptysById.delete(ptyId)
     this.recentPtyOutputById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     const handle = this.handleByPtyId.get(ptyId)
     if (handle) {
       this.handleByPtyId.delete(ptyId)
