@@ -77,6 +77,10 @@ import { createCommandCodeOutputStatusDetector } from './command-code-output-sta
 import type { PtyDataMeta } from './pty-dispatcher'
 import { createTerminalGitHubPRLinkDetector } from '@/lib/terminal-github-pr-link-detector'
 import { installConptyDeviceAttributesHandler } from './terminal-conpty-device-attributes'
+import {
+  cancelScheduledHiddenOutputRestore,
+  scheduleHiddenOutputRestore
+} from './hidden-output-restore-scheduler'
 
 const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
 const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
@@ -1850,6 +1854,7 @@ export function connectPanePty(
     let hiddenOutputRestorePendingOverflow = false
     let hiddenOutputRestoreFreshSnapshotNeeded = false
     let hiddenOutputRestoreRetryDeferred = false
+    let hiddenOutputRestoreScheduled = false
     let hiddenOutputRestoreDeferredRetryTimer: ReturnType<typeof setTimeout> | null = null
     let hiddenOutputRestoreDeferredRetryAttempts = 0
     // Why: hidden recovery state belongs to one PTY stream. Reattach/restart
@@ -2204,6 +2209,8 @@ export function connectPanePty(
       hiddenOutputRestorePendingOverflow = false
       hiddenOutputRestoreFreshSnapshotNeeded = false
       hiddenOutputRestoreRetryDeferred = false
+      hiddenOutputRestoreScheduled = false
+      cancelScheduledHiddenOutputRestore(pane.terminal)
       clearHiddenOutputRestoreDeferredRetryTimer()
       hiddenOutputRestoreDeferredRetryAttempts = 0
     }
@@ -2334,7 +2341,7 @@ export function connectPanePty(
       restoreScrollStateAfterSnapshotReplay(scrollState)
     }
 
-    function requestHiddenOutputRestoreIfNeeded(): boolean {
+    function requestHiddenOutputRestoreIfNeeded(opts?: { bypassScheduler?: boolean }): boolean {
       resetHiddenOutputRestoreIfPtyChanged()
       const ptyId = hiddenOutputRestorePtyId ?? transport.getPtyId()
       if (!hiddenOutputRestoreNeeded && hiddenOutputRestorePendingChunks.length === 0) {
@@ -2346,6 +2353,28 @@ export function connectPanePty(
       hiddenOutputRestorePtyId = ptyId
       if (hiddenOutputRestoreInFlight) {
         return true
+      }
+      if (!opts?.bypassScheduler) {
+        const priority = isActiveSplitPane() ? 'active' : 'inactive'
+        if (priority === 'inactive') {
+          if (!hiddenOutputRestoreScheduled) {
+            hiddenOutputRestoreScheduled = true
+            // Why: tab/worktree resume can make many split panes visible at once.
+            // Restore the focused pane immediately and spread inactive replays
+            // across frames so xterm scrollback replay does not block return.
+            scheduleHiddenOutputRestore(
+              pane.terminal,
+              () => {
+                hiddenOutputRestoreScheduled = false
+                requestHiddenOutputRestoreIfNeeded({ bypassScheduler: true })
+              },
+              priority
+            )
+          }
+          return true
+        }
+        cancelScheduledHiddenOutputRestore(pane.terminal)
+        hiddenOutputRestoreScheduled = false
       }
       clearHiddenOutputRestoreDeferredRetryTimer()
       hiddenOutputRestoreRetryDeferred = false

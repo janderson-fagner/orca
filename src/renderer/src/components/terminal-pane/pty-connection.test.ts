@@ -3230,6 +3230,67 @@ describe('connectPanePty', () => {
     disposable.dispose()
   })
 
+  it('defers inactive split-pane hidden restores', async () => {
+    const { resetHiddenOutputRestoreSchedulerForTests } =
+      await import('./hidden-output-restore-scheduler')
+    let disposable: { dispose: () => void } | null = null
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-id')
+      const capturedDataCallback: {
+        current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+      } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+        typeof vi.fn
+      >
+      getMainBufferSnapshot.mockResolvedValue({
+        data: 'inactive snapshot\r\n',
+        cols: 100,
+        rows: 30,
+        seq: 64
+      })
+
+      const pane = createPane(1)
+      const manager = createManager(2)
+      manager.getActivePane.mockReturnValue({ id: 2 })
+      const deps = createDeps({ isVisibleRef: { current: false } })
+      disposable = connectPanePty(pane as never, manager as never, deps as never)
+      await flushAsyncTicks(6)
+
+      const hidden = 'hidden inactive output\r\n'
+      const live = 'visible inactive output\r\n'
+      expect(capturedDataCallback.current).not.toBeNull()
+      capturedDataCallback.current?.(hidden, { seq: hidden.length, rawLength: hidden.length })
+      ;(deps.isVisibleRef as { current: boolean }).current = true
+      capturedDataCallback.current?.(live, {
+        seq: hidden.length + live.length,
+        rawLength: live.length
+      })
+      await flushAsyncTicks(4)
+
+      expect(getMainBufferSnapshot).not.toHaveBeenCalled()
+
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      await flushAsyncTicks(20)
+
+      expect(getMainBufferSnapshot).toHaveBeenCalledWith('pty-id', { scrollbackRows: 5000 })
+      expect(pane.terminal.write).toHaveBeenCalledWith(
+        'inactive snapshot\r\n',
+        expect.any(Function)
+      )
+    } finally {
+      disposable?.dispose()
+      resetHiddenOutputRestoreSchedulerForTests()
+    }
+  })
+
   it('retries hidden remote runtime restore after a null transport snapshot', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('remote:env-1@@terminal-1')
