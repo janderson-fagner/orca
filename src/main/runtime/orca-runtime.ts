@@ -3185,11 +3185,21 @@ export class OrcaRuntimeService {
     }
     for (const payload of chunk.payloads) {
       for (const target of targets.values()) {
-        this.onTerminalAgentStatus({
-          ptyId,
-          ...target,
-          payload
-        })
+        try {
+          this.onTerminalAgentStatus({
+            ptyId,
+            ...target,
+            payload
+          })
+        } catch (err) {
+          console.error('[runtime] terminal agent status listener threw', {
+            ptyId,
+            paneKey: target.paneKey,
+            state: payload.state,
+            agentType: payload.agentType,
+            err
+          })
+        }
       }
     }
   }
