@@ -3217,7 +3217,11 @@ function BrowserPagePane({
       if (!isActiveRef.current) {
         return
       }
-      const nextLevel = applyBrowserPageZoom(webviewRef.current, direction)
+      const nextLevel = applyBrowserPageZoom(
+        webviewRef.current,
+        direction,
+        browserDefaultZoomLevelRef.current
+      )
       if (nextLevel !== null) {
         setBrowserDefaultZoomLevel(nextLevel)
         showBrowserZoomFeedback(nextLevel)
