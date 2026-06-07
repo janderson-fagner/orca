@@ -379,6 +379,9 @@ export function useAutomationDispatchEvents(): void {
           throw new Error('Unable to build an agent launch plan.')
         }
         const launchedTabId = result.tabId
+        // Why: host-backed automation terminals may lack a local tab id; skip
+        // pane-key status observation while background session output still
+        // tracks completion.
         if (launchedTabId) {
           observeAgentStatus(launchedTabId, dispatchStartedAt)
         }

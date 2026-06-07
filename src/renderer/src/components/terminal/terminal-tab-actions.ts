@@ -42,6 +42,9 @@ function resolveCloseTerminalTabTarget(
   return null
 }
 
+// Why: host-backed terminals may only exist in unifiedTabsByWorktree as
+// terminal entities, so close/sibling selection must merge tabsByWorktree and
+// unified terminal entityIds into one deduped list per worktree.
 function getWorktreeTerminalTabIds(state: TerminalTabActionState, worktreeId: string): string[] {
   const ids = new Set<string>()
   for (const tab of state.tabsByWorktree[worktreeId] ?? []) {

@@ -205,8 +205,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
 
   const runtimeEnvironmentId = store.settings?.activeRuntimeEnvironmentId?.trim()
   if (isWebRuntimeSessionActive(runtimeEnvironmentId) && pasteDraftAfterLaunch === null) {
-    // Why: paired web tabs are host-owned. Local-only agent tabs cannot be
-    // closed because close routes through session.tabs.close on the host.
+    // Why: paired web tabs are host-owned and return tabId: null on success.
+    // Local-only agent tabs cannot be closed because close routes through
+    // session.tabs.close on the host, so prune them before the host snapshot.
     removeStaleLocalAgentTabsForWebHostLaunch(worktreeId)
     void createWebRuntimeSessionTerminal({
       worktreeId,
@@ -215,6 +216,8 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       activate: true,
       ...(hasPrompt ? { command: startupPlan.launchCommand } : { agent })
     }).then((created) => {
+      // Why: created means the host accepted the launch, not that a local tab
+      // exists; keep pruning stale local rows until the snapshot mirrors.
       removeStaleLocalAgentTabsForWebHostLaunch(worktreeId)
       if (!created) {
         toast.error(`Could not launch ${agent} in a new terminal.`)
