@@ -186,7 +186,7 @@ export function BrowserToolbarMenu({
 
   return (
     <>
-      <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button size="icon" variant="ghost" className="h-8 w-8" title="Browser menu">
             <Ellipsis className="size-4" />
@@ -194,14 +194,14 @@ export function BrowserToolbarMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           {allProfiles.map((profile) => {
-            const isActive = profile.id === effectiveProfileId
+            const isSelectedProfile = profile.id === effectiveProfileId
             return (
               <DropdownMenuItem
                 key={profile.id}
                 onSelect={() => handleSwitchProfile(profile.id === 'default' ? null : profile.id)}
               >
                 <Check
-                  className={`mr-2 size-3.5 shrink-0 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  className={`mr-2 size-3.5 shrink-0 ${isSelectedProfile ? 'opacity-100' : 'opacity-0'}`}
                 />
                 <span className="truncate">{profile.label}</span>
                 {profile.source?.browserFamily && (
