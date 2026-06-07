@@ -104,7 +104,8 @@ export const CONTEXTUAL_TOURS = [
         title: 'Grab page context for agents',
         body: 'Grab controls can copy elements or hand page context to an agent.',
         targetSelector: '[data-contextual-tour-target="browser-grab-control"]',
-        requiredForStart: true
+        requiredForStart: true,
+        preferredPlacement: 'bottom'
       },
       {
         title: 'Mark design feedback in place',
