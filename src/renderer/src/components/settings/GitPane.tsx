@@ -1,5 +1,4 @@
 import type { GlobalSettings } from '../../../../shared/types'
-import type { SourceControlAiSettingsPatch } from '../../../../shared/source-control-ai-types'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { useAppStore } from '../../store'
@@ -7,8 +6,6 @@ import { GIT_PANE_SEARCH_ENTRIES } from './git-search'
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { GitHubRateLimitPanel } from '../github/github-rate-limit-display'
-import { AutoRenameBranchFromWorkSetting } from './AutoRenameBranchFromWorkSetting'
-import { AUTO_RENAME_BRANCH_SEARCH_ENTRIES } from './auto-rename-branch-search'
 import { GitLabRateLimitPanel } from '../gitlab/gitlab-rate-limit-display'
 
 export { GIT_PANE_SEARCH_ENTRIES }
@@ -31,35 +28,17 @@ const KEEP_LOCAL_MAIN_UP_TO_DATE_KEYWORDS = [
   'worktree'
 ]
 
-export function shouldShowAutoRenameBranchSetting(
-  searchQuery: string,
-  hasUnsavedBranchPromptChanges: boolean
-): boolean {
-  return (
-    hasUnsavedBranchPromptChanges ||
-    matchesSettingsSearch(searchQuery, AUTO_RENAME_BRANCH_SEARCH_ENTRIES)
-  )
-}
-
 type GitPaneProps = {
   settings: GlobalSettings
   updateSettings: (updates: Partial<GlobalSettings>) => void | Promise<void>
-  writeSourceControlAiSettings: (patch: SourceControlAiSettingsPatch) => Promise<void>
   displayedGitUsername: string
-  hasUnsavedBranchPromptChanges?: boolean
-  onBranchPromptDirtyChange?: (dirty: boolean) => void
-  branchPromptDiscardSignal?: number
   settingsSearchQuery?: string
 }
 
 export function GitPane({
   settings,
   updateSettings,
-  writeSourceControlAiSettings,
   displayedGitUsername,
-  hasUnsavedBranchPromptChanges = false,
-  onBranchPromptDirtyChange,
-  branchPromptDiscardSignal,
   settingsSearchQuery
 }: GitPaneProps): React.JSX.Element {
   const storeSearchQuery = useAppStore((s) => s.settingsSearchQuery)
@@ -160,18 +139,6 @@ export function GitPane({
           />
         </button>
       </SearchableSetting>
-    ) : null,
-    shouldShowAutoRenameBranchSetting(searchQuery, hasUnsavedBranchPromptChanges) ? (
-      <AutoRenameBranchFromWorkSetting
-        key="auto-rename-branch-from-work"
-        settings={settings}
-        updateSettings={updateSettings}
-        writeSourceControlAiSettings={writeSourceControlAiSettings}
-        forceVisible={hasUnsavedBranchPromptChanges}
-        onBranchPromptDirtyChange={onBranchPromptDirtyChange}
-        branchPromptDiscardSignal={branchPromptDiscardSignal}
-        settingsSearchQuery={searchQuery}
-      />
     ) : null,
     matchesSettingsSearch(searchQuery, {
       title: 'GitHub API Budget',

@@ -17,8 +17,14 @@ describe('getDefaultSettings', () => {
     expect(getDefaultSettings('/tmp').sourceControlViewMode).toBe('list')
   })
 
-  it('keeps first-work branch auto-renaming off by default for new settings', () => {
-    expect(getDefaultSettings('/tmp').autoRenameBranchFromWork).toBe(false)
+  it('keeps first-work branch auto-renaming on by default for new settings', () => {
+    expect(getDefaultSettings('/tmp').autoRenameBranchFromWork).toBe(true)
+    expect(getDefaultSettings('/tmp').autoRenameBranchFromWorkDefaultedOn).toBe(true)
+  })
+
+  it('uses a block terminal cursor by default for new settings', () => {
+    expect(getDefaultSettings('/tmp').terminalCursorStyle).toBe('block')
+    expect(getDefaultSettings('/tmp').terminalCursorStyleDefaultedToBlock).toBe(true)
   })
 
   it('enables separate light terminal theme by default', () => {

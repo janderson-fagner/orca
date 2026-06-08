@@ -1336,9 +1336,11 @@ describe('registerWorktreeHandlers', () => {
 
   it('returns the PR head push target when resolving a fork PR base', async () => {
     getPullRequestPushTargetMock.mockResolvedValue({
-      remoteName: 'pr-prateek-orca',
-      branchName: 'prateek/fix-sidebar-agents-toggle',
-      remoteUrl: 'git@github.com:prateek/orca.git'
+      pushTarget: {
+        remoteName: 'pr-prateek-orca',
+        branchName: 'prateek/fix-sidebar-agents-toggle',
+        remoteUrl: 'git@github.com:prateek/orca.git'
+      }
     })
     gitExecFileAsyncMock.mockImplementation(async (args: string[]) => {
       if (args[0] === 'rev-parse') {
@@ -1359,6 +1361,8 @@ describe('registerWorktreeHandlers', () => {
     })
     expect(result).toMatchObject({
       baseBranch: 'abc123',
+      headSha: 'abc123',
+      branchNameOverride: 'prateek/fix-sidebar-agents-toggle',
       pushTarget: {
         remoteName: 'pr-prateek-orca',
         branchName: 'prateek/fix-sidebar-agents-toggle',
@@ -1421,7 +1425,11 @@ describe('registerWorktreeHandlers', () => {
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['fetch', 'origin', 'refs/pull/1849/head'], {
       cwd: '/workspace/repo'
     })
-    expect(result).toMatchObject({ baseBranch: 'abc123' })
+    expect(result).toEqual({
+      baseBranch: 'abc123',
+      headSha: 'abc123',
+      branchNameOverride: 'feat/onboarding-model-choice-782'
+    })
   })
 
   it('falls back to refs/pull/<N>/head when branch fetch fails for a PR', async () => {
@@ -1458,7 +1466,11 @@ describe('registerWorktreeHandlers', () => {
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['fetch', 'origin', 'refs/pull/1849/head'], {
       cwd: '/workspace/repo'
     })
-    expect(result).toMatchObject({ baseBranch: 'abc123' })
+    expect(result).toEqual({
+      baseBranch: 'abc123',
+      headSha: 'abc123',
+      branchNameOverride: 'feat/onboarding-model-choice-782'
+    })
   })
 
   it('does not fall back to refs/pull/<N>/head when branch fetch hits a network failure', async () => {
@@ -4687,7 +4699,7 @@ describe('registerWorktreeHandlers', () => {
     })
   })
 
-  it('rejects unregistered delete paths before teardown, hooks, or git removal', async () => {
+  it('reports already-missing unregistered delete paths before teardown, hooks, or git removal', async () => {
     mockKnownFeatureWorktree('/workspace/real-feature')
     getEffectiveHooksMock.mockReturnValue({
       scripts: {
@@ -4699,7 +4711,9 @@ describe('registerWorktreeHandlers', () => {
       handlers['worktrees:remove'](null, {
         worktreeId: 'repo-1::/workspace/not-a-worktree'
       })
-    ).rejects.toThrow('Refusing to delete unregistered worktree path')
+    ).rejects.toThrow(
+      'Worktree is no longer registered with Git and its directory is already gone.'
+    )
 
     expect(killAllProcessesForWorktreeMock).not.toHaveBeenCalled()
     expect(runHookMock).not.toHaveBeenCalled()
@@ -4725,6 +4739,27 @@ describe('registerWorktreeHandlers', () => {
     expect(deleteWorktreeHistoryDirMock).toHaveBeenCalledWith(
       'repo-1::/workspace/already-deleted-wt'
     )
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('worktrees:changed', {
+      repoId: 'repo-1'
+    })
+  })
+
+  it('cleans up an already-missing unregistered worktree after force recovery', async () => {
+    const worktreeId = 'repo-1::/workspace/already-deleted-wt'
+    mockKnownFeatureWorktree('/workspace/real-feature')
+
+    await expect(handlers['worktrees:remove'](null, { worktreeId })).rejects.toThrow(
+      'Worktree is no longer registered with Git and its directory is already gone.'
+    )
+
+    await handlers['worktrees:remove'](null, { worktreeId, force: true })
+
+    expect(killAllProcessesForWorktreeMock).not.toHaveBeenCalled()
+    expect(runHookMock).not.toHaveBeenCalled()
+    expect(removeWorktreeMock).not.toHaveBeenCalled()
+    expect(runtimeStub.clearOptimisticReconcileToken).toHaveBeenCalledWith(worktreeId)
+    expect(store.removeWorktreeMeta).toHaveBeenCalledWith(worktreeId)
+    expect(deleteWorktreeHistoryDirMock).toHaveBeenCalledWith(worktreeId)
     expect(mainWindow.webContents.send).toHaveBeenCalledWith('worktrees:changed', {
       repoId: 'repo-1'
     })

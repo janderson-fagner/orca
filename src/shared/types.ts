@@ -24,6 +24,7 @@ import type {
   SourceControlAiSettings
 } from './source-control-ai-types'
 import type { AgentKind, LaunchSource, RequestKind } from './telemetry-events'
+import type { SleepingAgentSessionRecord } from './agent-session-resume'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
@@ -39,6 +40,7 @@ export type {
   GitStagingArea,
   GitStatusEntry,
   GitStatusResult,
+  GitSubmoduleStatus,
   GitUncommittedEntry,
   GitUpstreamStatus
 } from './git-status-types'
@@ -297,6 +299,8 @@ export type GitHubPrStartPoint = {
   headSha?: string
   /** Exact local branch name to create/reuse when the PR head is a safe same-repo branch. */
   branchNameOverride?: string
+  /** Fork PRs: false when "Allow edits from maintainers" is off; a push to the fork may be rejected. */
+  maintainerCanModify?: boolean
 }
 
 // ─── Worktree metadata (persisted user-authored fields only) ─────────
@@ -441,9 +445,15 @@ export type TabGroupLayoutNode =
     }
 
 // ─── Unified Tab ────────────────────────────────────────────────────
-export type TabContentType = 'terminal' | 'editor' | 'diff' | 'conflict-review' | 'browser'
+export type TabContentType =
+  | 'terminal'
+  | 'editor'
+  | 'diff'
+  | 'conflict-review'
+  | 'browser'
+  | 'simulator'
 
-export type WorkspaceVisibleTabType = 'terminal' | 'editor' | 'browser'
+export type WorkspaceVisibleTabType = 'terminal' | 'editor' | 'browser' | 'simulator'
 export type CtrlTabOrderMode = 'mru' | 'sequential'
 
 export type Tab = {
@@ -725,6 +735,8 @@ export type WorkspaceSessionState = {
    *  considered. Persisted so closing all tabs and re-opening the workspace
    *  does not recreate the template. */
   defaultTerminalTabsAppliedByWorktreeId?: Record<string, true>
+  /** Provider-session resume records captured when workspaces sleep. */
+  sleepingAgentSessionsByPaneKey?: Record<string, SleepingAgentSessionRecord>
 }
 
 export type WorkspaceSessionPatch = Partial<WorkspaceSessionState>
@@ -1960,9 +1972,12 @@ export type GlobalSettings = {
    *  the nudge to enable refreshLocalBaseRefOnWorktreeCreate never shows again. */
   localBaseRefSuggestionDismissed: boolean
   /** When enabled, Orca renames a workspace's auto-generated creature branch to
-   *  a short name derived from the first prompt once work begins. Opt-in;
-   *  uses the same agent configured for AI commit messages. */
+   *  a short name derived from the first prompt once work begins. Users can
+   *  still turn this off from global Git settings. */
   autoRenameBranchFromWork: boolean
+  /** One-shot migration guard for the default-on rollout. Existing profiles
+   *  without the guard are flipped on once; later explicit opt-outs stick. */
+  autoRenameBranchFromWorkDefaultedOn?: boolean
   branchPrefix: 'git-username' | 'custom' | 'none'
   branchPrefixCustom: string
   enableGitHubAttribution: boolean
@@ -2003,6 +2018,8 @@ export type GlobalSettings = {
    *    switches fonts, so "off" always stays off. */
   terminalLigatures: 'auto' | 'on' | 'off'
   terminalCursorStyle: 'bar' | 'block' | 'underline'
+  /** One-shot migration guard for moving inherited cursor defaults to block. */
+  terminalCursorStyleDefaultedToBlock?: boolean
   terminalCursorBlink: boolean
   terminalThemeDark: string
   terminalDividerColorDark: string
@@ -2237,6 +2254,11 @@ export type GlobalSettings = {
    *  key to a backslash, matching the common terminal expectation for that key. */
   terminalJISYenToBackslash: boolean
   experimentalMobile: boolean
+  /** Why: the iOS Simulator feature is default-on for capable macOS hosts, but
+   *  users need a durable off switch that hides UI affordances and blocks CLI attach. */
+  mobileEmulatorEnabled?: boolean
+  /** Preferred iOS Simulator UDID for UI auto-attach and agent CLI attach. */
+  mobileEmulatorDefaultDeviceUdid?: string | null
   /** Auto-restore window for a phone-fit PTY after the last mobile
    *  subscriber leaves. `null` (default) holds the PTY at phone size
    *  indefinitely; the desktop "Restore" banner remains the explicit
@@ -2272,9 +2294,7 @@ export type GlobalSettings = {
    *  configuration surface and edge cases (conflicts with existing paths,
    *  cleanup on worktree delete) are still being worked out. */
   experimentalWorktreeSymlinks: boolean
-  /** Experimental: replaces the New Tab menu's static preview row with a
-   *  command-style launcher for terminals, detected agents, URLs, and files. */
-  experimentalUnifiedNewTabLauncher: boolean
+
   /** Active non-local runtime environment for client-routed RPC. `null`
    *  preserves the current local desktop behavior. */
   activeRuntimeEnvironmentId?: string | null
@@ -2514,6 +2534,7 @@ export type StatusBarItem =
   | 'codex'
   | 'gemini'
   | 'opencode-go'
+  | 'kimi'
   | 'ssh'
   | 'resource-usage'
   | 'ports'
@@ -2539,6 +2560,8 @@ export type TaskResumeState = {
 
 export type RightSidebarTab = 'explorer' | 'search' | 'source-control' | 'checks' | 'ports'
 
+export type ProjectOrderBy = 'manual' | 'recent'
+
 export type PersistedUIState = {
   lastActiveRepoId: string | null
   lastActiveWorktreeId: string | null
@@ -2548,6 +2571,11 @@ export type PersistedUIState = {
   rightSidebarWidth: number
   groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
   sortBy: 'name' | 'smart' | 'recent' | 'repo' | 'manual'
+  /** Project header ordering in `groupBy: 'repo'`, independent of workspace
+   *  `sortBy`. 'manual' (default) uses the persisted repo order and enables
+   *  header drag; 'recent' orders by each project's most recent visible
+   *  workspace activity. */
+  projectOrderBy: ProjectOrderBy
   /** Deprecated; the Active only filter is retired and ignored on hydration. */
   showActiveOnly: boolean
   /** Hide sleeping/inactive workspaces from workspace navigation. Off by default. */
@@ -2585,6 +2613,8 @@ export type PersistedUIState = {
   _workspaceStatusesDefaultVisualsMigrated?: boolean
   /** One-shot migration flag for adding the default-on Ports status item. */
   _portsStatusBarDefaultAdded?: boolean
+  /** One-shot migration flag for adding the default-on Kimi status item. */
+  _kimiStatusBarDefaultAdded?: boolean
   statusBarItems: StatusBarItem[]
   statusBarVisible: boolean
   dismissedUpdateVersion: string | null
@@ -2609,10 +2639,15 @@ export type PersistedUIState = {
   /** User-hidden sidebar entry for the setup guide. The Help menu remains
    *  available so this is a reversible declutter preference, not completion. */
   setupGuideSidebarDismissed?: boolean
+  /** User-dismissed browser import hint in the browser toolbar. Import remains
+   *  available from Settings > Browser and the toolbar overflow menu. */
+  browserImportHintHidden?: boolean
   /** URL to navigate to when a new browser tab is opened. Null means blank tab.
    *  Phase 3 will expand this to a full BrowserSessionProfile per workspace. */
   browserDefaultUrl?: string | null
   browserDefaultSearchEngine?: 'google' | 'duckduckgo' | 'bing' | 'kagi' | null
+  /** Electron browser zoom level applied when a new local browser tab is created. */
+  browserDefaultZoomLevel?: number
   /** Optional Kagi private-session link used only when Kagi is the search engine. */
   browserKagiSessionLink?: string | null
   /** Saved window bounds so the app restores to the user's last position/size
