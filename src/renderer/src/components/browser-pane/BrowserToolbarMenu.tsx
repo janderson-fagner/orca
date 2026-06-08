@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import { Check, Ellipsis, Import, Monitor, Plus, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,7 @@ type BrowserToolbarMenuProps = {
   browserPageId: string
   viewportPresetId: BrowserViewportPresetId | null
   onDestroyWebview: () => void
+  isActive: boolean
 }
 
 export function BrowserToolbarMenu({
@@ -47,7 +48,8 @@ export function BrowserToolbarMenu({
   workspaceId,
   browserPageId,
   viewportPresetId,
-  onDestroyWebview
+  onDestroyWebview,
+  isActive
 }: BrowserToolbarMenuProps): React.JSX.Element {
   const browserSessionProfiles = useAppStore((s) => s.browserSessionProfiles)
   const detectedBrowsers = useAppStore((s) => s.detectedBrowsers)
@@ -58,6 +60,10 @@ export function BrowserToolbarMenu({
   const fetchDetectedBrowsers = useAppStore((s) => s.fetchDetectedBrowsers)
   const browserSessionImportState = useAppStore((s) => s.browserSessionImportState)
   const setBrowserPageViewportPreset = useAppStore((s) => s.setBrowserPageViewportPreset)
+  const browserCookieTourStepActive = useAppStore(
+    (s) => s.activeContextualTourId === 'browser' && s.activeContextualTourStepIndex === 2
+  )
+  const shouldForceMenuOpen = browserCookieTourStepActive && isActive
 
   const applyViewportPreset = (nextId: BrowserViewportPresetId | null): void => {
     setBrowserPageViewportPreset(browserPageId, nextId)
@@ -72,7 +78,21 @@ export function BrowserToolbarMenu({
   const [pendingSwitchProfileId, setPendingSwitchProfileId] = useState<string | null | undefined>(
     undefined
   )
+  const [menuOpen, setMenuOpen] = useState(false)
   const mountedRef = useMountedRef()
+
+  useLayoutEffect(() => {
+    // Why: step 3 anchors on Import Cookies inside this menu, so open it only
+    // once the tour reaches the final browser step.
+    setMenuOpen(shouldForceMenuOpen)
+  }, [shouldForceMenuOpen])
+
+  const handleMenuOpenChange = (open: boolean): void => {
+    if (shouldForceMenuOpen && !open) {
+      return
+    }
+    setMenuOpen(open)
+  }
 
   const effectiveProfileId = currentProfileId ?? 'default'
 
@@ -165,7 +185,7 @@ export function BrowserToolbarMenu({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button size="icon" variant="ghost" className="h-8 w-8" title="Browser menu">
             <Ellipsis className="size-4" />
@@ -173,14 +193,14 @@ export function BrowserToolbarMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           {allProfiles.map((profile) => {
-            const isActive = profile.id === effectiveProfileId
+            const isSelectedProfile = profile.id === effectiveProfileId
             return (
               <DropdownMenuItem
                 key={profile.id}
                 onSelect={() => handleSwitchProfile(profile.id === 'default' ? null : profile.id)}
               >
                 <Check
-                  className={`mr-2 size-3.5 shrink-0 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  className={`mr-2 size-3.5 shrink-0 ${isSelectedProfile ? 'opacity-100' : 'opacity-0'}`}
                 />
                 <span className="truncate">{profile.label}</span>
                 {profile.source?.browserFamily && (
@@ -211,7 +231,13 @@ export function BrowserToolbarMenu({
               }
             }}
           >
-            <DropdownMenuSubTrigger disabled={browserSessionImportState?.status === 'importing'}>
+            <DropdownMenuSubTrigger
+              disabled={
+                browserSessionImportState?.profileId === effectiveProfileId &&
+                browserSessionImportState.status === 'importing'
+              }
+              data-contextual-tour-target="browser-import-cookies-control"
+            >
               <Import className="mr-2 size-3.5" />
               Import Cookies
             </DropdownMenuSubTrigger>

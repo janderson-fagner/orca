@@ -1377,9 +1377,69 @@ describe('OrcaRuntimeService', () => {
         createdWorktree.path,
         'cli-fresh-base',
         'origin/main',
-        false
+        false,
+        false,
+        {
+          suggestLocalBaseRefUpdate: true,
+          remoteTrackingBase: {
+            remote: 'origin',
+            branch: 'main',
+            ref: 'refs/remotes/origin/main',
+            base: 'origin/main'
+          }
+        }
       )
       expect(result.worktree).toMatchObject({ path: createdWorktree.path })
+    } finally {
+      gitSpy.mockRestore()
+    }
+  })
+
+  it('returns runtime local base update suggestions from addWorktree', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const createdWorktree = {
+      path: '/tmp/workspaces/cli-stale-main',
+      head: 'def',
+      branch: 'cli-stale-main',
+      isBare: false,
+      isMainWorktree: false
+    }
+    computeWorktreePathMock.mockReturnValue(createdWorktree.path)
+    ensurePathWithinWorkspaceMock.mockReturnValue(createdWorktree.path)
+    vi.mocked(addWorktree).mockResolvedValueOnce({
+      localBaseRefUpdateSuggestion: {
+        baseRef: 'origin/main',
+        localBranch: 'main',
+        behind: 5
+      }
+    })
+    vi.mocked(listWorktrees).mockResolvedValueOnce([createdWorktree])
+    const gitSpy = vi.spyOn(gitRunner, 'gitExecFileAsync').mockImplementation(async (args) => {
+      if (args[0] === 'rev-parse' && args.includes('refs/heads/cli-stale-main^{commit}')) {
+        throw new Error('branch not found')
+      }
+      if (args[0] === 'remote') {
+        return { stdout: 'origin\n', stderr: '' }
+      }
+      if (args[0] === 'rev-parse' && args.includes('--git-common-dir')) {
+        return { stdout: '/tmp/repo/.git\n', stderr: '' }
+      }
+      if (args[0] === 'rev-parse' && args[1] === '--verify') {
+        return { stdout: 'base-sha\n', stderr: '' }
+      }
+      return { stdout: '', stderr: '' }
+    })
+    try {
+      const result = await runtime.createManagedWorktree({
+        repoSelector: 'id:repo-1',
+        name: 'cli-stale-main'
+      })
+
+      expect(result.localBaseRefUpdateSuggestion).toEqual({
+        baseRef: 'origin/main',
+        localBranch: 'main',
+        behind: 5
+      })
     } finally {
       gitSpy.mockRestore()
     }
@@ -3850,6 +3910,59 @@ describe('OrcaRuntimeService', () => {
       tabId: spawnedEnv.ORCA_TAB_ID,
       leafId: spawnedLeafId
     })
+  })
+
+  it('enables Claude Agent Teams only for direct Claude launches when configured in-process', async () => {
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-bg' })
+    const runtimeStore = {
+      ...store,
+      getSettings: () => ({
+        ...store.getSettings(),
+        claudeAgentTeamsMode: 'in-process' as const
+      })
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore)
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: "claude 'hello'"
+    })
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: "echo ok; claude 'hello'"
+    })
+    await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: 'codex'
+    })
+
+    const directClaude = spawn.mock.calls[0]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+    const compoundClaude = spawn.mock.calls[1]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+    const normalAgent = spawn.mock.calls[2]?.[0] as {
+      command?: string
+      env?: Record<string, string>
+    }
+
+    expect(directClaude.command).toBe("claude --teammate-mode in-process 'hello'")
+    expect(directClaude.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBe('1')
+    expect(directClaude.env?.TMUX).toBeUndefined()
+
+    expect(compoundClaude.command).toBe("echo ok; claude 'hello'")
+    expect(compoundClaude.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined()
+    expect(compoundClaude.env?.TMUX).toBeUndefined()
+
+    expect(normalAgent.command).toBe('codex')
+    expect(normalAgent.env?.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).toBeUndefined()
+    expect(normalAgent.env?.TMUX).toBeUndefined()
   })
 
   it('adopts renderer pane identity for remote runtime terminal creates', async () => {

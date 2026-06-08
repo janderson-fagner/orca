@@ -21,6 +21,7 @@ import { getDefaultSourceControlAiSettings } from './source-control-ai'
 import { DEFAULT_APP_ICON_ID } from './app-icon'
 import { DEFAULT_OPEN_IN_APPLICATIONS } from './open-in-applications'
 import { DEFAULT_BROWSER_PAGE_ZOOM_LEVEL } from './browser-page-zoom'
+import { DEFAULT_DISABLED_TUI_AGENTS } from './tui-agent-selection'
 
 export { DEFAULT_STATUS_BAR_ITEMS } from './status-bar-defaults'
 export {
@@ -171,6 +172,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     nestWorkspaces: true,
     workspaceDirHistory: [],
     refreshLocalBaseRefOnWorktreeCreate: false,
+    localBaseRefSuggestionDismissed: false,
     autoRenameBranchFromWork: true,
     autoRenameBranchFromWorkDefaultedOn: true,
     branchPrefix: 'git-username',
@@ -233,6 +235,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     windowBackgroundBlur: false,
     terminalClipboardOnSelect: false,
     terminalAllowOsc52Clipboard: false,
+    claudeAgentTeamsMode: 'off',
     setupScriptLaunchMode: 'new-tab',
     terminalScrollbackBytes: 10_000_000,
     httpProxyUrl: '',
@@ -269,7 +272,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     activeClaudeManagedAccountId: null,
     terminalScopeHistoryByWorktree: true,
     defaultTuiAgent: null,
-    disabledTuiAgents: [],
+    disabledTuiAgents: [...DEFAULT_DISABLED_TUI_AGENTS],
+    claudeAgentTeamsDefaultDisabledMigrated: true,
     skipDeleteWorktreeConfirm: false,
     skipDeleteAutomationConfirm: false,
     defaultTaskViewPreset: 'all',
@@ -309,7 +313,6 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     experimentalTerminalAttention: false,
     experimentalCompactWorktreeCards: false,
     experimentalWorktreeSymlinks: false,
-    experimentalUnifiedNewTabLauncher: false,
     // Why: local desktop remains the default server until the user explicitly
     // selects a saved runtime environment.
     activeRuntimeEnvironmentId: null,

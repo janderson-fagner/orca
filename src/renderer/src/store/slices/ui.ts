@@ -1452,15 +1452,23 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       if (!s.activeContextualTourId) {
         return s
       }
+      const tour = getContextualTour(s.activeContextualTourId)
       const nextStepIndex = getNextVisibleContextualTourStepIndex({
-        tour: getContextualTour(s.activeContextualTourId),
+        tour,
         currentStepIndex: s.activeContextualTourStepIndex,
         targetExists: hasContextualTourTarget
       })
-      if (nextStepIndex === null) {
-        return s
+      if (nextStepIndex !== null) {
+        return { activeContextualTourStepIndex: nextStepIndex }
       }
-      return { activeContextualTourStepIndex: nextStepIndex }
+      // Why: browser step 3's target lives in a closed menu until that step is active.
+      if (
+        s.activeContextualTourId === 'browser' &&
+        s.activeContextualTourStepIndex + 1 < tour.steps.length
+      ) {
+        return { activeContextualTourStepIndex: s.activeContextualTourStepIndex + 1 }
+      }
+      return s
     }),
   regressContextualTour: () =>
     set((s) => {

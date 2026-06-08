@@ -97,6 +97,31 @@ describe('contextual tour definitions', () => {
     })
   })
 
+  it('orders the browser tour as grab, annotate, then import cookies', () => {
+    const tour = CONTEXTUAL_TOURS.find((entry) => entry.id === 'browser') as
+      | ContextualTour
+      | undefined
+
+    expect(tour?.steps.map((step) => step.title)).toEqual([
+      'Grab page context for agents',
+      'Mark design feedback in place',
+      'Stay logged in'
+    ])
+    expect(tour?.steps[0]).toMatchObject({
+      targetSelector: '[data-contextual-tour-target="browser-grab-control"]',
+      preferredPlacement: 'bottom'
+    })
+    expect(tour?.steps[1]).toMatchObject({
+      targetSelector: '[data-contextual-tour-target="browser-annotation-control"]',
+      preferredPlacement: 'bottom'
+    })
+    expect(tour?.steps[2]).toMatchObject({
+      body: 'Bring your existing logins into Orca to stay signed in immediately.',
+      targetSelector: '[data-contextual-tour-target="browser-import-cookies-control"]',
+      preferredPlacement: 'left'
+    })
+  })
+
   it('points the tasks tour at the row workspace action before toolbar fallbacks', () => {
     const tour = CONTEXTUAL_TOURS.find((entry) => entry.id === 'tasks') as
       | ContextualTour

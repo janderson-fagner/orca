@@ -25,6 +25,7 @@ import type {
 } from './source-control-ai-types'
 import type { AgentKind, LaunchSource, RequestKind } from './telemetry-events'
 import type { SleepingAgentSessionRecord } from './agent-session-resume'
+import type { ClaudeAgentTeamsMode } from './claude-agent-teams-tmux-compat'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
@@ -1634,6 +1635,10 @@ export type CreateWorktreeArgs = {
   /** Optional startup command for callers that want the backend to spawn the
    *  first terminal as soon as the worktree is registered. */
   startup?: WorktreeStartupLaunch
+  /** Correlates `createWorktree:progress` events back to a specific pending
+   *  creation in the renderer, so concurrent background creates each drive
+   *  their own status surface. Omitted by synchronous callers. */
+  creationId?: string
 }
 
 export type CreateWorktreeResult = {
@@ -1650,6 +1655,7 @@ export type CreateWorktreeResult = {
   warning?: string
   initialBaseStatus?: WorktreeBaseStatusEvent
   localBaseRefRefresh?: LocalBaseRefRefreshResult
+  localBaseRefUpdateSuggestion?: LocalBaseRefUpdateSuggestion
   startupTerminal?: {
     spawned: boolean
     surface?: 'visible' | 'background'
@@ -1675,6 +1681,12 @@ export type LocalBaseRefRefreshResult = {
   baseRef: string
   localBranch: string
   ownerWorktreePath?: string
+}
+
+export type LocalBaseRefUpdateSuggestion = {
+  baseRef: string
+  localBranch: string
+  behind: number
 }
 
 export type WorktreeBaseStatusKind = 'checking' | 'current' | 'drift' | 'base_changed' | 'unknown'
@@ -1842,6 +1854,7 @@ export type ClaudeManagedAccountRuntimeSelection = {
  *  flow and for the default-agent setting. Extend this union as new agents are added. */
 export type TuiAgent =
   | 'claude' // Claude Code
+  | 'claude-agent-teams' // Claude Code Agent Teams via Orca native panes
   | 'openclaude' // OpenClaude
   | 'codex' // OpenAI Codex
   | 'autohand' // Autohand Code CLI
@@ -1961,6 +1974,9 @@ export type GlobalSettings = {
   nestWorkspaces: boolean
   workspaceDirHistory?: OrcaWorkspaceLayout[]
   refreshLocalBaseRefOnWorktreeCreate: boolean
+  /** Set once the user dismisses the "local main is behind" suggestion toast, so
+   *  the nudge to enable refreshLocalBaseRefOnWorktreeCreate never shows again. */
+  localBaseRefSuggestionDismissed: boolean
   /** When enabled, Orca renames a workspace's auto-generated creature branch to
    *  a short name derived from the first prompt once work begins. Users can
    *  still turn this off from global Git settings. */
@@ -2069,6 +2085,9 @@ export type GlobalSettings = {
    *  — can silently rewrite the user's clipboard). Opt-in preserves the
    *  conservative default while making the capability one toggle away. */
   terminalAllowOsc52Clipboard: boolean
+  /** Experimental Claude Code Agent Teams integration. Native panes use a
+   *  tmux-compatible shim so teammate output stays on Orca's normal PTY path. */
+  claudeAgentTeamsMode?: ClaudeAgentTeamsMode
   /** Where the repo setup script runs on workspace create. Defaults to a
    *  background "Setup" tab so the user's main terminal stays immediately
    *  usable without the setup output crowding the initial pane. */
@@ -2169,6 +2188,9 @@ export type GlobalSettings = {
   /** Agents hidden from future picker and automatic launch choices. Detection
    *  remains a raw PATH capability snapshot. */
   disabledTuiAgents: TuiAgent[]
+  /** One-shot guard so the experimental Claude Agent Teams launch mode starts
+   *  hidden for existing profiles without overriding later user opt-ins. */
+  claudeAgentTeamsDefaultDisabledMigrated?: boolean
   /** Why: worktree deletion is destructive (git worktree remove + rm -rf of the
    *  working directory), so Orca shows a confirmation dialog by default. Users
    *  who delete frequently can opt into skipping the dialog via a "Don't ask
@@ -2284,9 +2306,7 @@ export type GlobalSettings = {
    *  configuration surface and edge cases (conflicts with existing paths,
    *  cleanup on worktree delete) are still being worked out. */
   experimentalWorktreeSymlinks: boolean
-  /** Experimental: replaces the New Tab menu's static preview row with a
-   *  command-style launcher for terminals, detected agents, URLs, and files. */
-  experimentalUnifiedNewTabLauncher: boolean
+
   /** Active non-local runtime environment for client-routed RPC. `null`
    *  preserves the current local desktop behavior. */
   activeRuntimeEnvironmentId?: string | null

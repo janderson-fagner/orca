@@ -267,6 +267,26 @@ describe('contextual tour gate', () => {
     })
   })
 
+  it('hides the browser cookie step until the Import Cookies menu row is measurable', () => {
+    const tour = getContextualTour('browser')
+    const cookieTarget = tour.steps[2]!.targetSelector
+    const targetExists = (selector: string): boolean => selector !== cookieTarget
+    const visibleStepIndexes = getVisibleContextualTourStepIndexes(tour, targetExists)
+
+    expect(visibleStepIndexes).toEqual([0, 1])
+    expect(
+      getNextVisibleContextualTourStepIndex({
+        tour,
+        currentStepIndex: 1,
+        targetExists
+      })
+    ).toBeNull()
+    expect(getContextualTourStepProgress({ visibleStepIndexes, stepIndex: 1 })).toEqual({
+      current: 2,
+      total: 2
+    })
+  })
+
   it('cancels the workspace-agent-sessions tour when the new-worktree button is absent', () => {
     const tour = getContextualTour('workspace-agent-sessions')
     // Only the split step's target is present; the create-worktree button is not.
