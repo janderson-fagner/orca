@@ -4883,6 +4883,95 @@ describe('connectPanePty', () => {
     expect(transport.sendInput).not.toHaveBeenCalled()
   })
 
+  it('does not clear unread on modifier-only keydowns', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    pane.terminal.element = createPaneContainer()
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    for (const modifier of ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph'] as const) {
+      vi.clearAllMocks()
+      const keydown = new Event('keydown')
+      Object.defineProperty(keydown, 'key', { value: modifier })
+      Object.defineProperty(keydown, 'repeat', { value: false })
+      Object.defineProperty(keydown, 'ctrlKey', { value: modifier === 'Control' })
+      Object.defineProperty(keydown, 'metaKey', { value: modifier === 'Meta' })
+      Object.defineProperty(keydown, 'shiftKey', { value: modifier === 'Shift' })
+      ;(pane.terminal.element as EventTarget).dispatchEvent(keydown)
+
+      expect(deps.clearTerminalTabUnread).not.toHaveBeenCalled()
+      expect(deps.clearTerminalPaneUnread).not.toHaveBeenCalled()
+      expect(deps.clearWorktreeUnread).not.toHaveBeenCalled()
+    }
+  })
+
+  it('does not clear unread on autorepeat keydowns', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    pane.terminal.element = createPaneContainer()
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    const keydown = new Event('keydown')
+    Object.defineProperty(keydown, 'key', { value: 'a' })
+    Object.defineProperty(keydown, 'repeat', { value: true })
+    Object.defineProperty(keydown, 'ctrlKey', { value: false })
+    Object.defineProperty(keydown, 'metaKey', { value: false })
+    Object.defineProperty(keydown, 'shiftKey', { value: false })
+    ;(pane.terminal.element as EventTarget).dispatchEvent(keydown)
+
+    expect(deps.clearTerminalTabUnread).not.toHaveBeenCalled()
+    expect(deps.clearTerminalPaneUnread).not.toHaveBeenCalled()
+    expect(deps.clearWorktreeUnread).not.toHaveBeenCalled()
+  })
+
+  it('does not clear unread on Cmd/Ctrl+C copy chord when terminal has selection', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    pane.terminal.element = createPaneContainer()
+    ;(pane.terminal as { hasSelection: ReturnType<typeof vi.fn> }).hasSelection = vi
+      .fn()
+      .mockReturnValue(true)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    for (const [key, ctrlKey, metaKey] of [
+      ['c', true, false],
+      ['C', true, false],
+      ['c', false, true],
+      ['C', false, true]
+    ] as const) {
+      vi.clearAllMocks()
+      const keydown = new Event('keydown')
+      Object.defineProperty(keydown, 'key', { value: key })
+      Object.defineProperty(keydown, 'repeat', { value: false })
+      Object.defineProperty(keydown, 'ctrlKey', { value: ctrlKey })
+      Object.defineProperty(keydown, 'metaKey', { value: metaKey })
+      Object.defineProperty(keydown, 'shiftKey', { value: false })
+      ;(pane.terminal.element as EventTarget).dispatchEvent(keydown)
+
+      expect(deps.clearTerminalTabUnread).not.toHaveBeenCalled()
+      expect(deps.clearTerminalPaneUnread).not.toHaveBeenCalled()
+      expect(deps.clearWorktreeUnread).not.toHaveBeenCalled()
+    }
+  })
+
   it('does not clear pane attention from raw onData after a bell', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
