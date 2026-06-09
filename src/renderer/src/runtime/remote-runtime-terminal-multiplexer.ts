@@ -76,7 +76,7 @@ type RemoteRuntimeMultiplexedTerminalState = {
   snapshotChunks: Uint8Array<ArrayBufferLike>[]
   snapshotBytes: number
   snapshotOverflowed: boolean
-  snapshotTarget: 'initial' | 'request'
+  snapshotTarget: 'initial' | 'request' | 'recovery'
   snapshotInfo: RemoteRuntimeSnapshotInfo | null
   initialSnapshotReceived: boolean
   pendingSnapshotRequest: RemoteRuntimeSnapshotRequest | null
@@ -426,7 +426,9 @@ class RemoteRuntimeTerminalMultiplexer {
         typeof requestId === 'number' ||
         (stream.initialSnapshotReceived && stream.pendingSnapshotRequest)
           ? 'request'
-          : 'initial'
+          : stream.initialSnapshotReceived
+            ? 'recovery'
+            : 'initial'
       return
     }
     if (frame.opcode === TerminalStreamOpcode.SnapshotChunk) {
@@ -469,6 +471,10 @@ class RemoteRuntimeTerminalMultiplexer {
           clearPendingSnapshotRequest(stream)
         } else if (target === 'initial') {
           stream.callbacks.onSnapshot(data ?? '')
+        } else if (target === 'recovery' && data) {
+          // Why: a server-pushed recovery snapshot replaces terminal state
+          // mid-session; clear the screen and scrollback before applying it.
+          stream.callbacks.onSnapshot(`\x1b[2J\x1b[3J\x1b[H${data}`)
         }
       } else if (matchesPendingRequest) {
         pendingRequest.resolve(null)

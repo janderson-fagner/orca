@@ -4,6 +4,7 @@ import {
   decodeTerminalStreamFrame,
   decodeTerminalStreamJson,
   encodeTerminalStreamFrame,
+  encodeTerminalStreamJson,
   encodeTerminalStreamText
 } from '../../../shared/terminal-stream-protocol'
 import {
@@ -331,5 +332,75 @@ describe('remote runtime terminal multiplex ACK gate', () => {
 
     heldTerminal.close()
     liveTerminal.close()
+  })
+
+  it('applies mid-session recovery snapshots without re-subscribing', async () => {
+    const { getRemoteRuntimeTerminalMultiplexer } =
+      await import('./remote-runtime-terminal-multiplexer')
+    resetRemoteRuntimeTerminalMultiplexersForTests()
+
+    const multiplexer = getRemoteRuntimeTerminalMultiplexer('env-recovery')
+    const onSnapshot = vi.fn()
+    const onSubscribed = vi.fn()
+    const stream = await multiplexer.subscribeTerminal({
+      terminal: 'terminal-recovery',
+      client: { id: 'desktop-recovery', type: 'desktop' },
+      callbacks: {
+        onData: vi.fn(),
+        onSnapshot,
+        onSubscribed
+      }
+    })
+    await vi.waitFor(() => expect(sendBinary).toHaveBeenCalled())
+    const streamId = stream.streamId
+
+    const injectSnapshot = (info: Record<string, unknown>, text: string): void => {
+      callbacks?.onBinary?.(
+        encodeTerminalStreamFrame({
+          opcode: TerminalStreamOpcode.SnapshotStart,
+          streamId,
+          seq: 1,
+          payload: encodeTerminalStreamJson(info)
+        })
+      )
+      callbacks?.onBinary?.(
+        encodeTerminalStreamFrame({
+          opcode: TerminalStreamOpcode.SnapshotChunk,
+          streamId,
+          seq: 2,
+          payload: encodeTerminalStreamText(text)
+        })
+      )
+      callbacks?.onBinary?.(
+        encodeTerminalStreamFrame({
+          opcode: TerminalStreamOpcode.SnapshotEnd,
+          streamId,
+          seq: 3,
+          payload: new Uint8Array(0)
+        })
+      )
+    }
+
+    injectSnapshot({ kind: 'scrollback', cols: 120, rows: 40, truncated: false }, 'initial state')
+    expect(onSnapshot).toHaveBeenCalledWith('initial state')
+    expect(onSubscribed).toHaveBeenCalledTimes(1)
+
+    injectSnapshot(
+      {
+        kind: 'scrollback',
+        cols: 120,
+        rows: 40,
+        reason: 'ack-pending-overflow',
+        truncated: false
+      },
+      'recovered state'
+    )
+    // Why: an unsolicited recovery snapshot replaces terminal state, so it
+    // clears screen and scrollback first and must not replay the subscribe
+    // lifecycle.
+    expect(onSnapshot).toHaveBeenCalledWith(`\x1b[2J\x1b[3J\x1b[H${'recovered state'}`)
+    expect(onSubscribed).toHaveBeenCalledTimes(1)
+
+    stream.close()
   })
 })

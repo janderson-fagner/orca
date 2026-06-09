@@ -1031,6 +1031,9 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
           const displayMode = runtime.getMobileDisplayMode(stream.ptyId)
           // Why: dropped ACK-pending output means live frames are no longer a
           // complete replay. Send a fresh model snapshot before resuming output.
+          // Why: truncated marks an unusable snapshot, and clients discard
+          // those. The recovery snapshot must be applied to cover dropped
+          // output, so it is only truncated when serialization failed.
           sendSnapshotFrames((opcode, payload) => sendFrame(stream.streamId, opcode, payload), {
             kind: 'scrollback',
             cols: serialized?.cols ?? size?.cols ?? 80,
@@ -1039,10 +1042,23 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             reason: 'ack-pending-overflow',
             seq: serialized?.seq,
             source: serialized?.source,
-            truncated: true,
+            truncated: !serialized,
             truncatedByByteBudget: serialized?.truncatedByByteBudget,
             data: serialized?.data ?? ''
           })
+          if (serialized && typeof serialized.seq === 'number') {
+            // Why: retained chunks queued before the snapshot serialized are
+            // already contained in it; replaying them would duplicate output.
+            const snapshotSeq = serialized.seq
+            const retained = stream.ackPendingOutput.filter(
+              (chunk) => !(typeof chunk.seq === 'number' && chunk.seq <= snapshotSeq)
+            )
+            stream.ackPendingOutput = retained
+            stream.ackPendingOutputBytes = retained.reduce(
+              (total, chunk) => total + chunk.bytes.byteLength,
+              0
+            )
+          }
           stream.ackPendingOutputOverflowed = false
         } catch (error) {
           sendStreamError(
