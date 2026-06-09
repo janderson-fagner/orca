@@ -23,6 +23,7 @@ import {
 import { runHiddenRealPtyPressureScenario } from './artificial-opencode-hidden-pressure-scenario'
 import type { HiddenPressureOutputMode } from './artificial-opencode-hidden-pressure-script'
 import { runMainPressureScenario } from './artificial-opencode-main-pressure-scenario'
+import { runRendererBackpressureRevisitScenario } from './artificial-opencode-revisit-pressure-scenario'
 import { startSyntheticOpenCodeInjection } from './artificial-opencode-synthetic-injection'
 
 type TerminalLoadPane = {
@@ -120,6 +121,7 @@ const MAX_MEDIAN_KEY_LATENCY_MS = 75
 const MAX_WORST_KEY_LATENCY_MS = 300
 const MAX_TIMER_DRIFT_MS = 150
 const MAX_SCROLL_LATENCY_MS = 150
+const MAX_RENDERER_SCHEDULER_QUEUED_CHARS = 3 * 1024 * 1024
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -529,24 +531,26 @@ async function runConfiguredMainPressureScenario({
     maxScrollLatencyMs: MAX_SCROLL_LATENCY_MS,
     maxTimerDriftMs: MAX_TIMER_DRIFT_MS,
     maxWorstKeyLatencyMs: MAX_WORST_KEY_LATENCY_MS,
-    deps: {
-      annotateTypingMeasurement,
-      ensureActiveWorktreePaneLoad,
-      focusPane,
-      holdTerminalAckGate,
-      measureTypingDuringLoad,
-      readMainPtyPressureDebug,
-      readTerminalAckGateDebug,
-      readTerminalOutputSchedulerDebug,
-      readTerminalPtyOutputDebug,
-      releaseTerminalAckGate,
-      resetTerminalPtyOutputDebug,
-      waitForActiveWorktree,
-      waitForMainPtyPressureBacklog,
-      waitForSessionReady,
-      writeInteractivePromptScript
-    }
+    deps: terminalLoadScenarioDeps
   })
+}
+
+const terminalLoadScenarioDeps = {
+  annotateTypingMeasurement,
+  ensureActiveWorktreePaneLoad,
+  focusPane,
+  holdTerminalAckGate,
+  measureTypingDuringLoad,
+  readMainPtyPressureDebug,
+  readTerminalAckGateDebug,
+  readTerminalOutputSchedulerDebug,
+  readTerminalPtyOutputDebug,
+  releaseTerminalAckGate,
+  resetTerminalPtyOutputDebug,
+  waitForActiveWorktree,
+  waitForMainPtyPressureBacklog,
+  waitForSessionReady,
+  writeInteractivePromptScript
 }
 
 test.describe('Artificial OpenCode terminal load', () => {
@@ -648,6 +652,25 @@ test.describe('Artificial OpenCode terminal load', () => {
     })
   })
 
+  test('keeps renderer backpressure bounded across worktree revisit', async ({
+    orcaPage,
+    testRepoPath
+  }, testInfo) => {
+    await runRendererBackpressureRevisitScenario({
+      backgroundPaneCount: PRESSURE_BACKGROUND_PANES,
+      deps: terminalLoadScenarioDeps,
+      mainRendererPressureTargetChars: MAIN_RENDERER_PRESSURE_TARGET_CHARS,
+      maxMedianKeyLatencyMs: MAX_MEDIAN_KEY_LATENCY_MS,
+      maxRendererSchedulerQueuedChars: MAX_RENDERER_SCHEDULER_QUEUED_CHARS,
+      maxTimerDriftMs: MAX_TIMER_DRIFT_MS,
+      maxWorstKeyLatencyMs: MAX_WORST_KEY_LATENCY_MS,
+      orcaPage,
+      pressureOutputChars: PRESSURE_OUTPUT_CHARS,
+      testInfo,
+      testRepoPath
+    })
+  })
+
   for (const paneCount of SCALE_PRESSURE_PANES) {
     test(`keeps active interactions responsive at ${paneCount} ACK-backpressured OpenCode PTYs`, async ({
       orcaPage,
@@ -740,20 +763,7 @@ test.describe('Artificial OpenCode terminal load', () => {
       pressureOutputMode,
       pressureStartDelayMs: HIDDEN_PRESSURE_START_DELAY_MS,
       testInfo,
-      deps: {
-        annotateTypingMeasurement,
-        ensureActiveWorktreePaneLoad,
-        holdTerminalAckGate,
-        measureTypingDuringLoad,
-        readMainPtyPressureDebug,
-        readTerminalAckGateDebug,
-        readTerminalOutputSchedulerDebug,
-        readTerminalPtyOutputDebug,
-        releaseTerminalAckGate,
-        resetTerminalPtyOutputDebug,
-        waitForMainPtyPressureBacklog,
-        writeInteractivePromptScript
-      }
+      deps: terminalLoadScenarioDeps
     })
   }
   test('keeps typing responsive while hidden real PTYs are ACK-backpressured', async ({
