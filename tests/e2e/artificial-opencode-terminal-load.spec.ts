@@ -752,7 +752,8 @@ test.describe('Artificial OpenCode terminal load', () => {
     testInfo: TestInfo,
     hiddenPaneCount: number,
     annotationSuffix?: string,
-    pressureOutputMode?: HiddenPressureOutputMode
+    pressureOutputMode?: HiddenPressureOutputMode,
+    prototypeSynchronizedHiddenModelRestore?: boolean
   ): Promise<void> {
     await runHiddenRealPtyPressureScenario({
       orcaPage,
@@ -762,60 +763,53 @@ test.describe('Artificial OpenCode terminal load', () => {
       pressureOutputChars: PRESSURE_OUTPUT_CHARS,
       pressureOutputMode,
       pressureStartDelayMs: HIDDEN_PRESSURE_START_DELAY_MS,
+      prototypeSynchronizedHiddenModelRestore,
       testInfo,
       deps: terminalLoadScenarioDeps
     })
   }
-  test('keeps typing responsive while hidden real PTYs are ACK-backpressured', async ({
-    orcaPage,
-    testRepoPath
-  }, testInfo) => {
-    await runConfiguredHiddenRealPtyPressureScenario(
-      orcaPage,
-      testRepoPath,
-      testInfo,
-      HIDDEN_PRESSURE_PANES
-    )
-  })
-  test('skips renderer writes for plain hidden PTY output while preserving restore', async ({
-    orcaPage,
-    testRepoPath
-  }, testInfo) => {
-    await runConfiguredHiddenRealPtyPressureScenario(
-      orcaPage,
-      testRepoPath,
-      testInfo,
-      HIDDEN_PRESSURE_PANES,
-      '-plain',
-      'plain'
-    )
-  })
-  test('skips renderer writes for Latin hidden PTY output while preserving restore', async ({
-    orcaPage,
-    testRepoPath
-  }, testInfo) => {
-    await runConfiguredHiddenRealPtyPressureScenario(
-      orcaPage,
-      testRepoPath,
-      testInfo,
-      HIDDEN_PRESSURE_PANES,
-      '-latin',
-      'latin'
-    )
-  })
-  test('skips renderer writes for title-only hidden PTY output while preserving restore', async ({
-    orcaPage,
-    testRepoPath
-  }, testInfo) => {
-    await runConfiguredHiddenRealPtyPressureScenario(
-      orcaPage,
-      testRepoPath,
-      testInfo,
-      HIDDEN_PRESSURE_PANES,
-      '-title',
-      'title'
-    )
-  })
+  const hiddenPressureCases: {
+    title: string
+    suffix?: string
+    mode?: HiddenPressureOutputMode
+    prototypeModelRestore?: boolean
+  }[] = [
+    { title: 'keeps typing responsive while hidden real PTYs are ACK-backpressured' },
+    {
+      title: 'skips renderer writes for plain hidden PTY output while preserving restore',
+      suffix: '-plain',
+      mode: 'plain'
+    },
+    {
+      title: 'skips renderer writes for Latin hidden PTY output while preserving restore',
+      suffix: '-latin',
+      mode: 'latin'
+    },
+    {
+      title: 'skips renderer writes for title-only hidden PTY output while preserving restore',
+      suffix: '-title',
+      mode: 'title'
+    },
+    {
+      title: 'prototypes rich hidden model restore under ACK-backpressured PTY output',
+      suffix: '-rich-model',
+      mode: 'rich-model',
+      prototypeModelRestore: true
+    }
+  ]
+  for (const hiddenPressureCase of hiddenPressureCases) {
+    test(hiddenPressureCase.title, async ({ orcaPage, testRepoPath }, testInfo) => {
+      await runConfiguredHiddenRealPtyPressureScenario(
+        orcaPage,
+        testRepoPath,
+        testInfo,
+        HIDDEN_PRESSURE_PANES,
+        hiddenPressureCase.suffix,
+        hiddenPressureCase.mode,
+        hiddenPressureCase.prototypeModelRestore
+      )
+    })
+  }
   for (const paneCount of SCALE_HIDDEN_PRESSURE_PANES) {
     test(`keeps hidden restore responsive with ${paneCount} ACK-backpressured real PTYs`, async ({
       orcaPage,

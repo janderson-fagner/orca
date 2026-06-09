@@ -1,6 +1,6 @@
 import type { Page, TestInfo } from '@stablyai/playwright-test'
 import { randomUUID } from 'node:crypto'
-import { rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { test, expect } from './helpers/orca-app'
 import {
@@ -17,9 +17,9 @@ import {
   waitForActiveTerminalManager,
   waitForPaneIdentitySnapshot
 } from './helpers/terminal'
+import { setPrototypeSynchronizedHiddenModelRestore } from './prototype-synchronized-hidden-model-restore'
 
 type HiddenTuiWindow = Window & {
-  __ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__?: boolean
   __terminalPtyDataInjection?: {
     inject: (paneKey: string, data: string, meta?: { seq?: number; rawLength?: number }) => boolean
   }
@@ -43,6 +43,8 @@ type TuiCursorState = {
   hidden: boolean | null
   initialized: boolean | null
 }
+
+const HIDDEN_FRAME_SCRIPT_DELAY_MS = 750
 
 function tuiFrame(runId: string, frame: number): string {
   const progress = `${'█'.repeat((frame % 8) + 1)}${'░'.repeat(8 - ((frame % 8) + 1))}`
@@ -83,27 +85,20 @@ async function resetHiddenDebug(page: Page): Promise<void> {
   })
 }
 
-async function setPrototypeSynchronizedHiddenModelRestore(
-  page: Page,
-  enabled: boolean
-): Promise<void> {
-  await page.evaluate((enabled) => {
-    ;(window as HiddenTuiWindow).__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__ = enabled
-  }, enabled)
-}
-
 function writeHiddenFrameScript(scriptPath: string, runId: string): void {
   const frames = Array.from({ length: 25 }, (_, frame) => tuiFrame(runId, frame))
+  mkdirSync(path.dirname(scriptPath), { recursive: true })
   writeFileSync(
     scriptPath,
-    `setTimeout(() => process.stdout.write(${JSON.stringify(frames.join(''))}), 250)\n`
+    `setTimeout(() => process.stdout.write(${JSON.stringify(frames.join(''))}), ${HIDDEN_FRAME_SCRIPT_DELAY_MS})\n`
   )
 }
 
 function writeLowRiskFrameScript(scriptPath: string, frame: string): void {
+  mkdirSync(path.dirname(scriptPath), { recursive: true })
   writeFileSync(
     scriptPath,
-    `setTimeout(() => process.stdout.write(${JSON.stringify(frame)}), 250)\n`
+    `setTimeout(() => process.stdout.write(${JSON.stringify(frame)}), ${HIDDEN_FRAME_SCRIPT_DELAY_MS})\n`
   )
 }
 

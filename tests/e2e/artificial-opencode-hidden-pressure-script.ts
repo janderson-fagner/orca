@@ -1,11 +1,11 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
-export type HiddenPressureOutputMode = 'tui' | 'plain' | 'title' | 'latin'
+export type HiddenPressureOutputMode = 'tui' | 'plain' | 'title' | 'latin' | 'rich-model'
 
 export function pressureOutputScript(runId: string, mode: HiddenPressureOutputMode): string {
-  const headerPrefix = mode === 'tui' ? '\\x1b[0m' : ''
-  const donePrefix = mode === 'tui' ? '\\x1b[0m' : ''
+  const headerPrefix = mode === 'tui' || mode === 'rich-model' ? '\\x1b[0m' : ''
+  const donePrefix = mode === 'tui' || mode === 'rich-model' ? '\\x1b[0m' : ''
   const chunkExpression =
     mode === 'plain'
       ? "'plain pressure pane=' + paneIndex + ' frame=' + frame + ' ' + chunkBody + '\\n'"
@@ -13,7 +13,9 @@ export function pressureOutputScript(runId: string, mode: HiddenPressureOutputMo
         ? "'latin pressure café déjà vu São Tomé Żubrówka pane=' + paneIndex + ' frame=' + frame + ' ' + chunkBody + '\\n'"
         : mode === 'title'
           ? "'\\x1b]0;title pressure pane=' + paneIndex + ' frame=' + frame + ' ' + chunkBody + '\\x07'"
-          : "'\\x1b[?2026h\\x1b[1;1Hpressure pane=' + paneIndex + ' frame=' + frame + ' ' + chunkBody + '\\x1b[?2026l\\n'"
+          : mode === 'rich-model'
+            ? "'\\x1b[?2026h\\x1b[?1049h\\x1b[2J\\x1b[H\\x1b[?25l\\x1b[2;36m╭────────────────────────────────────────╮\\x1b[0m\\r\\n\\x1b[2;36m│ rich model pane=' + paneIndex + ' frame=' + frame + ' 😀 ███░ │\\x1b[0m\\r\\n\\x1b[2;36m│ ' + chunkBody + ' │\\x1b[0m\\r\\n\\x1b[2;36m╰────────────────────────────────────────╯\\x1b[0m\\x1b[6;4H\\x1b[?25h\\x1b[?2026l\\n'"
+            : "'\\x1b[?2026h\\x1b[1;1Hpressure pane=' + paneIndex + ' frame=' + frame + ' ' + chunkBody + '\\x1b[?2026l\\n'"
   return `
 const paneIndex = process.argv[2] ?? '0'
 const targetChars = Number(process.argv[3] ?? '0')

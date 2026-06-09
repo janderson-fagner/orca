@@ -425,7 +425,8 @@ function shouldAllowPrototypeSynchronizedHiddenModelRestore(): boolean {
     __ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__?: boolean
   }
   return (
-    import.meta.env.DEV && target.__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__ === true
+    (import.meta.env.DEV || e2eConfig.exposeStore) &&
+    target.__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__ === true
   )
 }
 
