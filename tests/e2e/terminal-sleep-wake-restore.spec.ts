@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import type { Page } from '@stablyai/playwright-test'
 import { test, expect } from './helpers/orca-app'
 import {
@@ -102,25 +104,48 @@ async function mainSnapshotContains(page: Page, ptyId: string, text: string): Pr
 }
 
 function richSleepWakePayload(runId: string): string {
+  const shortId = runId.slice(0, 8)
   return [
     '\x1b[?2026h',
     '\x1b[2J\x1b[H',
-    '╭────────────────────────────╮',
-    `│ sleep wake restore ${runId.slice(0, 8)} 😀 │`,
-    '╰────────────────────────────╯',
+    '╭────────────────────────────────────────────╮',
+    `│ sleep wake restore ${shortId} 😀             │`,
+    '├────────────┬───────────────┬───────────────┤',
+    '│ agent      │ status        │ output        │',
+    '├────────────┼───────────────┼───────────────┤',
+    `│ codex-${shortId.slice(0, 4)} │ thinking      │ box/table ok  │`,
+    '│ opencode   │ streaming     │ unicode ✓     │',
+    '│ shell      │ idle          │ prompt ready  │',
+    '╰────────────┴───────────────┴───────────────╯',
     `SLEEP_WAKE_RESTORE_${runId}`,
+    `SLEEP_WAKE_TABLE_${runId}`,
     '\x1b[?2026l'
   ].join('\r\n')
 }
 
-function nodeWriteCodePointPayloadCommand(payload: string): string {
-  const codePoints = [...payload].map((char) => char.codePointAt(0) ?? 0)
-  return `node -e "process.stdout.write(String.fromCodePoint(...${JSON.stringify(codePoints)}))"`
+function sleepWakeExpectedMarkers(runId: string): string[] {
+  return [
+    `SLEEP_WAKE_RESTORE_${runId}`,
+    `SLEEP_WAKE_TABLE_${runId}`,
+    'box/table ok',
+    'unicode ✓',
+    'prompt ready'
+  ]
+}
+
+function writeSleepWakePayloadScript(scriptPath: string, payload: string): void {
+  const encodedPayload = Buffer.from(payload, 'utf8').toString('base64')
+  writeFileSync(
+    scriptPath,
+    `process.stdout.write(Buffer.from(${JSON.stringify(encodedPayload)}, 'base64').toString('utf8'))\n`,
+    'utf8'
+  )
 }
 
 test.describe('Terminal sleep wake restore', () => {
   test('restores slept terminal output and accepts fresh input after wake', async ({
-    orcaPage
+    orcaPage,
+    testRepoPath
   }) => {
     await waitForSessionReady(orcaPage)
     const firstWorktreeId = await waitForActiveWorktree(orcaPage)
@@ -139,49 +164,57 @@ test.describe('Terminal sleep wake restore', () => {
     const runId = randomUUID()
     const restoreMarker = `SLEEP_WAKE_RESTORE_${runId}`
     const freshMarker = `SLEEP_WAKE_FRESH_${runId}`
-    await sendToTerminal(
-      orcaPage,
-      ptyId,
-      `${nodeWriteCodePointPayloadCommand(richSleepWakePayload(runId))}\r`
-    )
-    await waitForTerminalOutput(orcaPage, restoreMarker, 10_000, 20_000)
-    const beforeSleepDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
-    expect(await mainSnapshotContains(orcaPage, ptyId, restoreMarker)).toBe(true)
+    const expectedMarkers = sleepWakeExpectedMarkers(runId)
+    const scriptPath = path.join(testRepoPath, `.orca-sleep-wake-restore-${runId}.mjs`)
+    writeSleepWakePayloadScript(scriptPath, richSleepWakePayload(runId))
+    try {
+      await sendToTerminal(orcaPage, ptyId, `node ${JSON.stringify(scriptPath)}\r`)
+      await waitForTerminalOutput(orcaPage, restoreMarker, 10_000, 20_000)
+      const beforeSleepDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
+      for (const marker of expectedMarkers) {
+        expect(await mainSnapshotContains(orcaPage, ptyId, marker)).toBe(true)
+      }
 
-    await switchToWorktree(orcaPage, firstWorktreeId)
-    await sleepWorktreeTerminals(orcaPage, secondWorktreeId)
-    const afterSleepDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
-    await expect
-      .poll(() => readLivePtyCountForWorktree(orcaPage, secondWorktreeId), {
-        timeout: 10_000,
-        message: 'sleep did not release live PTYs for the background worktree'
-      })
-      .toBe(0)
+      await switchToWorktree(orcaPage, firstWorktreeId)
+      await sleepWorktreeTerminals(orcaPage, secondWorktreeId)
+      const afterSleepDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
+      await expect
+        .poll(() => readLivePtyCountForWorktree(orcaPage, secondWorktreeId), {
+          timeout: 10_000,
+          message: 'sleep did not release live PTYs for the background worktree'
+        })
+        .toBe(0)
 
-    await switchToWorktree(orcaPage, secondWorktreeId)
-    await ensureTerminalVisible(orcaPage)
-    await waitForActiveTerminalManager(orcaPage, 30_000)
-    const awakePtyId = await waitForActivePanePtyId(orcaPage)
-    const afterWakeDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
-    const awakeTerminalContent = await getTerminalContent(orcaPage, 20_000)
-    expect
-      .soft(awakeTerminalContent.includes(restoreMarker), {
-        message: JSON.stringify(
-          {
-            ptyId,
-            awakePtyId,
-            beforeSleepDebug,
-            afterSleepDebug,
-            afterWakeDebug,
-            terminalTail: awakeTerminalContent.slice(-2000)
-          },
-          null,
-          2
-        )
-      })
-      .toBe(true)
-    await waitForTerminalOutput(orcaPage, restoreMarker, 15_000, 20_000)
-    await sendToTerminal(orcaPage, awakePtyId, `printf '\\n${freshMarker}\\n'\r`)
-    await waitForTerminalOutput(orcaPage, freshMarker, 10_000, 20_000)
+      await switchToWorktree(orcaPage, secondWorktreeId)
+      await ensureTerminalVisible(orcaPage)
+      await waitForActiveTerminalManager(orcaPage, 30_000)
+      const awakePtyId = await waitForActivePanePtyId(orcaPage)
+      const afterWakeDebug = await readSleepWakeTerminalDebug(orcaPage, secondWorktreeId)
+      const awakeTerminalContent = await getTerminalContent(orcaPage, 20_000)
+      for (const marker of expectedMarkers) {
+        expect
+          .soft(awakeTerminalContent.includes(marker), {
+            message: JSON.stringify(
+              {
+                missingMarker: marker,
+                ptyId,
+                awakePtyId,
+                beforeSleepDebug,
+                afterSleepDebug,
+                afterWakeDebug,
+                terminalTail: awakeTerminalContent.slice(-2000)
+              },
+              null,
+              2
+            )
+          })
+          .toBe(true)
+      }
+      await waitForTerminalOutput(orcaPage, restoreMarker, 15_000, 20_000)
+      await sendToTerminal(orcaPage, awakePtyId, `printf '\\n${freshMarker}\\n'\r`)
+      await waitForTerminalOutput(orcaPage, freshMarker, 10_000, 20_000)
+    } finally {
+      rmSync(scriptPath, { force: true })
+    }
   })
 })
