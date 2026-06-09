@@ -44,7 +44,7 @@ describe('planSourceControlCommitMessageGeneration', () => {
     const result = planSourceControlTextGeneration('pullRequest', {
       agentId: 'codex',
       model: 'gpt-5.5',
-      commandInputTemplate: '{basePrompt}\n\nReview {changedFiles}'
+      commandInputTemplate: '{basePrompt}\n\nReview {changedFiles}\n{linkedWorkItemUrl}'
     })
 
     expect(result.ok && result.commandLabel).toContain('codex exec')

@@ -27,6 +27,24 @@ describe('buildPullRequestFieldsPrompt', () => {
     expect(prompt).toContain('Additional user prompt:')
     expect(prompt).toContain('Use conventional PR titles.')
   })
+
+  it('includes linked work item context when a URL exists', () => {
+    const prompt = buildPullRequestFieldsPrompt(
+      { ...context, linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details' },
+      ''
+    )
+
+    expect(prompt).toContain(
+      'Linked work item URL: https://linear.app/orca/issue/ORC-123/fix-pr-details'
+    )
+    expect(prompt).toContain('If a linked work item URL is provided')
+  })
+
+  it('omits the linked work item section when no URL exists', () => {
+    const prompt = buildPullRequestFieldsPrompt(context, '')
+
+    expect(prompt).not.toContain('Linked work item URL:')
+  })
 })
 
 describe('parseGeneratedPullRequestFields', () => {

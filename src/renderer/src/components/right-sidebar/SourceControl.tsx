@@ -38,6 +38,7 @@ import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { detectLanguage } from '@/lib/language-detect'
 import { basename, dirname, joinPath } from '@/lib/path'
+import { resolveSourceControlLinkedWorkItemUrl } from '@/lib/source-control-linked-work-item-url'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
 import { isFolderRepo } from '../../../../shared/repo-kind'
@@ -56,11 +57,13 @@ import {
   type PrimaryAction,
   type RemoteOpKind
 } from './source-control-primary-action'
+import { CreatePullRequestLinkedWorkItemRow } from './CreatePullRequestLinkedWorkItemRow'
 import {
   resolveDropdownItems,
   type DropdownActionKind,
   type DropdownEntry
 } from './source-control-dropdown-items'
+import { getHostedReviewCreationCopy } from './hosted-review-creation-copy'
 import { BulkActionBar } from './BulkActionBar'
 import { useSourceControlSelection, type FlatEntry } from './useSourceControlSelection'
 import {
@@ -421,27 +424,6 @@ type CreatedHostedReview = {
   url: string
 }
 
-function hostedReviewCreationCopy(provider: HostedReviewProvider | null | undefined): {
-  shortLabel: 'PR' | 'MR'
-  reviewLabel: 'pull request' | 'merge request'
-  titleLabel: 'Pull Request' | 'Merge Request'
-  providerName: 'GitHub' | 'GitLab'
-} {
-  return provider === 'gitlab'
-    ? {
-        shortLabel: 'MR',
-        reviewLabel: 'merge request',
-        titleLabel: 'Merge Request',
-        providerName: 'GitLab'
-      }
-    : {
-        shortLabel: 'PR',
-        reviewLabel: 'pull request',
-        titleLabel: 'Pull Request',
-        providerName: 'GitHub'
-      }
-}
-
 export function readCommitDraftForWorktree(
   drafts: CommitDraftsByWorktree,
   worktreeId: string | null | undefined
@@ -773,6 +755,20 @@ function SourceControlInner(): React.JSX.Element {
   const worktreeMap = useWorktreeMap()
   const rightSidebarTab = useAppStore((s) => s.rightSidebarTab)
   const activeRepo = useRepoById(activeWorktree?.repoId ?? null)
+  const activeLinkedWorkItemUrl = useAppStore((s) =>
+    resolveSourceControlLinkedWorkItemUrl({
+      worktree: activeWorktree,
+      repo: activeRepo,
+      branch: activeWorktree?.branch ?? null,
+      settings: s.settings,
+      linearIssueCache: s.linearIssueCache,
+      linearStatus: s.linearStatus,
+      githubIssueCache: s.issueCache,
+      githubPrCache: s.prCache,
+      githubWorkItemsCache: s.workItemsCache,
+      hostedReviewCache: s.hostedReviewCache
+    })
+  )
   const entries = useAppStore((s) =>
     activeWorktreeId
       ? (s.gitStatusByWorktree[activeWorktreeId] ?? EMPTY_GIT_STATUS_ENTRIES)
@@ -1177,7 +1173,7 @@ function SourceControlInner(): React.JSX.Element {
       : null
   const hostedReviewCreateProvider =
     hostedReviewCreation?.provider === 'gitlab' ? 'gitlab' : 'github'
-  const hostedReviewCreateCopy = hostedReviewCreationCopy(hostedReviewCreateProvider)
+  const hostedReviewCreateCopy = getHostedReviewCreationCopy(hostedReviewCreateProvider)
   const hostedReviewCacheKey =
     activeRepo && branchName
       ? getHostedReviewCacheKey(
@@ -1957,7 +1953,7 @@ function SourceControlInner(): React.JSX.Element {
       if (!activeRepo || !branchName) {
         return
       }
-      const copy = hostedReviewCreationCopy(result.provider)
+      const copy = getHostedReviewCreationCopy(result.provider)
       setRightSidebarOpen(true)
       setRightSidebarTab('checks')
       try {
@@ -2067,7 +2063,8 @@ function SourceControlInner(): React.JSX.Element {
             base: stripBaseRef(seed.base.trim()),
             title: seed.title,
             body: seed.body,
-            draft: seed.draft
+            draft: seed.draft,
+            ...(activeLinkedWorkItemUrl ? { linkedWorkItemUrl: activeLinkedWorkItemUrl } : {})
           },
           overrides
         )
@@ -2138,6 +2135,7 @@ function SourceControlInner(): React.JSX.Element {
     },
     [
       activePullRequestGenerationKey,
+      activeLinkedWorkItemUrl,
       activeRepo,
       activeWorktreeId,
       branchName,
@@ -3999,6 +3997,7 @@ function SourceControlInner(): React.JSX.Element {
                 generateError={prGenerateError}
                 createError={createPrError}
                 isCreating={isCreatingPr}
+                linkedWorkItemUrl={activeLinkedWorkItemUrl}
                 primaryAction={primaryAction}
                 dropdownItems={dropdownItems}
                 onGenerate={handleGeneratePullRequestFieldsClick}
@@ -4471,6 +4470,7 @@ function SourceControlInner(): React.JSX.Element {
         settings={settings}
         repo={activeRepo ?? null}
         discoveryHostKey={sourceControlAiDiscoveryHostKey}
+        variablePreviews={{ linkedWorkItemUrl: activeLinkedWorkItemUrl ?? '' }}
         onGenerate={(params) => {
           void handleGeneratePullRequestFields({ sourceControlAiResolvedParams: params })
         }}
@@ -4506,6 +4506,7 @@ type PullRequestComposerProps = {
   generateError: string | null
   createError: string | null
   isCreating: boolean
+  linkedWorkItemUrl: string | null
   primaryAction: PrimaryAction
   dropdownItems: DropdownEntry[]
   onGenerate: () => void
@@ -4537,6 +4538,7 @@ function PullRequestComposer({
   generateError,
   createError,
   isCreating,
+  linkedWorkItemUrl,
   primaryAction,
   dropdownItems,
   onGenerate,
@@ -4544,7 +4546,7 @@ function PullRequestComposer({
   onPrimaryAction,
   onDropdownAction
 }: PullRequestComposerProps): React.JSX.Element {
-  const copy = hostedReviewCreationCopy(provider)
+  const copy = getHostedReviewCreationCopy(provider)
   const ReviewIcon = provider === 'gitlab' ? GitMerge : GitPullRequestArrow
   const normalizedBase = stripBaseRef(base)
   const strippedBranch = stripBaseRef(branch)
@@ -4609,6 +4611,10 @@ function PullRequestComposer({
             )
           ) : null}
         </div>
+
+        {aiGenerationEnabled && linkedWorkItemUrl ? (
+          <CreatePullRequestLinkedWorkItemRow linkedWorkItemUrl={linkedWorkItemUrl} />
+        ) : null}
 
         {/* Why: a single line that shows the head→base flow plain-language so
             the user can sanity-check the merge direction at a glance. */}

@@ -27,6 +27,7 @@ type SourceControlTextGenerationBaseDialogProps = {
   settings: GlobalSettings | null
   repo?: Pick<Repo, 'id' | 'sourceControlAi'> | null
   discoveryHostKey: string
+  variablePreviews?: Partial<Record<string, string>>
   onGenerate: (params: ResolvedSourceControlAiGenerationParams) => void
   onSaveDefaults: (
     target: SourceControlAiWriteTarget,
@@ -51,6 +52,7 @@ export function SourceControlTextGenerationDialog({
   settings,
   repo,
   discoveryHostKey,
+  variablePreviews,
   onGenerate,
   onSaveDefaults
 }: SourceControlTextGenerationDialogProps): React.JSX.Element {
@@ -125,6 +127,7 @@ export function SourceControlTextGenerationDialog({
           settings={settings}
           baseParams={baseParams}
           saveTargets={saveTargets}
+          variablePreviews={variablePreviews}
           onGenerate={onGenerate}
           onOpenChange={onOpenChange}
           onSaveDefaults={onSaveDefaults}

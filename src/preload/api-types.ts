@@ -2054,6 +2054,7 @@ export type PreloadApi = {
       title: string
       body: string
       draft: boolean
+      linkedWorkItemUrl?: string | null
       connectionId?: string
       sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
       sourceControlAi?: SourceControlAiSettings

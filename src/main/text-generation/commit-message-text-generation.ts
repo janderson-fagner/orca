@@ -816,10 +816,12 @@ export async function generatePullRequestFieldsFromContext(
   target: CommitMessageGenerationTarget
 ): Promise<GeneratePullRequestFieldsResult> {
   const basePrompt = buildPullRequestFieldsPrompt(context, '')
+  const linkedWorkItemUrl = context.linkedWorkItemUrl?.trim()
   const prompt =
     params.commandInputTemplate !== undefined
       ? renderSourceControlActionCommandTemplate(params.commandInputTemplate, {
           basePrompt,
+          linkedWorkItemUrl: linkedWorkItemUrl ?? '',
           branch: context.branch ?? '(detached)',
           baseBranch: context.base,
           currentTitle: context.currentTitle,

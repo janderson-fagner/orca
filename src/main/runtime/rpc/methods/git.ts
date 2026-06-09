@@ -2,6 +2,7 @@
 import { defineMethod, type RpcMethod } from '../core'
 import type { GlobalSettings } from '../../../../shared/types'
 import type { ResolvedSourceControlAiGenerationParams } from '../../../../shared/source-control-ai'
+import { normalizeLinkedWorkItemUrl } from '../../../../shared/linked-work-item-url'
 import {
   GitBranchCompare,
   GitBranchDiff,
@@ -254,11 +255,18 @@ export const GIT_METHODS: RpcMethod[] = [
     name: 'git.generatePullRequestFields',
     params: GitGeneratePullRequestFields,
     handler: async (params, { runtime }) => {
+      const linkedWorkItemUrl = normalizeLinkedWorkItemUrl(params.linkedWorkItemUrl)
+      if (!linkedWorkItemUrl.ok) {
+        return { success: false, error: linkedWorkItemUrl.error }
+      }
       const input = {
         base: params.base,
         title: params.title,
         body: params.body,
-        draft: params.draft
+        draft: params.draft,
+        ...(linkedWorkItemUrl.linkedWorkItemUrl
+          ? { linkedWorkItemUrl: linkedWorkItemUrl.linkedWorkItemUrl }
+          : {})
       }
       const override = buildCommitMessageGenerationOverride(params)
       if (override === undefined) {

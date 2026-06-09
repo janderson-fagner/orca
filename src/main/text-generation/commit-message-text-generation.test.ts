@@ -1069,6 +1069,96 @@ describe('generateCommitMessageFromContext', () => {
     })
   })
 
+  it('renders linkedWorkItemUrl in pull-request command templates when present', async () => {
+    let prompt = ''
+    const result = await generatePullRequestFieldsFromContext(
+      {
+        branch: 'feature/pr-fields',
+        base: 'main',
+        branchChangedByPreparation: false,
+        currentTitle: '',
+        currentBody: '',
+        currentDraft: false,
+        commitSummary: '- feat: update README',
+        changeSummary: 'M\tREADME.md',
+        patch: '+hello',
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details'
+      },
+      {
+        agentId: 'custom',
+        model: '',
+        customAgentCommand: 'agent',
+        commandInputTemplate: '{basePrompt}\n\nLinked: {linkedWorkItemUrl}'
+      },
+      {
+        kind: 'remote',
+        cwd: '/repo',
+        missingBinaryLocation: 'remote PATH',
+        execute: async (plan) => {
+          prompt = plan.stdinPayload ?? ''
+          return {
+            stdout: '{"base":"main","title":"Update README","body":"Body","draft":false}\n',
+            stderr: '',
+            exitCode: 0,
+            timedOut: false
+          }
+        }
+      }
+    )
+
+    expect(prompt).toContain('Linked: https://linear.app/orca/issue/ORC-123/fix-pr-details')
+    expect(result).toMatchObject({
+      success: true,
+      fields: {
+        base: 'main',
+        title: 'Update README',
+        body: 'Body',
+        draft: false
+      }
+    })
+  })
+
+  it('renders linkedWorkItemUrl as empty in pull-request command templates when absent', async () => {
+    let prompt = ''
+    const result = await generatePullRequestFieldsFromContext(
+      {
+        branch: 'feature/pr-fields',
+        base: 'main',
+        branchChangedByPreparation: false,
+        currentTitle: '',
+        currentBody: '',
+        currentDraft: false,
+        commitSummary: '- feat: update README',
+        changeSummary: 'M\tREADME.md',
+        patch: '+hello'
+      },
+      {
+        agentId: 'custom',
+        model: '',
+        customAgentCommand: 'agent',
+        commandInputTemplate: '{basePrompt}\n\nLinked: {linkedWorkItemUrl}'
+      },
+      {
+        kind: 'remote',
+        cwd: '/repo',
+        missingBinaryLocation: 'remote PATH',
+        execute: async (plan) => {
+          prompt = plan.stdinPayload ?? ''
+          return {
+            stdout: '{"base":"main","title":"Update README","body":"Body","draft":false}\n',
+            stderr: '',
+            exitCode: 0,
+            timedOut: false
+          }
+        }
+      }
+    )
+
+    expect(prompt).toContain('Linked: ')
+    expect(prompt).not.toContain('{linkedWorkItemUrl}')
+    expect(result).toMatchObject({ success: true })
+  })
+
   it('reports branch changes when pull request field output cannot be parsed', async () => {
     const listeners = new Map<string, (value: unknown) => void>()
     spawnMock.mockReturnValue({

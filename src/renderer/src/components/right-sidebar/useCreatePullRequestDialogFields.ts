@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getConnectionId } from '@/lib/connection-context'
 import { useAppStore, type AppState } from '@/store'
+import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
 import {
   cancelRuntimeGeneratePullRequestFields,
   generateRuntimePullRequestFields,
+  getRuntimeGitScope,
   type RuntimeGeneratePullRequestFieldsOverrides,
   type RuntimeGitContext
 } from '@/runtime/runtime-git-client'
@@ -13,7 +15,7 @@ import {
   getRuntimeRepoBaseRefDefault,
   searchRuntimeRepoBaseRefDetails
 } from '@/runtime/runtime-repo-client'
-import type { Repo } from '../../../../shared/types'
+import type { GlobalSettings, Repo } from '../../../../shared/types'
 import type { HostedReviewCreationEligibility } from '../../../../shared/hosted-review'
 import { normalizeHostedReviewBaseRef } from '../../../../shared/hosted-review-refs'
 import type { BaseRefSearchResult } from '../../../../shared/types'
@@ -39,9 +41,10 @@ type UseCreatePullRequestDialogFieldsOptions = {
   worktreePath: string
   branch: string
   eligibility: HostedReviewCreationEligibility | null
-  repo?: Pick<Repo, 'sourceControlAi'> | null
+  repo?: Pick<Repo, 'connectionId' | 'sourceControlAi'> | null
   settings: AppState['settings']
   submitting: boolean
+  linkedWorkItemUrl?: string | null
   prCreationDefaults?: SourceControlAiPrCreationDefaults
   onBranchChangedByGeneration?: () => Promise<void>
   generation?: {
@@ -93,6 +96,15 @@ export function normalizeCreateReviewBaseSearchResults(
   return branches
 }
 
+export function getCreateReviewDiscoveryHostKey(
+  settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
+  repo: Pick<Repo, 'connectionId'> | null | undefined
+): string {
+  return getCommitMessageModelDiscoveryHostKeyForScope(
+    getRuntimeGitScope(settings, repo?.connectionId)
+  )
+}
+
 export function useCreatePullRequestDialogFields({
   open,
   repoId,
@@ -103,6 +115,7 @@ export function useCreatePullRequestDialogFields({
   repo,
   settings,
   submitting,
+  linkedWorkItemUrl,
   prCreationDefaults,
   onBranchChangedByGeneration,
   generation
@@ -111,7 +124,8 @@ export function useCreatePullRequestDialogFields({
     ? resolveSourceControlAiForOperation({
         settings,
         repo,
-        operation: 'pullRequest'
+        operation: 'pullRequest',
+        discoveryHostKey: getCreateReviewDiscoveryHostKey(settings, repo)
       })
     : null
   const resolvedPrDefaults = {
@@ -353,7 +367,8 @@ export function useCreatePullRequestDialogFields({
             base: stripBaseRef(base.trim()),
             title,
             body,
-            draft
+            draft,
+            ...(linkedWorkItemUrl ? { linkedWorkItemUrl } : {})
           },
           overrides
         )
@@ -403,6 +418,7 @@ export function useCreatePullRequestDialogFields({
       applyGeneratedFields,
       generation,
       generateDisabled,
+      linkedWorkItemUrl,
       onBranchChangedByGeneration,
       title,
       worktreeId,

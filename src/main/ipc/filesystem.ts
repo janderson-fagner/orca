@@ -70,6 +70,7 @@ import { checkIgnoredPaths } from '../git/check-ignored-paths'
 import { assertGitPushTargetShape } from '../../shared/git-push-target-validation'
 import { getCommitMessageModelDiscoveryHostKey } from '../../shared/commit-message-host-key'
 import type { ResolvedSourceControlAiGenerationParams } from '../../shared/source-control-ai'
+import { normalizeLinkedWorkItemUrl } from '../../shared/linked-work-item-url'
 import { validateGitPushTarget } from '../git/push-target-validation'
 import { getRemoteFileUrl } from '../git/repo'
 import {
@@ -969,6 +970,7 @@ export function registerFilesystemHandlers(
         title: string
         body: string
         draft: boolean
+        linkedWorkItemUrl?: unknown
         connectionId?: string
         sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
         sourceControlAi?: GlobalSettings['sourceControlAi']
@@ -994,6 +996,10 @@ export function registerFilesystemHandlers(
           )
       if (!resolvedSettings.ok) {
         return { success: false, error: resolvedSettings.error }
+      }
+      const linkedWorkItemUrl = normalizeLinkedWorkItemUrl(args.linkedWorkItemUrl)
+      if (!linkedWorkItemUrl.ok) {
+        return { success: false, error: linkedWorkItemUrl.error }
       }
       if (args.connectionId) {
         const provider = getSshGitProvider(args.connectionId)
@@ -1024,13 +1030,19 @@ export function registerFilesystemHandlers(
         if (!context) {
           return { success: false, error: 'No branch changes to summarize.' }
         }
-        return generatePullRequestFieldsFromContext(context, resolvedSettings.params, {
-          kind: 'remote',
-          cwd: args.worktreePath,
-          execute: (plan, cwd, timeoutMs, operation) =>
-            provider.executeCommitMessagePlan(plan, cwd, timeoutMs, operation),
-          missingBinaryLocation: 'remote PATH'
-        })
+        return generatePullRequestFieldsFromContext(
+          linkedWorkItemUrl.linkedWorkItemUrl
+            ? { ...context, linkedWorkItemUrl: linkedWorkItemUrl.linkedWorkItemUrl }
+            : context,
+          resolvedSettings.params,
+          {
+            kind: 'remote',
+            cwd: args.worktreePath,
+            execute: (plan, cwd, timeoutMs, operation) =>
+              provider.executeCommitMessagePlan(plan, cwd, timeoutMs, operation),
+            missingBinaryLocation: 'remote PATH'
+          }
+        )
       }
 
       const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
@@ -1061,11 +1073,17 @@ export function registerFilesystemHandlers(
       if (!localEnv.ok) {
         return { success: false, error: localEnv.error }
       }
-      return generatePullRequestFieldsFromContext(context, resolvedSettings.params, {
-        kind: 'local',
-        cwd: worktreePath,
-        ...(localEnv.env ? { env: localEnv.env } : {})
-      })
+      return generatePullRequestFieldsFromContext(
+        linkedWorkItemUrl.linkedWorkItemUrl
+          ? { ...context, linkedWorkItemUrl: linkedWorkItemUrl.linkedWorkItemUrl }
+          : context,
+        resolvedSettings.params,
+        {
+          kind: 'local',
+          cwd: worktreePath,
+          ...(localEnv.env ? { env: localEnv.env } : {})
+        }
+      )
     }
   )
 

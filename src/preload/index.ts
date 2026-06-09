@@ -2510,6 +2510,7 @@ const api = {
       title: string
       body: string
       draft: boolean
+      linkedWorkItemUrl?: string | null
       connectionId?: string
       sourceControlAiResolvedParams?: unknown
       sourceControlAi?: unknown

@@ -26,6 +26,7 @@ const SYNTHETIC_TEXT_GENERATION_CONTEXT: Record<
   },
   pullRequest: {
     basePrompt: SYNTHETIC_PULL_REQUEST_PROMPT,
+    linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-description-generation',
     branch: 'feature/example',
     baseBranch: 'main',
     currentTitle: 'Draft title',

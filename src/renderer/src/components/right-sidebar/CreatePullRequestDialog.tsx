@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -13,22 +13,22 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { resolveSourceControlLinkedWorkItemUrl } from '@/lib/source-control-linked-work-item-url'
 import { useAppStore } from '@/store'
+import { findWorktreeById } from '@/store/slices/worktree-helpers'
 import type {
-  CreateHostedReviewResult,
   HostedReviewCreationEligibility,
   HostedReviewProvider
 } from '../../../../shared/hosted-review'
 import { normalizeHostedReviewHeadRef } from '../../../../shared/hosted-review-refs'
 import { stripBaseRef, useCreatePullRequestDialogFields } from './useCreatePullRequestDialogFields'
-import {
-  DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
-  resolveSourceControlAiForOperation,
-  resolveSourceControlAiPrCreationDefaults
-} from '../../../../shared/source-control-ai'
-import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
-import { getRuntimeGitScope } from '@/runtime/runtime-git-client'
+import { resolveCreatePullRequestAiDefaults } from './create-pull-request-ai-defaults'
 import { CreatePullRequestGenerateButton } from './CreatePullRequestGenerateButton'
+import { CreatePullRequestLinkedWorkItemRow } from './CreatePullRequestLinkedWorkItemRow'
+import {
+  formatHostedReviewCreateError,
+  getHostedReviewCreationCopy
+} from './hosted-review-creation-copy'
 
 type CreatePullRequestDialogProps = {
   open: boolean
@@ -49,42 +49,6 @@ type CreatePullRequestDialogProps = {
   }) => Promise<void>
 }
 
-function reviewCopy(provider: HostedReviewProvider): {
-  shortLabel: 'PR' | 'MR'
-  reviewLabel: 'pull request' | 'merge request'
-  titleLabel: 'Pull Request' | 'Merge Request'
-  providerName: 'GitHub' | 'GitLab'
-} {
-  return provider === 'gitlab'
-    ? {
-        shortLabel: 'MR',
-        reviewLabel: 'merge request',
-        titleLabel: 'Merge Request',
-        providerName: 'GitLab'
-      }
-    : {
-        shortLabel: 'PR',
-        reviewLabel: 'pull request',
-        titleLabel: 'Pull Request',
-        providerName: 'GitHub'
-      }
-}
-
-function formatCreateError(
-  result: CreateHostedReviewResult,
-  pushed: boolean,
-  shortLabel: 'PR' | 'MR'
-): string {
-  if (result.ok) {
-    return ''
-  }
-  if (pushed) {
-    const prefix = new RegExp(`^Create ${shortLabel} failed:\\s*`, 'i')
-    return `Push succeeded, but ${shortLabel} creation failed: ${result.error.replace(prefix, '')}`
-  }
-  return result.error
-}
-
 export function CreatePullRequestDialog({
   open,
   repoId,
@@ -101,34 +65,30 @@ export function CreatePullRequestDialog({
 }: CreatePullRequestDialogProps): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)
   const repo = useAppStore((s) => s.repos.find((candidate) => candidate.id === repoId) ?? null)
+  const linkedWorkItemUrl = useAppStore((s) =>
+    resolveSourceControlLinkedWorkItemUrl({
+      worktree: worktreeId ? findWorktreeById(s.worktreesByRepo, worktreeId) : null,
+      repo,
+      branch,
+      settings: s.settings,
+      linearIssueCache: s.linearIssueCache,
+      linearStatus: s.linearStatus,
+      githubIssueCache: s.issueCache,
+      githubPrCache: s.prCache,
+      githubWorkItemsCache: s.workItemsCache,
+      hostedReviewCache: s.hostedReviewCache
+    })
+  )
   const createHostedReview = useAppStore((s) => s.createHostedReview)
   const submitInFlightRef = useRef(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const provider = eligibility?.provider === 'gitlab' ? 'gitlab' : 'github'
-  const copy = reviewCopy(provider)
-  const prCreationDefaults = React.useMemo(() => {
-    if (!settings) {
-      return DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS
-    }
-    const hostKey = getCommitMessageModelDiscoveryHostKeyForScope(
-      getRuntimeGitScope(settings, repo?.connectionId)
-    )
-    const resolved = resolveSourceControlAiForOperation({
-      settings,
-      repo,
-      operation: 'pullRequest',
-      discoveryHostKey: hostKey,
-      prCreationProductDefaults: DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS
-    })
-    return resolved.ok
-      ? resolved.value.prCreationDefaults
-      : resolveSourceControlAiPrCreationDefaults({
-          settings,
-          repo,
-          prCreationProductDefaults: DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS
-        })
-  }, [repo, settings])
+  const copy = getHostedReviewCreationCopy(provider)
+  const prCreationDefaults = useMemo(
+    () => resolveCreatePullRequestAiDefaults({ settings, repo }),
+    [repo, settings]
+  )
   const {
     aiGenerationEnabled,
     base,
@@ -160,6 +120,7 @@ export function CreatePullRequestDialog({
     repo,
     settings,
     submitting,
+    linkedWorkItemUrl,
     prCreationDefaults,
     onBranchChangedByGeneration
   })
@@ -233,7 +194,7 @@ export function CreatePullRequestDialog({
           return
         }
       }
-      setError(formatCreateError(result, pushed, copy.shortLabel))
+      setError(formatHostedReviewCreateError(result, pushed, copy.shortLabel))
     } finally {
       submitInFlightRef.current = false
       setSubmitting(false)
@@ -298,6 +259,9 @@ export function CreatePullRequestDialog({
             Confirm the target branch and {copy.shortLabel} details before creating the hosted
             review.
           </DialogDescription>
+          {aiGenerationEnabled && linkedWorkItemUrl ? (
+            <CreatePullRequestLinkedWorkItemRow linkedWorkItemUrl={linkedWorkItemUrl} />
+          ) : null}
         </DialogHeader>
 
         <div className="space-y-4">

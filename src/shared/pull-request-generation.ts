@@ -10,6 +10,7 @@ export type PullRequestDraftContext = {
   commitSummary: string
   changeSummary: string
   patch: string
+  linkedWorkItemUrl?: string | null
 }
 
 export type GeneratedPullRequestFields = {
@@ -31,6 +32,7 @@ export function buildPullRequestFieldsPrompt(
   context: PullRequestDraftContext,
   customPrompt: string
 ): string {
+  const linkedWorkItemUrl = context.linkedWorkItemUrl?.trim()
   const base = [
     'You are generating pull request details.',
     'Return ONLY compact JSON with this exact shape:',
@@ -42,6 +44,7 @@ export function buildPullRequestFieldsPrompt(
     '- Title: concise, specific, no trailing period.',
     '- Body: useful Markdown summary for reviewers. Include testing notes only when evidence exists.',
     '- draft: true only when the changes clearly look unfinished, WIP, or unsafe to review.',
+    '- If a linked work item URL is provided, use it as task context and include a concise reference to it in the body when it helps reviewers understand the change.',
     '- Do not include labels, reviewers, code fences, prose, or any keys beyond base/title/body/draft.',
     '',
     `Head branch: ${context.branch ?? '(detached)'}`,
@@ -50,6 +53,7 @@ export function buildPullRequestFieldsPrompt(
     `Current description: ${context.currentBody || '(empty)'}`,
     `Current draft: ${context.currentDraft ? 'true' : 'false'}`,
     '',
+    ...(linkedWorkItemUrl ? [`Linked work item URL: ${linkedWorkItemUrl}`, ''] : []),
     'Commits:',
     limitSection(context.commitSummary || '(none)', 8_000),
     '',

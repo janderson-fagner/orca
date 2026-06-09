@@ -306,7 +306,13 @@ describe('RuntimeGitCommands', () => {
     await expect(
       commands.generateRuntimePullRequestFields(
         'id:wt-1',
-        { base: 'main', title: '', body: '', draft: false },
+        {
+          base: 'main',
+          title: '',
+          body: '',
+          draft: false,
+          linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details'
+        },
         { sourceControlAiResolvedParams }
       )
     ).resolves.toEqual({
@@ -321,13 +327,47 @@ describe('RuntimeGitCommands', () => {
 
     expect(mocks.resolveCommitMessageSettings).not.toHaveBeenCalled()
     expect(mocks.generatePullRequestFieldsFromContext).toHaveBeenCalledWith(
-      context,
+      {
+        ...context,
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details'
+      },
       sourceControlAiResolvedParams,
       expect.objectContaining({
         kind: 'local',
         cwd: worktreePath
       })
     )
+  })
+
+  it('rejects invalid linked work item URLs before preparing pull-request context', async () => {
+    const commands = new RuntimeGitCommands({
+      resolveRuntimeGitTarget: async () => ({ worktree: makeWorktree('/repo') }),
+      getRuntimeSettings: () =>
+        ({
+          sourceControlAi: {
+            pullRequest: {
+              enabled: true,
+              agentId: 'cursor'
+            }
+          }
+        }) as unknown as GlobalSettings
+    })
+
+    await expect(
+      commands.generateRuntimePullRequestFields('id:wt-1', {
+        base: 'main',
+        title: '',
+        body: '',
+        draft: false,
+        linkedWorkItemUrl: 'javascript:alert(1)'
+      })
+    ).resolves.toEqual({
+      success: false,
+      error: 'Invalid linked work item URL.'
+    })
+
+    expect(mocks.getPullRequestDraftContext).not.toHaveBeenCalled()
+    expect(mocks.generatePullRequestFieldsFromContext).not.toHaveBeenCalled()
   })
 
   it('resolves remote commit-message settings against the SSH host cache', async () => {

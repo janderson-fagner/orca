@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  SOURCE_CONTROL_ACTION_VARIABLES,
   normalizeSourceControlAiActionDefaults,
   readSourceControlActionDefault,
   renderSourceControlActionCommandTemplate,
@@ -115,6 +116,22 @@ describe('source-control AI launch action defaults', () => {
         thing: 'CI'
       })
     ).toBe('fix CI with {missing}')
+  })
+
+  it('offers linkedWorkItemUrl for pull-request templates', () => {
+    expect(SOURCE_CONTROL_ACTION_VARIABLES.pullRequest.slice(0, 2)).toEqual([
+      'basePrompt',
+      'linkedWorkItemUrl'
+    ])
+  })
+
+  it('renders known optional template variables as empty when no value is provided', () => {
+    expect(
+      renderSourceControlActionCommandTemplate('{basePrompt}\n{linkedWorkItemUrl}', {
+        basePrompt: 'Prompt',
+        linkedWorkItemUrl: ''
+      })
+    ).toBe('Prompt\n')
   })
 
   it('leaves inherited prototype names visible instead of rendering function source', () => {

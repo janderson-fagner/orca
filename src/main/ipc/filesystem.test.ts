@@ -21,6 +21,7 @@ const {
   getBranchCompareMock,
   getBranchDiffMock,
   getStagedCommitContextMock,
+  getPullRequestDraftContextMock,
   stageFileMock,
   bulkStageFilesMock,
   unstageFileMock,
@@ -56,6 +57,7 @@ const {
   getBranchCompareMock: vi.fn(),
   getBranchDiffMock: vi.fn(),
   getStagedCommitContextMock: vi.fn(),
+  getPullRequestDraftContextMock: vi.fn(),
   stageFileMock: vi.fn(),
   bulkStageFilesMock: vi.fn(),
   unstageFileMock: vi.fn(),
@@ -150,6 +152,10 @@ vi.mock('../text-generation/commit-message-text-generation', () => ({
   cancelGeneratePullRequestFieldsLocal: cancelGeneratePullRequestFieldsLocalMock
 }))
 
+vi.mock('../text-generation/pull-request-context', () => ({
+  getPullRequestDraftContext: getPullRequestDraftContextMock
+}))
+
 import { registerFilesystemHandlers } from './filesystem'
 import { invalidateAuthorizedRootsCache, registerWorktreeRootsForRepo } from './filesystem-auth'
 
@@ -216,6 +222,7 @@ describe('registerFilesystemHandlers', () => {
       getBranchCompareMock,
       getBranchDiffMock,
       getStagedCommitContextMock,
+      getPullRequestDraftContextMock,
       stageFileMock,
       bulkStageFilesMock,
       unstageFileMock,
@@ -998,6 +1005,103 @@ describe('registerFilesystemHandlers', () => {
         cwd: WORKTREE_FEATURE_PATH
       }
     )
+  })
+
+  it('passes linked work item URLs into local pull-request generation', async () => {
+    const context = {
+      branch: 'feature/ai-pr',
+      base: 'main',
+      branchChangedByPreparation: false,
+      currentTitle: 'Draft title',
+      currentBody: 'Draft body',
+      currentDraft: false,
+      commitSummary: '- feat: update readme',
+      changeSummary: 'M\tREADME.md',
+      patch: '+hello'
+    }
+    const sourceControlAiResolvedParams = {
+      agentId: 'custom' as const,
+      model: '',
+      customAgentCommand: 'agent'
+    }
+    getPullRequestDraftContextMock.mockResolvedValue(context)
+    generatePullRequestFieldsFromContextMock.mockResolvedValue({
+      success: true,
+      fields: {
+        base: 'main',
+        title: 'Update README',
+        body: 'Body',
+        draft: false
+      }
+    })
+
+    registerFilesystemHandlers(store as never)
+
+    await expect(
+      handlers.get('git:generatePullRequestFields')!(null, {
+        worktreePath: WORKTREE_FEATURE_PATH,
+        base: 'main',
+        title: 'Draft title',
+        body: 'Draft body',
+        draft: false,
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details',
+        sourceControlAiResolvedParams
+      })
+    ).resolves.toEqual({
+      success: true,
+      fields: {
+        base: 'main',
+        title: 'Update README',
+        body: 'Body',
+        draft: false
+      }
+    })
+
+    expect(getPullRequestDraftContextMock).toHaveBeenCalledWith(expect.any(Function), {
+      base: 'main',
+      currentTitle: 'Draft title',
+      currentBody: 'Draft body',
+      currentDraft: false
+    })
+    expect(generatePullRequestFieldsFromContextMock).toHaveBeenCalledWith(
+      {
+        ...context,
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details'
+      },
+      sourceControlAiResolvedParams,
+      {
+        kind: 'local',
+        cwd: WORKTREE_FEATURE_PATH
+      }
+    )
+  })
+
+  it('rejects malformed linked work item URLs before pull-request generation', async () => {
+    const sourceControlAiResolvedParams = {
+      agentId: 'custom' as const,
+      model: '',
+      customAgentCommand: 'agent'
+    }
+
+    registerFilesystemHandlers(store as never)
+
+    await expect(
+      handlers.get('git:generatePullRequestFields')!(null, {
+        worktreePath: WORKTREE_FEATURE_PATH,
+        base: 'main',
+        title: 'Draft title',
+        body: 'Draft body',
+        draft: false,
+        linkedWorkItemUrl: { href: 'https://linear.app/orca/issue/ORC-123/fix-pr-details' },
+        sourceControlAiResolvedParams
+      })
+    ).resolves.toEqual({
+      success: false,
+      error: 'Invalid linked work item URL.'
+    })
+
+    expect(getPullRequestDraftContextMock).not.toHaveBeenCalled()
+    expect(generatePullRequestFieldsFromContextMock).not.toHaveBeenCalled()
   })
 
   it('prepares the selected Codex account home before local generation', async () => {

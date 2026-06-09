@@ -412,15 +412,50 @@ describe('git RPC methods', () => {
         title: '',
         body: '',
         draft: false,
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details',
         sourceControlAiResolvedParams
       })
     )
 
     expect(runtime.generateRuntimePullRequestFields).toHaveBeenCalledWith(
       'id:wt-1',
-      { base: 'main', title: '', body: '', draft: false },
+      {
+        base: 'main',
+        title: '',
+        body: '',
+        draft: false,
+        linkedWorkItemUrl: 'https://linear.app/orca/issue/ORC-123/fix-pr-details'
+      },
       { sourceControlAiResolvedParams }
     )
+  })
+
+  it('rejects invalid linked work item URLs before calling the runtime', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      generateRuntimePullRequestFields: vi.fn()
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: GIT_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('git.generatePullRequestFields', {
+        worktree: 'id:wt-1',
+        base: 'main',
+        title: '',
+        body: '',
+        draft: false,
+        linkedWorkItemUrl: 'ftp://example.com/work'
+      })
+    )
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        success: false,
+        error: 'Invalid linked work item URL.'
+      }
+    })
+    expect(runtime.generateRuntimePullRequestFields).not.toHaveBeenCalled()
   })
 
   it('rejects malformed commit-message settings before calling the runtime', async () => {

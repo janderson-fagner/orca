@@ -68,6 +68,7 @@ export const SOURCE_CONTROL_ACTION_VARIABLES: Record<SourceControlActionId, stri
   commitMessage: ['basePrompt', 'branch', 'stagedFiles', 'stagedPatch'],
   pullRequest: [
     'basePrompt',
+    'linkedWorkItemUrl',
     'branch',
     'baseBranch',
     'currentTitle',
@@ -110,6 +111,11 @@ export const SOURCE_CONTROL_ACTION_VARIABLE_INFO: Record<string, SourceControlAc
     baseBranch: {
       description: 'The target branch selected in the Create PR composer.',
       example: 'main'
+    },
+    linkedWorkItemUrl: {
+      description:
+        'Provider-neutral URL for the item linked to the current worktree: Linear issue, GitHub issue or pull request, or GitLab merge request.',
+      example: 'https://github.com/stablyai/orca/issues/123'
     },
     currentTitle: {
       description: 'The PR title currently typed in the composer before generation starts.',

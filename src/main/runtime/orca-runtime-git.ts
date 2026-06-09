@@ -20,6 +20,7 @@ import {
   mergeLegacyCommitMessageAiIntoSourceControlAi,
   type ResolvedSourceControlAiGenerationParams
 } from '../../shared/source-control-ai'
+import { normalizeLinkedWorkItemUrl } from '../../shared/linked-work-item-url'
 import type { SourceControlAiOperation } from '../../shared/source-control-ai-types'
 import { getRemoteFileUrl } from '../git/repo'
 import {
@@ -531,10 +532,20 @@ export class RuntimeGitCommands {
 
   async generateRuntimePullRequestFields(
     worktreeSelector: string,
-    input: { base: string; title: string; body: string; draft: boolean },
+    input: {
+      base: string
+      title: string
+      body: string
+      draft: boolean
+      linkedWorkItemUrl?: string | null
+    },
     settingsOverride?: RuntimeCommitMessageSettingsOverride
   ): Promise<GeneratePullRequestFieldsResult> {
     const target = await this.host.resolveRuntimeGitTarget(worktreeSelector)
+    const linkedWorkItemUrl = normalizeLinkedWorkItemUrl(input.linkedWorkItemUrl)
+    if (!linkedWorkItemUrl.ok) {
+      return { success: false, error: linkedWorkItemUrl.error }
+    }
     const discoveryHostKey =
       settingsOverride?.commitMessageDiscoveryHostKey ??
       getCommitMessageModelDiscoveryHostKey(target.connectionId ?? null)
@@ -590,13 +601,19 @@ export class RuntimeGitCommands {
     }
 
     if (target.connectionId) {
-      return generatePullRequestFieldsFromContext(context, resolvedSettings.params, {
-        kind: 'remote',
-        cwd: target.worktree.path,
-        execute: (plan, cwd, timeoutMs, operation) =>
-          provider!.executeCommitMessagePlan(plan, cwd, timeoutMs, operation),
-        missingBinaryLocation: 'remote PATH'
-      })
+      return generatePullRequestFieldsFromContext(
+        linkedWorkItemUrl.linkedWorkItemUrl
+          ? { ...context, linkedWorkItemUrl: linkedWorkItemUrl.linkedWorkItemUrl }
+          : context,
+        resolvedSettings.params,
+        {
+          kind: 'remote',
+          cwd: target.worktree.path,
+          execute: (plan, cwd, timeoutMs, operation) =>
+            provider!.executeCommitMessagePlan(plan, cwd, timeoutMs, operation),
+          missingBinaryLocation: 'remote PATH'
+        }
+      )
     }
 
     const localEnv = await prepareLocalCommitMessageAgentEnv(
@@ -606,11 +623,17 @@ export class RuntimeGitCommands {
     if (!localEnv.ok) {
       return { success: false, error: localEnv.error }
     }
-    return generatePullRequestFieldsFromContext(context, resolvedSettings.params, {
-      kind: 'local',
-      cwd: target.worktree.path,
-      ...(localEnv.env ? { env: localEnv.env } : {})
-    })
+    return generatePullRequestFieldsFromContext(
+      linkedWorkItemUrl.linkedWorkItemUrl
+        ? { ...context, linkedWorkItemUrl: linkedWorkItemUrl.linkedWorkItemUrl }
+        : context,
+      resolvedSettings.params,
+      {
+        kind: 'local',
+        cwd: target.worktree.path,
+        ...(localEnv.env ? { env: localEnv.env } : {})
+      }
+    )
   }
 
   async cancelRuntimeGeneratePullRequestFields(worktreeSelector: string): Promise<{ ok: true }> {

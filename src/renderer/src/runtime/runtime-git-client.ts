@@ -583,7 +583,13 @@ export async function cancelRuntimeGenerateCommitMessage(
 
 export async function generateRuntimePullRequestFields(
   context: RuntimeGitContext,
-  input: { base: string; title: string; body: string; draft: boolean },
+  input: {
+    base: string
+    title: string
+    body: string
+    draft: boolean
+    linkedWorkItemUrl?: string | null
+  },
   overrides?: RuntimeGeneratePullRequestFieldsOverrides
 ): Promise<RuntimeGeneratePullRequestFieldsResult> {
   const target = getActiveRuntimeTarget(context.settings)
