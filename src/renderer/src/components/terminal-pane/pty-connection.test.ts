@@ -533,8 +533,6 @@ describe('connectPanePty', () => {
     }
     delete (globalThis as unknown as { window?: unknown }).window
     delete (globalThis as Record<string, unknown>).__ptyConnectDiag
-    delete (globalThis as Record<string, unknown>)
-      .__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__
   })
 
   it('does not retain PTY connect diagnostics unless e2e debug state is enabled', async () => {
@@ -3035,7 +3033,7 @@ describe('connectPanePty', () => {
     }
   })
 
-  it('keeps the safe tail of a rich hidden synchronized frame live', async () => {
+  it('skips every chunk of a rich hidden synchronized frame for model-backed restore', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
@@ -3066,15 +3064,15 @@ describe('connectPanePty', () => {
       capturedDataCallback.current?.(tailChunk)
 
       vi.advanceTimersByTime(50)
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(startChunk))
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(richChunk))
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(tailChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(startChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(richChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(tailChunk))
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('keeps split hidden synchronized output frames on the live xterm path', async () => {
+  it('skips split hidden synchronized output frames for model-backed restore', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: {
@@ -3126,17 +3124,85 @@ describe('connectPanePty', () => {
 
       vi.advanceTimersByTime(50)
       expect(getMainBufferSnapshot).not.toHaveBeenCalled()
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(startChunk))
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(plainRowChunk))
-      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(endChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(startChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(plainRowChunk))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(endChunk))
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('can prototype hidden rich synchronized restore from the headless model', async () => {
-    ;(globalThis as Record<string, unknown>).__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__ =
-      true
+  it('detects split hidden synchronized starts before skipping later payload', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      isVisibleRef: { current: false }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
+
+    expect(capturedDataCallback.current).not.toBeNull()
+    const splitStartHead = '\x1b[?20'
+    const splitStartTail = '26h\x1b[2J\x1b[H'
+    const payload = 'split synchronized payload\r\n\x1b[?2026l'
+
+    vi.useFakeTimers()
+    try {
+      capturedDataCallback.current?.(splitStartHead)
+      capturedDataCallback.current?.(splitStartTail)
+      capturedDataCallback.current?.(payload)
+
+      vi.advanceTimersByTime(50)
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(splitStartHead))
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(splitStartTail))
+      expect(pane.terminal.write).not.toHaveBeenCalledWith(expect.stringContaining(payload))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps hidden synchronized terminal queries on the live xterm path', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      isVisibleRef: { current: false }
+    })
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
+
+    const queryChunk = '\x1b[?2026h\x1b[6n'
+    vi.useFakeTimers()
+    try {
+      capturedDataCallback.current?.(queryChunk)
+      vi.advanceTimersByTime(50)
+      expect(pane.terminal.write).toHaveBeenCalledWith(expect.stringContaining(queryChunk))
+      expect(window.api.pty.getMainBufferSnapshot).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('restores default hidden rich synchronized output from the headless model', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: {

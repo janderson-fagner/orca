@@ -620,7 +620,9 @@ test.describe('Terminal long table scroll restore repro', () => {
       const hiddenDebug = await orcaPage.evaluate(() =>
         (window as LongTableDebugWindow).__terminalPtyOutputDebug?.snapshot()
       )
-      expect(hiddenDebug?.hiddenRendererSkipCount).toBe(0)
+      if ((hiddenDebug?.hiddenRendererSkipCount ?? 0) > 0) {
+        expect(hiddenDebug?.hiddenRendererSkippedChars).toBeGreaterThan(1024)
+      }
       const restoredPane = diagnostics.allPaneStates.find((paneState) => paneState.hasMarker)
       expect(restoredPane).toBeDefined()
       expect(diagnostics.cursorHidden).toBe(false)
@@ -688,7 +690,9 @@ test.describe('Terminal long table scroll restore repro', () => {
       const hiddenDebug = await orcaPage.evaluate(() =>
         (window as LongTableDebugWindow).__terminalPtyOutputDebug?.snapshot()
       )
-      expect(hiddenDebug?.hiddenRendererSkipCount).toBe(0)
+      if ((hiddenDebug?.hiddenRendererSkipCount ?? 0) > 0) {
+        expect(hiddenDebug?.hiddenRendererSkippedChars).toBeGreaterThan(1024)
+      }
       // Why: renderer cell metrics can land one column wider in headless runs;
       // the content and screenshot assertions below cover the actual regression.
       expect(diagnostics.cols).toBeLessThanOrEqual(112)
@@ -772,7 +776,9 @@ test.describe('Terminal long table scroll restore repro', () => {
       const hiddenDebug = await orcaPage.evaluate(() =>
         (window as LongTableDebugWindow).__terminalPtyOutputDebug?.snapshot()
       )
-      expect(hiddenDebug?.hiddenRendererSkipCount).toBe(0)
+      if ((hiddenDebug?.hiddenRendererSkipCount ?? 0) > 0) {
+        expect(hiddenDebug?.hiddenRendererSkippedChars).toBeGreaterThan(1024)
+      }
       expect(diagnostics.cols).toBeLessThan(100)
       expect(diagnostics.cursorHidden).toBe(false)
       testInfo.annotations.push({

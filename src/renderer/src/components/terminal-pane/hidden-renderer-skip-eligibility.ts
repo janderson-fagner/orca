@@ -44,7 +44,11 @@ function findTitleOscEnd(data: string, startIndex: number): number | null {
   return null
 }
 
-function findSafeCsiEnd(data: string, startIndex: number): number | null {
+function findSafeCsiEnd(
+  data: string,
+  startIndex: number,
+  mode: 'plain' | 'synchronized-model' = 'plain'
+): number | null {
   if (data.charCodeAt(startIndex) !== 0x1b || data.charCodeAt(startIndex + 1) !== 0x5b) {
     return null
   }
@@ -56,7 +60,7 @@ function findSafeCsiEnd(data: string, startIndex: number): number | null {
     }
     const body = data.slice(startIndex + 2, index)
     const final = data[index]
-    if (isSafeHiddenRedrawCsi(body, final)) {
+    if (isSafeHiddenRedrawCsi(body, final, mode)) {
       return index + 1
     }
     return null
@@ -64,12 +68,16 @@ function findSafeCsiEnd(data: string, startIndex: number): number | null {
   return null
 }
 
-function isSafeHiddenRedrawCsi(body: string, final: string): boolean {
+function isSafeHiddenRedrawCsi(
+  body: string,
+  final: string,
+  mode: 'plain' | 'synchronized-model'
+): boolean {
   if (/[^0-9;?]/.test(body)) {
     return false
   }
   if (final === 'h' || final === 'l') {
-    return body === '?2026' || body === '?25'
+    return body === '?2026' || body === '?25' || (mode === 'synchronized-model' && body === '?1049')
   }
   return (
     final === 'm' ||
@@ -112,6 +120,48 @@ function containsOnlyRestorableHiddenOutput(data: string): boolean {
   return true
 }
 
+function containsOnlyModelRestorableSynchronizedOutput(data: string): boolean {
+  for (let index = 0; index < data.length; ) {
+    const code = data.charCodeAt(index)
+    if (code === 0x1b) {
+      const nextIndex =
+        findTitleOscEnd(data, index) ?? findSafeCsiEnd(data, index, 'synchronized-model')
+      if (nextIndex === null) {
+        return false
+      }
+      index = nextIndex
+      continue
+    }
+    if (code === 0x0d) {
+      let newlineIndex = index + 1
+      // Why: real PTYs can map an app-written CRLF into CRCRLF. Treat only
+      // CR runs that immediately end in LF as newlines, not cursor rewrites.
+      while (data.charCodeAt(newlineIndex) === 0x0d) {
+        newlineIndex += 1
+      }
+      if (data.charCodeAt(newlineIndex) !== 0x0a) {
+        return false
+      }
+      index = newlineIndex + 1
+      continue
+    }
+    const codePoint = data.codePointAt(index)
+    if (
+      typeof codePoint !== 'number' ||
+      codePoint < 0x09 ||
+      codePoint === 0x7f ||
+      (codePoint >= 0x80 && codePoint <= 0x9f)
+    ) {
+      return false
+    }
+    if (codePoint < 0x20 && codePoint !== 0x09 && codePoint !== 0x0a) {
+      return false
+    }
+    index += codePoint > 0xffff ? 2 : 1
+  }
+  return true
+}
+
 export function shouldSkipHiddenRendererOutput({
   foreground,
   canRestoreHiddenOutput,
@@ -129,9 +179,10 @@ export function shouldSkipHiddenRendererOutput({
     return false
   }
   if (synchronizedOutputActive) {
-    // Why: release behavior keeps split DEC 2026 frames live. The override is
-    // only for proving model-backed replay before shipping richer hidden skips.
-    return allowSynchronizedModelRestore
+    if (!allowSynchronizedModelRestore) {
+      return false
+    }
+    return containsOnlyModelRestorableSynchronizedOutput(data)
   }
   return containsOnlyRestorableHiddenOutput(data)
 }

@@ -17,7 +17,6 @@ import {
   waitForActiveTerminalManager,
   waitForPaneIdentitySnapshot
 } from './helpers/terminal'
-import { setPrototypeSynchronizedHiddenModelRestore } from './prototype-synchronized-hidden-model-restore'
 
 type HiddenTuiWindow = Window & {
   __terminalPtyDataInjection?: {
@@ -249,15 +248,21 @@ test.describe('Hidden terminal TUI visual restore', () => {
     await expect
       .poll(async () => (await readHiddenDebug(orcaPage))?.hiddenRendererSkipCount ?? 0, {
         timeout: 10_000,
-        message: 'visually rich hidden TUI output should stay on the live xterm path'
+        message: 'visually rich hidden TUI output should skip renderer writes'
       })
-      .toBeLessThanOrEqual(1)
+      .toBeGreaterThan(0)
     await expect
       .poll(async () => (await readHiddenDebug(orcaPage))?.hiddenRendererSkippedChars ?? 0, {
         timeout: 10_000,
-        message: 'only incidental hidden shell prompt text may skip after the TUI exits'
+        message: 'visually rich hidden TUI output did not skip bulk renderer writes'
       })
-      .toBeLessThan(512)
+      .toBeGreaterThan(1024)
+    await expect
+      .poll(() => readMainSnapshotSource(orcaPage, hiddenPane.ptyId!), {
+        timeout: 10_000,
+        message: 'visually rich hidden TUI source did not come from headless model'
+      })
+      .toBe('headless')
 
     await switchToWorktree(orcaPage, secondWorktreeId)
     await ensureTerminalVisible(orcaPage)
@@ -384,7 +389,7 @@ test.describe('Hidden terminal TUI visual restore', () => {
     rmSync(scriptPath, { force: true })
   })
 
-  test('prototypes rich synchronized TUI restore from the headless model', async ({
+  test('restores rich synchronized TUI output from the headless model', async ({
     orcaPage,
     testRepoPath
   }, testInfo: TestInfo) => {
@@ -404,13 +409,13 @@ test.describe('Hidden terminal TUI visual restore', () => {
     const hiddenSnapshot = await waitForPaneIdentitySnapshot(orcaPage, 1)
     const hiddenPane = hiddenSnapshot.panes[0]
     if (!hiddenPane?.ptyId) {
-      throw new Error('hidden rich model prototype pane did not bind a PTY')
+      throw new Error('hidden rich model pane did not bind a PTY')
     }
     await switchToWorktree(orcaPage, firstWorktreeId)
     await expect
       .poll(() => getActiveWorktreeId(orcaPage), {
         timeout: 10_000,
-        message: 'first worktree did not become active before hidden rich model prototype'
+        message: 'first worktree did not become active before hidden rich model restore'
       })
       .toBe(firstWorktreeId)
 
@@ -419,7 +424,6 @@ test.describe('Hidden terminal TUI visual restore', () => {
     const scriptPath = path.join(testRepoPath, `.orca-hidden-rich-model-${runId}.mjs`)
     writeHiddenFrameScript(scriptPath, runId)
     await resetHiddenDebug(orcaPage)
-    await setPrototypeSynchronizedHiddenModelRestore(orcaPage, true)
     try {
       await writeHiddenFrames(orcaPage, hiddenPane.ptyId, scriptPath)
       await resetHiddenDebug(orcaPage)
@@ -427,13 +431,13 @@ test.describe('Hidden terminal TUI visual restore', () => {
       await expect
         .poll(async () => (await readHiddenDebug(orcaPage))?.hiddenRendererSkipCount ?? 0, {
           timeout: 10_000,
-          message: 'prototype rich hidden TUI output should skip renderer writes'
+          message: 'rich hidden TUI output should skip renderer writes'
         })
         .toBeGreaterThan(0)
       await expect
         .poll(() => readMainSnapshotSource(orcaPage, hiddenPane.ptyId!), {
           timeout: 10_000,
-          message: 'prototype rich hidden TUI source did not come from headless model'
+          message: 'rich hidden TUI source did not come from headless model'
         })
         .toBe('headless')
 
@@ -444,7 +448,7 @@ test.describe('Hidden terminal TUI visual restore', () => {
       await expect
         .poll(() => getTerminalContent(orcaPage, 12_000), {
           timeout: 10_000,
-          message: 'prototype rich headless TUI frame did not restore when visible'
+          message: 'rich headless TUI frame did not restore when visible'
         })
         .toContain(finalMarker)
 
@@ -457,7 +461,7 @@ test.describe('Hidden terminal TUI visual restore', () => {
       await expect
         .poll(() => readTuiCursorState(orcaPage), {
           timeout: 5_000,
-          message: 'prototype rich headless TUI cursor stayed hidden after restore'
+          message: 'rich headless TUI cursor stayed hidden after restore'
         })
         .toMatchObject({
           hidden: false,
@@ -471,7 +475,6 @@ test.describe('Hidden terminal TUI visual restore', () => {
         contentType: 'image/png'
       })
     } finally {
-      await setPrototypeSynchronizedHiddenModelRestore(orcaPage, false)
       rmSync(scriptPath, { force: true })
     }
   })

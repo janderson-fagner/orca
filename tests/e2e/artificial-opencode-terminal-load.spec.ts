@@ -62,6 +62,10 @@ type TerminalPtyOutputDebugSnapshot = {
   hiddenRendererSkipCount: number
   hiddenRendererSkippedChars: number
   hiddenRendererMode2031ReplyCount: number
+  hiddenRendererLiveSynchronizedChars: number
+  hiddenRendererLiveNonSynchronizedChars: number
+  hiddenRendererStartupWindowChars: number
+  hiddenRendererSplitBoundaryChars: number
 }
 
 type TerminalOutputSchedulerDebugSnapshot = {
@@ -110,6 +114,7 @@ const DEFAULT_PRESSURE_BACKGROUND_PANES = 17
 const DEFAULT_PRESSURE_OUTPUT_CHARS = 768 * 1024
 const DEFAULT_HIDDEN_PRESSURE_PANES = 17
 const HIDDEN_PRESSURE_START_DELAY_MS = 1200
+const RICH_MODEL_HIDDEN_PRESSURE_START_DELAY_MS = 11_000
 const DEFAULT_FRAME_COUNT = 180
 const DEFAULT_FRAME_INTERVAL_MS = 6
 const TIMER_SAMPLE_MS = 16
@@ -417,7 +422,9 @@ function annotateTypingMeasurement(
   ackGate: TerminalPtyAckGateSnapshot | null = null
 ): void {
   const hiddenSkipSummary = debug
-    ? ` hiddenSkips=${debug.hiddenRendererSkipCount} hiddenSkippedChars=${debug.hiddenRendererSkippedChars} mode2031Replies=${debug.hiddenRendererMode2031ReplyCount}`
+    ? ` hiddenSkips=${debug.hiddenRendererSkipCount} hiddenSkippedChars=${debug.hiddenRendererSkippedChars} mode2031Replies=${debug.hiddenRendererMode2031ReplyCount}` +
+      ` hiddenLiveSyncChars=${debug.hiddenRendererLiveSynchronizedChars} hiddenLiveNonSyncChars=${debug.hiddenRendererLiveNonSynchronizedChars}` +
+      ` hiddenStartupWindowChars=${debug.hiddenRendererStartupWindowChars} hiddenSplitBoundaryChars=${debug.hiddenRendererSplitBoundaryChars}`
     : ''
   const schedulerSummary = scheduler
     ? ` deferredForegroundEnqueue=${scheduler.deferredForegroundEnqueueCount} deferredForegroundWrite=${scheduler.deferredForegroundWriteCount} scheduledDrains=${scheduler.scheduledDrainCount} rendererQueuedTerminals=${scheduler.queuedTerminalCount} rendererQueuedChars=${scheduler.queuedChars} rendererPeakQueuedTerminals=${scheduler.peakQueuedTerminalCount} rendererPeakQueuedChars=${scheduler.peakQueuedChars} rendererPeakQueuedCharsByTerminal=${scheduler.peakQueuedCharsByTerminal} rendererDroppedBacklogs=${scheduler.droppedBacklogCount}`
@@ -752,8 +759,7 @@ test.describe('Artificial OpenCode terminal load', () => {
     testInfo: TestInfo,
     hiddenPaneCount: number,
     annotationSuffix?: string,
-    pressureOutputMode?: HiddenPressureOutputMode,
-    prototypeSynchronizedHiddenModelRestore?: boolean
+    pressureOutputMode?: HiddenPressureOutputMode
   ): Promise<void> {
     await runHiddenRealPtyPressureScenario({
       orcaPage,
@@ -762,8 +768,12 @@ test.describe('Artificial OpenCode terminal load', () => {
       hiddenPaneCount,
       pressureOutputChars: PRESSURE_OUTPUT_CHARS,
       pressureOutputMode,
-      pressureStartDelayMs: HIDDEN_PRESSURE_START_DELAY_MS,
-      prototypeSynchronizedHiddenModelRestore,
+      // Why: Codex/OpenCode startup queries intentionally stay live for 10s.
+      // This benchmark measures steady-state model restore after that guard.
+      pressureStartDelayMs:
+        pressureOutputMode === 'rich-model'
+          ? RICH_MODEL_HIDDEN_PRESSURE_START_DELAY_MS
+          : HIDDEN_PRESSURE_START_DELAY_MS,
       testInfo,
       deps: terminalLoadScenarioDeps
     })
@@ -772,7 +782,6 @@ test.describe('Artificial OpenCode terminal load', () => {
     title: string
     suffix?: string
     mode?: HiddenPressureOutputMode
-    prototypeModelRestore?: boolean
   }[] = [
     { title: 'keeps typing responsive while hidden real PTYs are ACK-backpressured' },
     {
@@ -791,10 +800,9 @@ test.describe('Artificial OpenCode terminal load', () => {
       mode: 'title'
     },
     {
-      title: 'prototypes rich hidden model restore under ACK-backpressured PTY output',
+      title: 'restores rich hidden model output under ACK-backpressured PTY output',
       suffix: '-rich-model',
-      mode: 'rich-model',
-      prototypeModelRestore: true
+      mode: 'rich-model'
     }
   ]
   for (const hiddenPressureCase of hiddenPressureCases) {
@@ -805,8 +813,7 @@ test.describe('Artificial OpenCode terminal load', () => {
         testInfo,
         HIDDEN_PRESSURE_PANES,
         hiddenPressureCase.suffix,
-        hiddenPressureCase.mode,
-        hiddenPressureCase.prototypeModelRestore
+        hiddenPressureCase.mode
       )
     })
   }

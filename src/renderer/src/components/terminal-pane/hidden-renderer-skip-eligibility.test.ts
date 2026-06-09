@@ -73,7 +73,7 @@ describe('shouldSkipHiddenRendererOutput', () => {
     ).toBe(true)
   })
 
-  it('keeps hidden synchronized redraw chunks live', () => {
+  it('keeps hidden synchronized redraw chunks live without the model restore gate', () => {
     expect(
       shouldSkipHiddenRendererOutput({
         foreground: false,
@@ -85,7 +85,7 @@ describe('shouldSkipHiddenRendererOutput', () => {
     ).toBe(false)
   })
 
-  it('can opt synchronized chunks into model-backed restore for prototype coverage', () => {
+  it('skips model-restorable synchronized rich chunks when model restore is allowed', () => {
     expect(
       shouldSkipHiddenRendererOutput({
         foreground: false,
@@ -93,9 +93,42 @@ describe('shouldSkipHiddenRendererOutput', () => {
         startupRendererQueryWindowActive: false,
         synchronizedOutputActive: true,
         allowSynchronizedModelRestore: true,
-        data: '\x1b[?2026h\x1b[2J\x1b[H╭ rich 😀 ╮\r\n\x1b[?2026l'
+        data: '\x1b[?2026h\x1b[?1049h\x1b[2J\x1b[H╭ rich 😀 ╮\r\n\x1b[?25l\x1b[?2026l'
       })
     ).toBe(true)
+  })
+
+  it('skips synchronized model output with PTY-mapped CRCRLF newlines', () => {
+    expect(
+      shouldSkipHiddenRendererOutput({
+        foreground: false,
+        canRestoreHiddenOutput: true,
+        startupRendererQueryWindowActive: false,
+        synchronizedOutputActive: true,
+        allowSynchronizedModelRestore: true,
+        data: '\x1b[?2026h\x1b[2J\x1b[H╭ rich 😀 ╮\r\r\n\x1b[?2026l'
+      })
+    ).toBe(true)
+  })
+
+  it('keeps query and incomplete synchronized chunks live even with model restore allowed', () => {
+    for (const data of [
+      '\x1b[?2026h\x1b[6n',
+      '\x1b[?2026h\x1b[c',
+      '\x1b[?2026h\x1b[?25',
+      '\x1b[?2026h\x9b6n'
+    ]) {
+      expect(
+        shouldSkipHiddenRendererOutput({
+          foreground: false,
+          canRestoreHiddenOutput: true,
+          startupRendererQueryWindowActive: false,
+          synchronizedOutputActive: true,
+          allowSynchronizedModelRestore: true,
+          data
+        })
+      ).toBe(false)
+    }
   })
 
   it('keeps startup query windows live', () => {
@@ -115,6 +148,16 @@ describe('shouldSkipHiddenRendererOutput', () => {
         startupRendererQueryWindowActive: true,
         synchronizedOutputActive: false,
         data: '\x1b]0;title\x07'
+      })
+    ).toBe(false)
+    expect(
+      shouldSkipHiddenRendererOutput({
+        foreground: false,
+        canRestoreHiddenOutput: true,
+        startupRendererQueryWindowActive: true,
+        synchronizedOutputActive: true,
+        allowSynchronizedModelRestore: true,
+        data: '\x1b[?2026h\x1b[2J\x1b[Hmodel-restorable\r\n\x1b[?2026l'
       })
     ).toBe(false)
     expect(

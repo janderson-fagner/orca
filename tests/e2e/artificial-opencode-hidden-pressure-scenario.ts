@@ -7,7 +7,6 @@ import {
   type HiddenPressureOutputMode,
   writePressureOutputScript
 } from './artificial-opencode-hidden-pressure-script'
-import { setPrototypeSynchronizedHiddenModelRestore } from './prototype-synchronized-hidden-model-restore'
 import {
   ensureTerminalVisible,
   getActiveWorktreeId,
@@ -95,7 +94,6 @@ export async function runHiddenRealPtyPressureScenario<
   pressureOutputChars,
   pressureOutputMode = 'tui',
   pressureStartDelayMs,
-  prototypeSynchronizedHiddenModelRestore = false,
   testInfo,
   testRepoPath,
   orcaPage
@@ -106,7 +104,6 @@ export async function runHiddenRealPtyPressureScenario<
   pressureOutputChars: number
   pressureOutputMode?: HiddenPressureOutputMode
   pressureStartDelayMs: number
-  prototypeSynchronizedHiddenModelRestore?: boolean
   testInfo: TestInfo
   testRepoPath: string
   orcaPage: Page
@@ -138,10 +135,6 @@ export async function runHiddenRealPtyPressureScenario<
   writePressureOutputScript(pressureScriptPath, runId, pressureOutputMode)
 
   await deps.resetTerminalPtyOutputDebug(orcaPage)
-  await setPrototypeSynchronizedHiddenModelRestore(
-    orcaPage,
-    prototypeSynchronizedHiddenModelRestore
-  )
   await deps.holdTerminalAckGate(
     orcaPage,
     hiddenPanes.map((pane) => pane.ptyId)
@@ -311,7 +304,6 @@ async function cleanupHiddenPressureScenario<
   await Promise.all(
     hiddenPanes.map((pane) => sendToTerminal(orcaPage, pane.ptyId, '\x03').catch(() => undefined))
   )
-  await setPrototypeSynchronizedHiddenModelRestore(orcaPage, false).catch(() => undefined)
   rmSync(typingScriptPath, { force: true })
   rmSync(pressureScriptPath, { force: true })
 }

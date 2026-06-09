@@ -105,6 +105,7 @@ const HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MAX = 3
 const HIDDEN_STARTUP_RENDERER_QUERY_WINDOW_MS = 10_000
 const STARTUP_COMMAND_EXTENSION_RE = /\.(?:exe|cmd|bat|ps1)$/i
 const TERMINAL_RENDERER_RISK_SCAN_TAIL_CHARS = 256
+const SYNCHRONIZED_OUTPUT_SCAN_TAIL_CHARS = 16
 const CURSOR_SHOW_SEQUENCE = '\x1b[?25h'
 const CURSOR_HIDE_SEQUENCE = '\x1b[?25l'
 const REATTACH_IDLE_AGENT_CURSOR_RESET_DELAY_MS = 250
@@ -116,6 +117,8 @@ const FOREGROUND_INTERACTIVE_REDRAW_WINDOW_MS = 150
 const FOREGROUND_IMMEDIATE_BUDGET_CHARS = 128 * 1024
 const FOREGROUND_BUDGET_WINDOW_MS = 500
 const INACTIVE_FOREGROUND_IMMEDIATE_BUDGET_CHARS = 32 * 1024
+const SYNCHRONIZED_OUTPUT_START_SEQUENCE = '\x1b[?2026h'
+const SYNCHRONIZED_OUTPUT_END_SEQUENCE = '\x1b[?2026l'
 // Why: this is only shown if hidden renderer output was skipped and main-owned
 // terminal state is unavailable, so the user has an explicit loss signal.
 const HIDDEN_OUTPUT_RESTORE_UNAVAILABLE_WARNING =
@@ -150,6 +153,10 @@ type E2eTerminalPtyOutputDebugSnapshot = {
   hiddenRendererSkipCount: number
   hiddenRendererSkippedChars: number
   hiddenRendererMode2031ReplyCount: number
+  hiddenRendererLiveSynchronizedChars: number
+  hiddenRendererLiveNonSynchronizedChars: number
+  hiddenRendererStartupWindowChars: number
+  hiddenRendererSplitBoundaryChars: number
 }
 
 type E2eTerminalPtyOutputDebugApi = {
@@ -164,13 +171,21 @@ type E2eTerminalPtyOutputDebugWindow = Window & {
 const e2eTerminalPtyOutputDebugState: E2eTerminalPtyOutputDebugSnapshot = {
   hiddenRendererSkipCount: 0,
   hiddenRendererSkippedChars: 0,
-  hiddenRendererMode2031ReplyCount: 0
+  hiddenRendererMode2031ReplyCount: 0,
+  hiddenRendererLiveSynchronizedChars: 0,
+  hiddenRendererLiveNonSynchronizedChars: 0,
+  hiddenRendererStartupWindowChars: 0,
+  hiddenRendererSplitBoundaryChars: 0
 }
 
 function resetE2eTerminalPtyOutputDebug(): void {
   e2eTerminalPtyOutputDebugState.hiddenRendererSkipCount = 0
   e2eTerminalPtyOutputDebugState.hiddenRendererSkippedChars = 0
   e2eTerminalPtyOutputDebugState.hiddenRendererMode2031ReplyCount = 0
+  e2eTerminalPtyOutputDebugState.hiddenRendererLiveSynchronizedChars = 0
+  e2eTerminalPtyOutputDebugState.hiddenRendererLiveNonSynchronizedChars = 0
+  e2eTerminalPtyOutputDebugState.hiddenRendererStartupWindowChars = 0
+  e2eTerminalPtyOutputDebugState.hiddenRendererSplitBoundaryChars = 0
 }
 
 function exposeE2eTerminalPtyOutputDebug(): void {
@@ -191,6 +206,25 @@ function recordHiddenRendererSkip(chars: number): void {
   exposeE2eTerminalPtyOutputDebug()
   e2eTerminalPtyOutputDebugState.hiddenRendererSkipCount += 1
   e2eTerminalPtyOutputDebugState.hiddenRendererSkippedChars += chars
+}
+
+function recordHiddenRendererLiveOutput(
+  chars: number,
+  reason: 'synchronized' | 'non-synchronized' | 'startup-window' | 'split-boundary'
+): void {
+  if (!e2eConfig.exposeStore) {
+    return
+  }
+  exposeE2eTerminalPtyOutputDebug()
+  if (reason === 'synchronized') {
+    e2eTerminalPtyOutputDebugState.hiddenRendererLiveSynchronizedChars += chars
+  } else if (reason === 'non-synchronized') {
+    e2eTerminalPtyOutputDebugState.hiddenRendererLiveNonSynchronizedChars += chars
+  } else if (reason === 'startup-window') {
+    e2eTerminalPtyOutputDebugState.hiddenRendererStartupWindowChars += chars
+  } else {
+    e2eTerminalPtyOutputDebugState.hiddenRendererSplitBoundaryChars += chars
+  }
 }
 
 function recordHiddenMode2031Reply(): void {
@@ -420,16 +454,6 @@ function recordPtyConnectDiagnostic(message: string): void {
   }
 }
 
-function shouldAllowPrototypeSynchronizedHiddenModelRestore(): boolean {
-  const target = globalThis as {
-    __ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__?: boolean
-  }
-  return (
-    (import.meta.env.DEV || e2eConfig.exposeStore) &&
-    target.__ORCA_TEST_ALLOW_SYNCHRONIZED_HIDDEN_MODEL_RESTORE__ === true
-  )
-}
-
 // Why: when multiple panes/tabs need the same deferred SSH connection,
 // the first one calls ssh.connect() and subsequent ones must wait for it
 // rather than returning early (which would leave them disconnected). This
@@ -568,20 +592,37 @@ function shouldWritePtyOutputForeground(isPaneVisible: boolean): boolean {
 }
 
 function containsSynchronizedOutputStart(data: string): boolean {
-  return data.includes('\x1b[?2026h')
+  return data.includes(SYNCHRONIZED_OUTPUT_START_SEQUENCE)
 }
 
 function containsSynchronizedOutputEnd(data: string): boolean {
-  return data.includes('\x1b[?2026l')
+  return data.includes(SYNCHRONIZED_OUTPUT_END_SEQUENCE)
 }
 
 function shouldSynchronizedOutputRemainActive(data: string, wasActive: boolean): boolean {
-  const lastStartIndex = data.lastIndexOf('\x1b[?2026h')
-  const lastEndIndex = data.lastIndexOf('\x1b[?2026l')
+  const lastStartIndex = data.lastIndexOf(SYNCHRONIZED_OUTPUT_START_SEQUENCE)
+  const lastEndIndex = data.lastIndexOf(SYNCHRONIZED_OUTPUT_END_SEQUENCE)
   if (lastStartIndex === -1 && lastEndIndex === -1) {
     return wasActive
   }
   return lastStartIndex > lastEndIndex
+}
+
+function updateSynchronizedOutputScanTail(data: string): string {
+  return data.slice(-SYNCHRONIZED_OUTPUT_SCAN_TAIL_CHARS)
+}
+
+function containsSequenceAcrossBoundary(tail: string, data: string, sequence: string): boolean {
+  const maxPrefixLength = Math.min(sequence.length - 1, tail.length, data.length)
+  for (let prefixLength = 1; prefixLength <= maxPrefixLength; prefixLength++) {
+    if (
+      tail.endsWith(sequence.slice(0, prefixLength)) &&
+      data.startsWith(sequence.slice(prefixLength))
+    ) {
+      return true
+    }
+  }
+  return false
 }
 
 function containsCursorPositionSequence(data: string): boolean {
@@ -634,6 +675,7 @@ export function connectPanePty(
   let reattachIdleAgentCursorResetTimer: ReturnType<typeof setTimeout> | null = null
   let synchronizedForegroundOutputActive = false
   let synchronizedHiddenOutputActive = false
+  let synchronizedHiddenOutputScanTail = ''
   // Why: idle callbacks are registered before the deferred PTY output plumbing
   // exists. Start with the shared scheduler, then switch to the PTY writer
   // below so hidden-tab resets keep backlog-recovery callbacks and byte order.
@@ -2608,23 +2650,48 @@ export function connectPanePty(
       const foreground = shouldWritePtyOutputForeground(deps.isVisibleRef.current)
       const restoreAppliesToCurrentPty =
         hiddenOutputRestorePtyId !== null && transport.getPtyId() === hiddenOutputRestorePtyId
-      const synchronizedOutputStarted = containsSynchronizedOutputStart(data)
+      const hiddenSynchronizedScanData = synchronizedHiddenOutputScanTail + data
+      const synchronizedOutputStarted = containsSynchronizedOutputStart(hiddenSynchronizedScanData)
+      const synchronizedOutputEnded = containsSynchronizedOutputEnd(hiddenSynchronizedScanData)
+      // Why: if a DEC 2026 marker spans chunks, xterm may already hold the
+      // first bytes of that escape. Complete that boundary live, then skip.
+      const splitSynchronizedBoundary =
+        !foreground &&
+        (containsSequenceAcrossBoundary(
+          synchronizedHiddenOutputScanTail,
+          data,
+          SYNCHRONIZED_OUTPUT_START_SEQUENCE
+        ) ||
+          containsSequenceAcrossBoundary(
+            synchronizedHiddenOutputScanTail,
+            data,
+            SYNCHRONIZED_OUTPUT_END_SEQUENCE
+          ))
       const synchronizedHiddenOutput =
         !foreground &&
-        (synchronizedHiddenOutputActive ||
-          synchronizedOutputStarted ||
-          containsSynchronizedOutputEnd(data))
+        (synchronizedHiddenOutputActive || synchronizedOutputStarted || synchronizedOutputEnded)
+      const hiddenStartupRendererQueryWindowActive = isHiddenStartupRendererQueryWindowActive()
       const shouldSkipHiddenOutput = shouldSkipHiddenRendererOutput({
         foreground,
         canRestoreHiddenOutput: canUseHiddenOutputSnapshot(transport.getPtyId()),
-        startupRendererQueryWindowActive: isHiddenStartupRendererQueryWindowActive(),
+        startupRendererQueryWindowActive: hiddenStartupRendererQueryWindowActive,
         synchronizedOutputActive: synchronizedHiddenOutput,
-        allowSynchronizedModelRestore: shouldAllowPrototypeSynchronizedHiddenModelRestore(),
+        allowSynchronizedModelRestore: true,
         data
       })
-      if (shouldSkipHiddenOutput) {
+      if (shouldSkipHiddenOutput && !splitSynchronizedBoundary) {
         skipHiddenRendererOutput(data)
       } else if (synchronizedHiddenOutput) {
+        if (!foreground) {
+          recordHiddenRendererLiveOutput(
+            data.length,
+            splitSynchronizedBoundary
+              ? 'split-boundary'
+              : hiddenStartupRendererQueryWindowActive
+                ? 'startup-window'
+                : 'synchronized'
+          )
+        }
         writePtyOutputToXterm(data, foreground)
       } else if (
         (hiddenOutputRestoreNeeded || hiddenOutputRestoreInFlight) &&
@@ -2638,13 +2705,24 @@ export function connectPanePty(
           hiddenOutputRestoreFreshSnapshotNeeded = true
         }
       } else {
+        if (!foreground) {
+          recordHiddenRendererLiveOutput(
+            data.length,
+            hiddenStartupRendererQueryWindowActive ? 'startup-window' : 'non-synchronized'
+          )
+        }
         writePtyOutputToXterm(data, foreground)
       }
       if (!foreground) {
         synchronizedHiddenOutputActive = shouldSynchronizedOutputRemainActive(
-          data,
+          hiddenSynchronizedScanData,
           synchronizedHiddenOutputActive
         )
+        synchronizedHiddenOutputScanTail = updateSynchronizedOutputScanTail(
+          hiddenSynchronizedScanData
+        )
+      } else {
+        synchronizedHiddenOutputScanTail = ''
       }
 
       schedulePendingStartupCommandDelivery()
