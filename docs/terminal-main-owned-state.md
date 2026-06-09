@@ -1,5 +1,9 @@
 # Terminal Main-Owned State
 
+This document covers the hidden-output recovery slice. The broader terminal
+model/view boundary is defined in
+[`reference/terminal-model-view-contract.md`](./reference/terminal-model-view-contract.md).
+
 ## Problem
 
 Hidden and background terminal panes cannot rely on renderer memory as the only
