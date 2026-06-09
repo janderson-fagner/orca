@@ -14,6 +14,18 @@ describe('shouldSkipHiddenRendererOutput', () => {
     ).toBe(true)
   })
 
+  it('skips hidden width-stable Latin output when a snapshot restore is available', () => {
+    expect(
+      shouldSkipHiddenRendererOutput({
+        foreground: false,
+        canRestoreHiddenOutput: true,
+        startupRendererQueryWindowActive: false,
+        synchronizedOutputActive: false,
+        data: 'café déjà vu São Tomé Żubrówka Ḃḃ\r\n'
+      })
+    ).toBe(true)
+  })
+
   it('keeps visible or non-restorable output on the live renderer path', () => {
     expect(
       shouldSkipHiddenRendererOutput({
@@ -131,7 +143,7 @@ describe('shouldSkipHiddenRendererOutput', () => {
     }
   })
 
-  it('keeps rewrite and unicode chunks live', () => {
+  it('keeps rewrite and wide or combining unicode chunks live', () => {
     expect(
       shouldSkipHiddenRendererOutput({
         foreground: false,
@@ -141,14 +153,16 @@ describe('shouldSkipHiddenRendererOutput', () => {
         data: 'progress 10%\rprogress 20%'
       })
     ).toBe(false)
-    expect(
-      shouldSkipHiddenRendererOutput({
-        foreground: false,
-        canRestoreHiddenOutput: true,
-        startupRendererQueryWindowActive: false,
-        synchronizedOutputActive: false,
-        data: 'emoji 😀\r\n'
-      })
-    ).toBe(false)
+    for (const data of ['emoji 😀\r\n', '漢字 table\r\n', 'combining e\u0301\r\n']) {
+      expect(
+        shouldSkipHiddenRendererOutput({
+          foreground: false,
+          canRestoreHiddenOutput: true,
+          startupRendererQueryWindowActive: false,
+          synchronizedOutputActive: false,
+          data
+        })
+      ).toBe(false)
+    }
   })
 })

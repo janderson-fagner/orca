@@ -780,6 +780,19 @@ test.describe('Artificial OpenCode terminal load', () => {
       'plain'
     )
   })
+  test('skips renderer writes for Latin hidden PTY output while preserving restore', async ({
+    orcaPage,
+    testRepoPath
+  }, testInfo) => {
+    await runConfiguredHiddenRealPtyPressureScenario(
+      orcaPage,
+      testRepoPath,
+      testInfo,
+      HIDDEN_PRESSURE_PANES,
+      '-latin',
+      'latin'
+    )
+  })
   test('skips renderer writes for title-only hidden PTY output while preserving restore', async ({
     orcaPage,
     testRepoPath

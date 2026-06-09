@@ -173,6 +173,7 @@ export async function runHiddenRealPtyPressureScenario<
 
     if (
       pressureOutputMode === 'plain' ||
+      pressureOutputMode === 'latin' ||
       pressureOutputMode === 'title' ||
       pressureOutputMode === 'tui'
     ) {

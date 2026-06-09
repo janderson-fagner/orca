@@ -6,11 +6,18 @@ export type HiddenRendererSkipEligibility = {
   data: string
 }
 
-function isAllowedPlainHiddenOutputCode(code: number): boolean {
-  if (code === 0x09 || code === 0x0a) {
+function isAllowedPlainHiddenOutputCodePoint(codePoint: number): boolean {
+  if (codePoint === 0x09 || codePoint === 0x0a) {
     return true
   }
-  return code >= 0x20 && code <= 0x7e
+  if (codePoint >= 0x20 && codePoint <= 0x7e) {
+    return true
+  }
+  // Why: hidden restore can safely replay ordinary single-cell Latin text from
+  // headless state, while wide/combining/table glyph classes stay live.
+  return (
+    (codePoint >= 0x00a0 && codePoint <= 0x024f) || (codePoint >= 0x1e00 && codePoint <= 0x1eff)
+  )
 }
 
 function findTitleOscEnd(data: string, startIndex: number): number | null {
@@ -95,10 +102,11 @@ function containsOnlyRestorableHiddenOutput(data: string): boolean {
       index += 1
       continue
     }
-    if (!isAllowedPlainHiddenOutputCode(code)) {
+    const codePoint = data.codePointAt(index)
+    if (typeof codePoint !== 'number' || !isAllowedPlainHiddenOutputCodePoint(codePoint)) {
       return false
     }
-    index += 1
+    index += codePoint > 0xffff ? 2 : 1
   }
   return true
 }
