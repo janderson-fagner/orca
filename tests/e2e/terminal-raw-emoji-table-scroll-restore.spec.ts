@@ -54,7 +54,7 @@ const EMOJI_TABLE_FIXTURE = readFileSync(
   path.join(__dirname, 'fixtures', 'terminal-emoji-table.md'),
   'utf8'
 )
-const RAW_EMOJI_TABLE_MIN_COLS = 140
+const RAW_EMOJI_TABLE_COLS = 137
 
 function rawEmojiFixtureBoxTableScript(table: string, runId: string): string {
   const marker = `RAW_EMOJI_FIXTURE_TABLE_RESTORE_${runId}`
@@ -148,7 +148,10 @@ function rawEmojiFixtureCompletionMarker(runId: string): string {
 }
 
 async function setWideRenderedTableViewport(page: Page): Promise<void> {
-  await page.setViewportSize({ width: 1760, height: 820 })
+  const isWindows = await page.evaluate(() => navigator.userAgent.includes('Windows'))
+  // Why: macOS hosted runners need extra room for font/column variance, while
+  // Windows Electron golden rendering is stable at the native-sized viewport.
+  await page.setViewportSize({ width: isWindows ? 1480 : 1760, height: 820 })
   await page.waitForTimeout(250)
   await page.evaluate(() => {
     const store = window.__store
@@ -160,6 +163,8 @@ async function setWideRenderedTableViewport(page: Page): Promise<void> {
 }
 
 async function waitForRawEmojiTableColumns(page: Page): Promise<void> {
+  const isWindows = await page.evaluate(() => navigator.userAgent.includes('Windows'))
+  const minCols = isWindows ? RAW_EMOJI_TABLE_COLS : RAW_EMOJI_TABLE_COLS + 3
   await expect
     .poll(
       () =>
@@ -171,7 +176,7 @@ async function waitForRawEmojiTableColumns(page: Page): Promise<void> {
         timeout: 10_000
       }
     )
-    .toBeGreaterThanOrEqual(RAW_EMOJI_TABLE_MIN_COLS)
+    .toBeGreaterThanOrEqual(minCols)
 }
 
 async function readTerminalBoxTableWrapDiagnostics(page: Page): Promise<{
