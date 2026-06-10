@@ -674,9 +674,16 @@ Landed so far:
 - Added persisted `projects` and `projectHostSetups` compatibility fields that
   are backfilled from existing repos on load and kept in sync when repos are
   added, updated, reordered, or removed.
+- Exposed read-only project/setup list APIs through local IPC, preload, and
+  runtime RPC so newer clients can ask local or remote servers for the
+  project-first compatibility model.
+- Hydrated renderer store `projects` and `projectHostSetups` alongside repos,
+  with a repo-derived fallback for older preloads/runtimes that do not yet
+  implement the project APIs.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
-  backfill, and repo mutation synchronization.
+  backfill, repo mutation synchronization, renderer hydration, and runtime RPC
+  routing.
 
 Important limitation:
 

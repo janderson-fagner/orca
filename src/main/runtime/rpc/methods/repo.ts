@@ -157,6 +157,16 @@ export const REPO_METHODS: RpcMethod[] = [
     handler: (_params, { runtime }) => ({ repos: runtime.listRepos() })
   }),
   defineMethod({
+    name: 'project.list',
+    params: null,
+    handler: (_params, { runtime }) => ({ projects: runtime.listProjects() })
+  }),
+  defineMethod({
+    name: 'projectHostSetup.list',
+    params: null,
+    handler: (_params, { runtime }) => ({ setups: runtime.listProjectHostSetups() })
+  }),
+  defineMethod({
     name: 'projectGroup.list',
     params: null,
     handler: (_params, { runtime }) => ({ groups: runtime.listProjectGroups() })

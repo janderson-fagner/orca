@@ -120,8 +120,10 @@ import type {
   PRComment,
   PRInfo,
   PRRefreshOutcome,
+  Project,
   Repo,
   ProjectGroup,
+  ProjectHostSetup,
   ProjectGroupImportResult,
   ProjectGroupImportMode,
   ShellHydrationFailureReason,
@@ -771,6 +773,10 @@ export type PreloadApi = {
       limit?: number
     }) => Promise<BaseRefSearchResult[]>
     onChanged: (callback: () => void) => () => void
+  }
+  projects: {
+    list: () => Promise<Project[]>
+    listHostSetups: () => Promise<ProjectHostSetup[]>
   }
   projectGroups: {
     list: () => Promise<ProjectGroup[]>

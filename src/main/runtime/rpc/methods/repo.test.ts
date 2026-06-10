@@ -316,6 +316,43 @@ describe('repo RPC methods', () => {
     })
   })
 
+  it('routes project and project-host setup lists to the runtime server', async () => {
+    const project = {
+      id: 'project-1',
+      displayName: 'Project',
+      badgeColor: '#737373',
+      sourceRepoIds: ['repo-1'],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const setup = {
+      id: 'repo-1',
+      projectId: 'project-1',
+      hostId: 'local',
+      repoId: 'repo-1',
+      path: '/repo',
+      displayName: 'Project',
+      setupState: 'ready',
+      setupMethod: 'legacy-repo',
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      listProjects: vi.fn().mockReturnValue([project]),
+      listProjectHostSetups: vi.fn().mockReturnValue([setup])
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const projectsResponse = await dispatcher.dispatch(makeRequest('project.list'))
+    const setupsResponse = await dispatcher.dispatch(makeRequest('projectHostSetup.list'))
+
+    expect(projectsResponse).toMatchObject({ ok: true, result: { projects: [project] } })
+    expect(setupsResponse).toMatchObject({ ok: true, result: { setups: [setup] } })
+    expect(runtime.listProjects).toHaveBeenCalled()
+    expect(runtime.listProjectHostSetups).toHaveBeenCalled()
+  })
+
   it('allows separate nested-repo imports without a group name', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',

@@ -432,6 +432,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('repos:remove')
   ipcMain.removeHandler('repos:reorder')
   ipcMain.removeHandler('repos:update')
+  ipcMain.removeHandler('projects:list')
+  ipcMain.removeHandler('projectHostSetups:list')
   ipcMain.removeHandler('projectGroups:list')
   ipcMain.removeHandler('projectGroups:create')
   ipcMain.removeHandler('projectGroups:update')
@@ -457,6 +459,10 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.handle('repos:list', () => {
     return store.getRepos()
   })
+
+  ipcMain.handle('projects:list', () => store.getProjects())
+
+  ipcMain.handle('projectHostSetups:list', () => store.getProjectHostSetups())
 
   ipcMain.handle('projectGroups:list', () => store.getProjectGroups())
 

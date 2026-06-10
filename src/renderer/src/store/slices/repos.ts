@@ -6,11 +6,17 @@ import type { StateCreator } from 'zustand'
 import { toast } from 'sonner'
 import type { AppState } from '../types'
 import type {
+  Project,
   Repo,
   ProjectGroup,
+  ProjectHostSetup,
   ProjectGroupImportResult,
   NestedRepoScanResult
 } from '../../../../shared/types'
+import {
+  projectHostSetupProjectionFromRepos,
+  type ProjectHostSetupProjection
+} from '../../../../shared/project-host-setup-projection'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import { sanitizeRepoIcon } from '../../../../shared/repo-icon'
 import { normalizeRepoBadgeColor } from '../../../../shared/repo-badge-color'
@@ -129,6 +135,72 @@ function repoWithFetchedOwner(repo: Repo, target: ReturnType<typeof getActiveRun
   return { ...repo, executionHostId: getRuntimeTargetHostId(target) }
 }
 
+function setupWithFetchedOwner(
+  setup: ProjectHostSetup,
+  target: ReturnType<typeof getActiveRuntimeTarget>
+): ProjectHostSetup {
+  const hostId = getRuntimeTargetHostId(target)
+  if (target.kind !== 'environment' || setup.hostId !== LOCAL_EXECUTION_HOST_ID) {
+    return setup
+  }
+  return {
+    ...setup,
+    hostId,
+    executionHostId: hostId
+  }
+}
+
+async function fetchProjectHostSetupCompatibility(
+  target: ReturnType<typeof getActiveRuntimeTarget>,
+  repos: readonly Repo[]
+): Promise<ProjectHostSetupProjection> {
+  try {
+    if (target.kind === 'local') {
+      const projectsApi = (
+        window.api as typeof window.api & {
+          projects?: {
+            list?: () => Promise<Project[]>
+            listHostSetups?: () => Promise<ProjectHostSetup[]>
+          }
+        }
+      ).projects
+      if (!projectsApi?.list || !projectsApi.listHostSetups) {
+        throw new Error('projects_api_unavailable')
+      }
+      return {
+        projects: await projectsApi.list(),
+        setups: await projectsApi.listHostSetups()
+      }
+    }
+    const [projectResponse, setupResponse] = await Promise.all([
+      callRuntimeRpc<{ projects: Project[] }>(target, 'project.list', undefined, {
+        timeoutMs: 15_000
+      }),
+      callRuntimeRpc<{ setups: ProjectHostSetup[] }>(target, 'projectHostSetup.list', undefined, {
+        timeoutMs: 15_000
+      })
+    ])
+    return {
+      projects: projectResponse.projects,
+      setups: setupResponse.setups.map((setup) => setupWithFetchedOwner(setup, target))
+    }
+  } catch {
+    // Why: newer clients must still hydrate against older runtimes/preloads
+    // that only know `repo.list`; derive the transitional model locally.
+    return projectHostSetupProjectionFromRepos(repos)
+  }
+}
+
+function projectCompatibilityFromRepos(
+  repos: readonly Repo[]
+): Pick<RepoSlice, 'projects' | 'projectHostSetups'> {
+  const projection = projectHostSetupProjectionFromRepos(repos)
+  return {
+    projects: projection.projects,
+    projectHostSetups: projection.setups
+  }
+}
+
 function mergeFetchedReposForHost(
   previous: readonly Repo[],
   fetched: Repo[],
@@ -184,6 +256,8 @@ function settingsForRepoOwner(state: Pick<AppState, 'repos' | 'settings'>, repoI
 
 export type RepoSlice = {
   repos: Repo[]
+  projects: Project[]
+  projectHostSetups: ProjectHostSetup[]
   projectGroups: ProjectGroup[]
   activeRepoId: string | null
   fetchRepos: () => Promise<void>
@@ -224,6 +298,8 @@ export type RepoSlice = {
 
 export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, get) => ({
   repos: [],
+  projects: [],
+  projectHostSetups: [],
   projectGroups: [],
   activeRepoId: null,
 
@@ -246,11 +322,20 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
             ).repos
       const hostId = getRuntimeTargetHostId(target)
       const repos = fetchedRepos.map((repo) => repoWithFetchedOwner(repo, target))
+      const fetchedProjectCompatibility = await fetchProjectHostSetupCompatibility(target, repos)
       set((s) => {
         const reconciledRepos = mergeFetchedReposForHost(s.repos, repos, hostId)
         const validRepoIds = new Set(reconciledRepos.map((repo) => repo.id))
+        const projectCompatibility =
+          target.kind === 'local'
+            ? {
+                projects: fetchedProjectCompatibility.projects,
+                projectHostSetups: fetchedProjectCompatibility.setups
+              }
+            : projectCompatibilityFromRepos(reconciledRepos)
         return {
           repos: reconciledRepos,
+          ...projectCompatibility,
           activeRepoId: s.activeRepoId && validRepoIds.has(s.activeRepoId) ? s.activeRepoId : null,
           filterRepoIds: s.filterRepoIds.filter((projectId) => validRepoIds.has(projectId)),
           setupScriptPromptDismissedRepoIds: filterSetupScriptPromptDismissalsToValidRepos(
@@ -535,7 +620,11 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         if (s.repos.some((r) => r.id === repo.id)) {
           return s
         }
-        return { repos: [...s.repos, repo] }
+        const nextRepos = [...s.repos, repo]
+        return {
+          repos: nextRepos,
+          ...projectCompatibilityFromRepos(nextRepos)
+        }
       })
       if (alreadyAdded) {
         toast.info(translate('auto.store.slices.repos.a8e4b3af5b', 'Project already added'), {
@@ -722,6 +811,7 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         const nextRepos = s.repos.filter((r) => r.id !== projectId)
         return {
           repos: nextRepos,
+          ...projectCompatibilityFromRepos(nextRepos),
           activeRepoId: s.activeRepoId === projectId ? null : s.activeRepoId,
           filterRepoIds: s.filterRepoIds.filter((id) => id !== projectId),
           worktreesByRepo: nextWorktrees,
@@ -774,8 +864,8 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
                   { timeoutMs: 15_000 }
                 )
               ).repo
-        set((s) => ({
-          repos: s.repos.map((r) => {
+        set((s) => {
+          const nextRepos = s.repos.map((r) => {
             if (r.id !== projectId) {
               return r
             }
@@ -795,7 +885,11 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               ...(sourceControlAi !== undefined ? { sourceControlAi } : {})
             }
           })
-        }))
+          return {
+            repos: nextRepos,
+            ...projectCompatibilityFromRepos(nextRepos)
+          }
+        })
         return true
       } catch (err) {
         console.error('Failed to update repo:', err)
@@ -836,7 +930,10 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
       // Caller passed a non-permutation — refuse to apply locally.
       return
     }
-    set({ repos: next })
+    set({
+      repos: next,
+      ...projectCompatibilityFromRepos(next)
+    })
     try {
       // Why: each host persists only its own repos and rejects non-permutations,
       // so split the cross-host order into per-host permutations and dispatch one

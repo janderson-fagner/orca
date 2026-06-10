@@ -1,6 +1,6 @@
 import { useAppStore } from './index'
 import { useShallow } from 'zustand/react/shallow'
-import type { Repo, Worktree, TerminalTab } from '../../../shared/types'
+import type { Project, ProjectHostSetup, Repo, Worktree, TerminalTab } from '../../../shared/types'
 import type { AppState } from './types'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import {
@@ -186,8 +186,14 @@ export function getRepoMapFromState(state: Pick<AppState, 'repos'>): Map<string,
 }
 
 export function getProjectHostSetupProjectionFromState(
-  state: Pick<AppState, 'repos'>
+  state: Pick<AppState, 'repos'> & Partial<Pick<AppState, 'projects' | 'projectHostSetups'>>
 ): ProjectHostSetupProjection {
+  if (state.projects && state.projectHostSetups) {
+    return {
+      projects: state.projects as Project[],
+      setups: state.projectHostSetups as ProjectHostSetup[]
+    }
+  }
   return getCachedProjectHostSetupProjection(state.repos)
 }
 
@@ -200,7 +206,7 @@ export const useRepoMap = () => useAppStore((s) => getCachedRepoMap(s.repos))
 export const useRepoById = (repoId: string | null) =>
   useAppStore((s) => (repoId ? (getCachedRepoMap(s.repos).get(repoId) ?? null) : null))
 export const useProjectHostSetupProjection = () =>
-  useAppStore((s) => getCachedProjectHostSetupProjection(s.repos))
+  useAppStore((s) => getProjectHostSetupProjectionFromState(s))
 
 // ─── Worktrees ──────────────────────────────────────────────────────
 export const useActiveWorktreeId = () => useAppStore((s) => s.activeWorktreeId)

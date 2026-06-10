@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { createTestStore, makeWorktree } from './store-test-helpers'
 import { workItemsCacheKey } from './github'
-import type { Repo } from '../../../../shared/types'
+import type { Project, ProjectHostSetup, Repo } from '../../../../shared/types'
 import {
   createCompatibleRuntimeStatusResponseIfNeeded,
   type RuntimeEnvironmentCallRequest
@@ -86,8 +86,56 @@ describe('repo slice runtime routing', () => {
     await store.getState().fetchRepos()
 
     expect(store.getState().repos).toEqual([{ ...localRepo, executionHostId: 'local' }])
+    expect(store.getState().projects).toEqual([
+      expect.objectContaining({ id: 'repo:local-repo', sourceRepoIds: ['local-repo'] })
+    ])
+    expect(store.getState().projectHostSetups).toEqual([
+      expect.objectContaining({ id: 'local-repo', hostId: 'local' })
+    ])
     expect(reposList).toHaveBeenCalled()
     expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+  })
+
+  it('hydrates projects from local IPC when the project API is available', async () => {
+    const project: Project = {
+      id: 'project-1',
+      displayName: 'Project',
+      badgeColor: '#000',
+      sourceRepoIds: ['local-repo'],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const setup: ProjectHostSetup = {
+      id: 'setup-1',
+      projectId: project.id,
+      hostId: 'local',
+      repoId: 'local-repo',
+      path: '/local',
+      displayName: 'Local',
+      setupState: 'ready',
+      setupMethod: 'legacy-repo',
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const projectsList = vi.fn().mockResolvedValue([project])
+    const listHostSetups = vi.fn().mockResolvedValue([setup])
+    ;(
+      window.api as typeof window.api & {
+        projects?: { list: typeof projectsList; listHostSetups: typeof listHostSetups }
+      }
+    ).projects = {
+      list: projectsList,
+      listHostSetups
+    }
+    reposList.mockResolvedValue([localRepo])
+    const store = createTestStore()
+
+    await store.getState().fetchRepos()
+
+    expect(store.getState().projects).toEqual([project])
+    expect(store.getState().projectHostSetups).toEqual([setup])
+    expect(projectsList).toHaveBeenCalled()
+    expect(listHostSetups).toHaveBeenCalled()
   })
 
   it('fetches repos from the active remote runtime environment', async () => {
@@ -107,6 +155,12 @@ describe('repo slice runtime routing', () => {
     await store.getState().fetchRepos()
 
     expect(store.getState().repos).toEqual([{ ...remoteRepo, executionHostId: 'runtime:env-1' }])
+    expect(store.getState().projects).toEqual([
+      expect.objectContaining({ id: 'repo:remote-repo', sourceRepoIds: ['remote-repo'] })
+    ])
+    expect(store.getState().projectHostSetups).toEqual([
+      expect.objectContaining({ id: 'remote-repo', hostId: 'runtime:env-1' })
+    ])
     expect(store.getState().activeRepoId).toBeNull()
     expect(store.getState().filterRepoIds).toEqual(['remote-repo'])
     expect(runtimeEnvironmentCall).toHaveBeenCalledWith({

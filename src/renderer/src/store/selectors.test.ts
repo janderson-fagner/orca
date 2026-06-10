@@ -188,4 +188,43 @@ describe('store selectors', () => {
     expect(getProjectHostSetupProjectionFromState({ repos })).toBe(projection)
     expect(getProjectHostSetupProjectionFromState({ repos: [...repos] })).not.toBe(projection)
   })
+
+  it('prefers hydrated project host setup state when present', () => {
+    const repos = [
+      makeRepo({
+        id: 'repo-1',
+        path: '/Users/alice/orca',
+        displayName: 'orca'
+      })
+    ]
+    const projects = [
+      {
+        id: 'project-1',
+        displayName: 'Project',
+        badgeColor: '#737373',
+        sourceRepoIds: ['repo-1'],
+        createdAt: 1,
+        updatedAt: 1
+      }
+    ]
+    const projectHostSetups = [
+      {
+        id: 'setup-1',
+        projectId: 'project-1',
+        hostId: 'local' as const,
+        repoId: 'repo-1',
+        path: '/Users/alice/orca',
+        displayName: 'orca',
+        setupState: 'ready' as const,
+        setupMethod: 'legacy-repo' as const,
+        createdAt: 1,
+        updatedAt: 1
+      }
+    ]
+
+    expect(getProjectHostSetupProjectionFromState({ repos, projects, projectHostSetups })).toEqual({
+      projects,
+      setups: projectHostSetups
+    })
+  })
 })

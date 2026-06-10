@@ -503,6 +503,11 @@ const api = {
     }
   } satisfies PreloadApi['repos'],
 
+  projects: {
+    list: () => ipcRenderer.invoke('projects:list'),
+    listHostSetups: () => ipcRenderer.invoke('projectHostSetups:list')
+  } satisfies PreloadApi['projects'],
+
   projectGroups: {
     list: () => ipcRenderer.invoke('projectGroups:list'),
     create: (args) => ipcRenderer.invoke('projectGroups:create', args),
