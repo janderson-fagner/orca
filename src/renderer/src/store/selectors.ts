@@ -36,6 +36,10 @@ const worktreeSnapshotCache = new WeakMap<AppState['worktreesByRepo'], WorktreeS
 const hasAnyWorktreesCache = new WeakMap<AppState['worktreesByRepo'], boolean>()
 const repoMapCache = new WeakMap<AppState['repos'], Map<string, Repo>>()
 const projectHostSetupProjectionCache = new WeakMap<AppState['repos'], ProjectHostSetupProjection>()
+const providedProjectHostSetupProjectionCache = new WeakMap<
+  Project[],
+  WeakMap<ProjectHostSetup[], ProjectHostSetupProjection>
+>()
 let floatingVisibleTabCountCache: FloatingVisibleTabCountCache | null = null
 
 function getWorktreeSnapshot(worktreesByRepo: AppState['worktreesByRepo']): WorktreeSnapshot {
@@ -107,6 +111,26 @@ function getCachedProjectHostSetupProjection(repos: AppState['repos']): ProjectH
 
   const projection = projectHostSetupProjectionFromRepos(repos)
   projectHostSetupProjectionCache.set(repos, projection)
+  return projection
+}
+
+function getCachedProvidedProjectHostSetupProjection(
+  projects: Project[],
+  setups: ProjectHostSetup[]
+): ProjectHostSetupProjection {
+  const cachedBySetups = providedProjectHostSetupProjectionCache.get(projects)
+  const cachedProjection = cachedBySetups?.get(setups)
+  if (cachedProjection) {
+    return cachedProjection
+  }
+
+  const projection = { projects, setups }
+  const nextCachedBySetups =
+    cachedBySetups ?? new WeakMap<ProjectHostSetup[], ProjectHostSetupProjection>()
+  nextCachedBySetups.set(setups, projection)
+  if (!cachedBySetups) {
+    providedProjectHostSetupProjectionCache.set(projects, nextCachedBySetups)
+  }
   return projection
 }
 
@@ -189,10 +213,10 @@ export function getProjectHostSetupProjectionFromState(
   state: Pick<AppState, 'repos'> & Partial<Pick<AppState, 'projects' | 'projectHostSetups'>>
 ): ProjectHostSetupProjection {
   if (state.projects && state.projectHostSetups) {
-    return {
-      projects: state.projects as Project[],
-      setups: state.projectHostSetups as ProjectHostSetup[]
-    }
+    return getCachedProvidedProjectHostSetupProjection(
+      state.projects as Project[],
+      state.projectHostSetups as ProjectHostSetup[]
+    )
   }
   return getCachedProjectHostSetupProjection(state.repos)
 }
