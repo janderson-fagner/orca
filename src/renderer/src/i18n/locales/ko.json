@@ -5022,6 +5022,13 @@
           "hostSetupStateSettingUp": "설정 중",
           "hostSetupStateError": "오류",
           "hostSetupStateUnsupported": "지원되지 않음",
+          "setupExistingFolder": "기존 폴더 가져오기",
+          "setupExistingFolderHelp": "다른 호스트에 이미 있는 체크아웃을 연결해 이 프로젝트를 사용할 수 있게 합니다.",
+          "setupExistingFolderPathPlaceholder": "/path/to/project/on/host",
+          "setupKindGit": "Git 저장소",
+          "setupKindFolder": "폴더",
+          "settingUpHost": "가져오는 중...",
+          "setupHost": "가져오기",
           "499a437335": "신원"
         },
         "RepositorySourceControlAiActionRows": {

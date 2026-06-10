@@ -5022,6 +5022,13 @@
           "hostSetupStateSettingUp": "设置中",
           "hostSetupStateError": "错误",
           "hostSetupStateUnsupported": "不支持",
+          "setupExistingFolder": "导入现有文件夹",
+          "setupExistingFolderHelp": "链接另一台主机上已有的检出目录，让此项目可在那里使用。",
+          "setupExistingFolderPathPlaceholder": "/path/to/project/on/host",
+          "setupKindGit": "Git 仓库",
+          "setupKindFolder": "文件夹",
+          "settingUpHost": "正在导入...",
+          "setupHost": "导入",
           "499a437335": "身份"
         },
         "RepositorySourceControlAiActionRows": {

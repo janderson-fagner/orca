@@ -358,6 +358,58 @@ describe('repo slice runtime routing', () => {
     })
   })
 
+  it('sets up an SSH host through local IPC even when a runtime is focused', async () => {
+    const project: Project = {
+      id: 'project-1',
+      displayName: 'Project',
+      badgeColor: '#000',
+      sourceRepoIds: ['ssh-repo'],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const setup: ProjectHostSetup = {
+      id: 'ssh-repo',
+      projectId: project.id,
+      hostId: 'ssh:openclaw%202',
+      repoId: 'ssh-repo',
+      path: '/srv/project',
+      displayName: 'Remote',
+      connectionId: 'openclaw 2',
+      setupState: 'ready',
+      setupMethod: 'imported-existing-folder',
+      createdAt: 1,
+      updatedAt: 1
+    }
+    projectsSetupExistingFolder.mockResolvedValue({
+      project,
+      setup,
+      repo: { ...remoteRepo, connectionId: 'openclaw 2' }
+    })
+    const store = createTestStore()
+    store.setState({ settings: { activeRuntimeEnvironmentId: 'env-1' } as never })
+
+    await expect(
+      store.getState().setupProjectExistingFolder({
+        projectId: project.id,
+        hostId: 'ssh:openclaw%202',
+        path: '/srv/project',
+        kind: 'git'
+      })
+    ).resolves.toEqual({
+      project,
+      setup,
+      repo: { ...remoteRepo, connectionId: 'openclaw 2', executionHostId: 'ssh:openclaw%202' }
+    })
+
+    expect(projectsSetupExistingFolder).toHaveBeenCalledWith({
+      projectId: project.id,
+      hostId: 'ssh:openclaw%202',
+      path: '/srv/project',
+      kind: 'git'
+    })
+    expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+  })
+
   it('keeps runtime ownership when a runtime repo is moved between groups', async () => {
     runtimeEnvironmentCall.mockResolvedValue({
       id: 'rpc-move',

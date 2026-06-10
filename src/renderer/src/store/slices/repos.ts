@@ -130,6 +130,15 @@ function getRuntimeTargetHostId(
     : LOCAL_EXECUTION_HOST_ID
 }
 
+function getProjectSetupRuntimeTarget(
+  hostId: ProjectHostSetupExistingFolderArgs['hostId']
+): ReturnType<typeof getActiveRuntimeTarget> {
+  const parsedHost = parseExecutionHostId(hostId)
+  return parsedHost?.kind === 'runtime'
+    ? { kind: 'environment', environmentId: parsedHost.environmentId }
+    : { kind: 'local' }
+}
+
 function repoWithFetchedOwner(repo: Repo, target: ReturnType<typeof getActiveRuntimeTarget>): Repo {
   if (repo.connectionId) {
     return { ...repo, executionHostId: getRepoExecutionHostId(repo) }
@@ -660,7 +669,7 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
 
   setupProjectExistingFolder: async (args) => {
     try {
-      const target = getActiveRuntimeTarget(get().settings)
+      const target = getProjectSetupRuntimeTarget(args.hostId)
       const result =
         target.kind === 'local'
           ? await window.api.projects.setupExistingFolder(args)

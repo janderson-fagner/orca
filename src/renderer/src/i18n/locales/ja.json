@@ -5022,6 +5022,13 @@
           "hostSetupStateSettingUp": "セットアップ中",
           "hostSetupStateError": "エラー",
           "hostSetupStateUnsupported": "未対応",
+          "setupExistingFolder": "既存フォルダーをインポート",
+          "setupExistingFolderHelp": "別のホストに既に存在するチェックアウトをリンクして、このプロジェクトを利用できるようにします。",
+          "setupExistingFolderPathPlaceholder": "/path/to/project/on/host",
+          "setupKindGit": "Git リポジトリ",
+          "setupKindFolder": "フォルダー",
+          "settingUpHost": "インポート中...",
+          "setupHost": "インポート",
           "499a437335": "身元"
         },
         "RepositorySourceControlAiActionRows": {

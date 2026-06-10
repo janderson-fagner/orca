@@ -75,6 +75,14 @@ function renderSection(repo: Repo): void {
   })
 }
 
+function typeIntoInput(input: HTMLInputElement, value: string): void {
+  act(() => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setValue?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 describe('RepositoryHostSetupsSection', () => {
   it('opens the selected host setup settings pane through the setup repo id', () => {
     const openSettingsPage = vi.fn()
@@ -124,6 +132,75 @@ describe('RepositoryHostSetupsSection', () => {
       remoteHostRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(openSettingsPage).toHaveBeenCalledTimes(1)
+    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+  })
+
+  it('sets up the project on another known host from an existing folder path', async () => {
+    const openSettingsPage = vi.fn()
+    const openSettingsTarget = vi.fn()
+    const setupProjectExistingFolder = vi.fn().mockResolvedValue({
+      project: makeProject({ id: 'github:stablyai/orca' }),
+      setup: makeSetup({
+        id: 'remote-repo',
+        projectId: 'github:stablyai/orca',
+        repoId: 'remote-repo',
+        hostId: toSshExecutionHostId('openclaw 2'),
+        path: '/home/alice/orca'
+      }),
+      repo: makeRepo({
+        id: 'remote-repo',
+        displayName: 'Orca',
+        path: '/home/alice/orca',
+        connectionId: 'openclaw 2'
+      })
+    })
+    const localRepo = makeRepo({
+      id: 'local-repo',
+      displayName: 'Orca',
+      path: '/Users/alice/orca'
+    })
+    useAppStore.setState({
+      repos: [localRepo],
+      projects: [makeProject({ id: 'github:stablyai/orca' })],
+      projectHostSetups: [
+        makeSetup({
+          id: 'local-repo',
+          projectId: 'github:stablyai/orca',
+          repoId: 'local-repo',
+          hostId: 'local',
+          path: '/Users/alice/orca'
+        })
+      ],
+      sshTargetLabels: new Map([['openclaw 2', 'openclaw 2']]),
+      openSettingsPage,
+      openSettingsTarget,
+      setupProjectExistingFolder
+    })
+
+    renderSection(localRepo)
+    const pathInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="/path/to/project/on/host"]'
+    )
+    expect(pathInput).toBeTruthy()
+    typeIntoInput(pathInput!, '/home/alice/orca')
+
+    const importButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Import'
+    )
+    expect(importButton).toBeTruthy()
+
+    await act(async () => {
+      importButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(setupProjectExistingFolder).toHaveBeenCalledWith({
+      projectId: 'github:stablyai/orca',
+      hostId: 'ssh:openclaw%202',
+      path: '/home/alice/orca',
+      kind: 'git',
+      displayName: 'Orca'
+    })
     expect(openSettingsPage).toHaveBeenCalledTimes(1)
     expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
   })

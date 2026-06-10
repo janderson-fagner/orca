@@ -1,9 +1,19 @@
+import { useState } from 'react'
 import { getExecutionHostLabel } from '../../../../shared/execution-host'
-import type { ProjectHostSetupState, Repo } from '../../../../shared/types'
+import {
+  LOCAL_EXECUTION_HOST_ID,
+  toRuntimeExecutionHostId,
+  toSshExecutionHostId,
+  type ExecutionHostId
+} from '../../../../shared/execution-host'
+import type { ProjectHostSetup, ProjectHostSetupState, Repo } from '../../../../shared/types'
 import { useAppStore } from '../../store'
 import { getProjectHostSetupProjectionFromState } from '../../store/selectors'
 import { cn } from '../../lib/utils'
+import { Button } from '../ui/button'
+import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsBadge } from './SettingsFormControls'
 import { matchesSettingsSearch } from './settings-search'
@@ -15,6 +25,11 @@ type RepositoryHostSetupsSectionProps = {
   forceVisible: boolean
   searchQuery: string
   searchEntries: SettingsSearchEntry[]
+}
+
+type SetupHostOption = {
+  id: ExecutionHostId
+  label: string
 }
 
 function getSetupStateLabel(setupState: ProjectHostSetupState): string {
@@ -41,6 +56,39 @@ function getSetupStateLabel(setupState: ProjectHostSetupState): string {
   }
 }
 
+function buildSetupHostOptions({
+  projectHostSetups,
+  sshTargetLabels,
+  activeRuntimeEnvironmentId
+}: {
+  projectHostSetups: ProjectHostSetup[]
+  sshTargetLabels: Map<string, string>
+  activeRuntimeEnvironmentId: string | null | undefined
+}): SetupHostOption[] {
+  const setupHostIds = new Set(projectHostSetups.map((setup) => setup.hostId))
+  const options: SetupHostOption[] = []
+  if (!setupHostIds.has(LOCAL_EXECUTION_HOST_ID)) {
+    options.push({
+      id: LOCAL_EXECUTION_HOST_ID,
+      label: getExecutionHostLabel(LOCAL_EXECUTION_HOST_ID)
+    })
+  }
+  for (const [targetId, label] of sshTargetLabels) {
+    const id = toSshExecutionHostId(targetId)
+    if (!setupHostIds.has(id)) {
+      options.push({ id, label })
+    }
+  }
+  const runtimeEnvironmentId = activeRuntimeEnvironmentId?.trim()
+  if (runtimeEnvironmentId) {
+    const id = toRuntimeExecutionHostId(runtimeEnvironmentId)
+    if (!setupHostIds.has(id)) {
+      options.push({ id, label: runtimeEnvironmentId })
+    }
+  }
+  return options
+}
+
 export function RepositoryHostSetupsSection({
   repo,
   forceVisible,
@@ -49,6 +97,11 @@ export function RepositoryHostSetupsSection({
 }: RepositoryHostSetupsSectionProps): React.JSX.Element | null {
   const openSettingsPage = useAppStore((state) => state.openSettingsPage)
   const openSettingsTarget = useAppStore((state) => state.openSettingsTarget)
+  const setupProjectExistingFolder = useAppStore((state) => state.setupProjectExistingFolder)
+  const sshTargetLabels = useAppStore((state) => state.sshTargetLabels)
+  const activeRuntimeEnvironmentId = useAppStore(
+    (state) => state.settings?.activeRuntimeEnvironmentId
+  )
   const projectHostSetupProjection = useAppStore((state) =>
     getProjectHostSetupProjectionFromState(state)
   )
@@ -60,9 +113,19 @@ export function RepositoryHostSetupsSection({
         (setup) => setup.projectId === selectedProjectHostSetup.projectId
       )
     : []
+  const setupHostOptions = buildSetupHostOptions({
+    projectHostSetups,
+    sshTargetLabels,
+    activeRuntimeEnvironmentId
+  })
+  const [selectedSetupHostId, setSelectedSetupHostId] = useState<ExecutionHostId | null>(null)
+  const [setupPath, setSetupPath] = useState('')
+  const [setupKind, setSetupKind] = useState<'git' | 'folder'>('git')
+  const [isSettingUp, setIsSettingUp] = useState(false)
+  const setupTargetHostId = selectedSetupHostId ?? setupHostOptions[0]?.id ?? null
 
   if (
-    projectHostSetups.length <= 1 ||
+    (projectHostSetups.length <= 1 && setupHostOptions.length === 0) ||
     (!forceVisible && !matchesSettingsSearch(searchQuery, searchEntries))
   ) {
     return null
@@ -128,6 +191,97 @@ export function RepositoryHostSetupsSection({
           )
         })}
       </div>
+      {selectedProjectHostSetup && setupHostOptions.length > 0 ? (
+        <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+          <div className="space-y-1">
+            <Label className="text-sm font-semibold">
+              {translate(
+                'auto.components.settings.RepositoryPane.setupExistingFolder',
+                'Import existing folder'
+              )}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {translate(
+                'auto.components.settings.RepositoryPane.setupExistingFolderHelp',
+                'Make this project available on another host by linking a checkout that already exists there.'
+              )}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+            <Select
+              value={setupTargetHostId ?? undefined}
+              onValueChange={(value) => setSelectedSetupHostId(value as ExecutionHostId)}
+            >
+              <SelectTrigger className="h-9 min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {setupHostOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={setupPath}
+              onChange={(event) => setSetupPath(event.target.value)}
+              placeholder={translate(
+                'auto.components.settings.RepositoryPane.setupExistingFolderPathPlaceholder',
+                '/path/to/project/on/host'
+              )}
+              className="h-9 min-w-0"
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Select
+              value={setupKind}
+              onValueChange={(value) => setSetupKind(value as 'git' | 'folder')}
+            >
+              <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="git">
+                  {translate('auto.components.settings.RepositoryPane.setupKindGit', 'Git repo')}
+                </SelectItem>
+                <SelectItem value="folder">
+                  {translate('auto.components.settings.RepositoryPane.setupKindFolder', 'Folder')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!setupTargetHostId || !setupPath.trim() || isSettingUp}
+              onClick={async () => {
+                if (!setupTargetHostId || !selectedProjectHostSetup || !setupPath.trim()) {
+                  return
+                }
+                setIsSettingUp(true)
+                const result = await setupProjectExistingFolder({
+                  projectId: selectedProjectHostSetup.projectId,
+                  hostId: setupTargetHostId,
+                  path: setupPath.trim(),
+                  kind: setupKind,
+                  displayName: repo.displayName
+                })
+                setIsSettingUp(false)
+                if (result) {
+                  setSetupPath('')
+                  setSelectedSetupHostId(null)
+                  openSettingsPage()
+                  openSettingsTarget({ pane: 'repo', repoId: result.repo.id })
+                }
+              }}
+            >
+              {isSettingUp
+                ? translate('auto.components.settings.RepositoryPane.settingUpHost', 'Importing...')
+                : translate('auto.components.settings.RepositoryPane.setupHost', 'Import')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </SearchableSetting>
   )
 }

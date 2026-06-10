@@ -5042,6 +5042,13 @@
           "hostSetupStateSettingUp": "Setting up",
           "hostSetupStateError": "Error",
           "hostSetupStateUnsupported": "Unsupported",
+          "setupExistingFolder": "Import existing folder",
+          "setupExistingFolderHelp": "Make this project available on another host by linking a checkout that already exists there.",
+          "setupExistingFolderPathPlaceholder": "/path/to/project/on/host",
+          "setupKindGit": "Git repo",
+          "setupKindFolder": "Folder",
+          "settingUpHost": "Importing...",
+          "setupHost": "Import",
           "499a437335": "Identity"
         },
         "RepositorySourceControlAiActionRows": {
