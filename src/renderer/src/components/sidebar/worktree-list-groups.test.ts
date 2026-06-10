@@ -337,9 +337,53 @@ describe('buildRows with pinned worktrees', () => {
 
     expect(rows).toMatchObject([
       { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
-      { type: 'item', worktree: { id: worktree.id } },
-      { type: 'item', worktree: { id: remoteWorktree.id } }
+      { type: 'item', worktree: { id: worktree.id }, hostContextLabel: 'Local Mac' },
+      { type: 'item', worktree: { id: remoteWorktree.id }, hostContextLabel: 'gpu-vm' }
     ])
+  })
+
+  it('omits host context labels when a project group only has one host', () => {
+    const secondLocalWorktree: Worktree = {
+      ...worktree,
+      id: 'wt-local-2',
+      displayName: 'local-only'
+    }
+    const rows = buildRows(
+      'repo',
+      [worktree, secondLocalWorktree],
+      new Map([[repo.id, repo]]),
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      undefined,
+      {},
+      new Map([
+        [worktree.id, worktree],
+        [secondLocalWorktree.id, secondLocalWorktree]
+      ]),
+      false,
+      undefined,
+      [],
+      new Set(),
+      new Map(),
+      [],
+      {
+        projects: [{ ...project, sourceRepoIds: [repo.id] }],
+        projectHostSetups: [projectHostSetups[0]]
+      }
+    )
+
+    expect(rows).toMatchObject([
+      { type: 'header', key: 'project:github:stablyai/orca', label: 'Orca', count: 2 },
+      { type: 'item', worktree: { id: worktree.id } },
+      { type: 'item', worktree: { id: secondLocalWorktree.id } }
+    ])
+    for (const row of rows) {
+      if (row.type === 'item') {
+        expect(row.hostContextLabel).toBeUndefined()
+      }
+    }
   })
 
   it('keeps same-named repos separate without project setup identity', () => {

@@ -157,6 +157,21 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).toContain('data-worktree-card-meta-row=""')
   })
 
+  it('renders host context in the detailed metadata row when repo identity is hidden', () => {
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree()}
+        repo={makeRepo()}
+        isActive={false}
+        hideRepoBadge
+        hostContextLabel="gpu-vm"
+      />
+    )
+
+    expect(markup).toContain('>gpu-vm</span>')
+    expect(markup).toContain('data-worktree-card-meta-row=""')
+  })
+
   it('renders folder kind in the detailed metadata row', () => {
     const markup = renderToStaticMarkup(
       <WorktreeCard

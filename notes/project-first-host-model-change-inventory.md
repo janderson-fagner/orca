@@ -349,8 +349,9 @@ Needs:
 Current branch status: project grouping exists for durable project/setup
 identity, and the default all-host Projects view now keeps project grouping
 outermost. Host headers remain for explicit host visibility filters and
-operational grouping modes. Further host-context polish inside project groups
-and Electron validation remain.
+operational grouping modes. Mixed-host project groups now show first-pass host
+context badges on workspace cards, while single-host project groups omit them.
+Electron validation and disconnected-host polish remain.
 
 ### 7. Project Settings
 
@@ -459,6 +460,8 @@ Already partially landed:
 - project-aware sidebar grouping in existing repo grouping paths
 - default all-host Projects sidebar keeps projects outermost while preserving
   host-section operational views for explicit host filters
+- first-pass host context badges for mixed-host project groups, without adding
+  badge noise to single-host project groups
 - project-host-aware workspace creation target resolver
 - optional workspace metadata for `projectId`, `hostId`, and
   `projectHostSetupId`
@@ -471,7 +474,6 @@ Already partially landed:
 
 Not complete yet:
 
-- sidebar host-context polish inside project groups
 - clone/provision flows
 - bulk setup flows and setup for hosts that are not already known to the client
 - project settings split into global and host-specific ownership

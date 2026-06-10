@@ -30,6 +30,7 @@ import { getGitHubPRCacheKey, getLegacyGitHubPRCacheKey } from '@/store/slices/g
 import { UNGROUPED_PROJECT_GROUP_KEY } from '../../../../shared/project-groups'
 import { getRepoDisplayLabelsByPath } from '@/lib/repo-display-labels'
 import { translate } from '@/i18n/i18n'
+import { getExecutionHostLabel, getRepoExecutionHostId } from '../../../../shared/execution-host'
 
 export { branchName }
 
@@ -58,6 +59,7 @@ export type WorktreeRow = {
   lineageChildCount: number
   lineageGroupKey?: string
   lineageCollapsed?: boolean
+  hostContextLabel?: string
 }
 
 export type ImportedWorktreesCardCandidate = {
@@ -364,7 +366,8 @@ function buildWorktreeRow(
   lineageTrail: boolean[],
   isLastLineageChild: boolean,
   lineageChildCount: number,
-  lineageCollapsed: boolean
+  lineageCollapsed: boolean,
+  hostContextLabel?: string
 ): WorktreeRow {
   return {
     type: 'item',
@@ -375,6 +378,7 @@ function buildWorktreeRow(
     lineageTrail,
     isLastLineageChild,
     lineageChildCount,
+    ...(hostContextLabel ? { hostContextLabel } : {}),
     ...(lineageChildCount > 0 ? { lineageGroupKey: getLineageGroupKey(worktree.id) } : {}),
     ...(lineageChildCount > 0 ? { lineageCollapsed } : {})
   }
@@ -390,12 +394,25 @@ function appendWorktreeRows(
     nestLineage: boolean
     collapsedGroups: Set<string>
     groupDepth: number
+    hostContextLabelByRepoId?: ReadonlyMap<string, string>
   }
 ): void {
-  const { nestLineage, collapsedGroups, groupDepth } = options
+  const { nestLineage, collapsedGroups, groupDepth, hostContextLabelByRepoId } = options
   if (!nestLineage) {
     for (const worktree of worktrees) {
-      result.push(buildWorktreeRow(worktree, repoMap, 0, groupDepth, [], false, 0, false))
+      result.push(
+        buildWorktreeRow(
+          worktree,
+          repoMap,
+          0,
+          groupDepth,
+          [],
+          false,
+          0,
+          false,
+          hostContextLabelByRepoId?.get(worktree.repoId)
+        )
+      )
     }
     return
   }
@@ -437,7 +454,8 @@ function appendWorktreeRows(
         lineageTrail,
         isLastChild,
         children.length,
-        lineageCollapsed
+        lineageCollapsed,
+        hostContextLabelByRepoId?.get(worktree.repoId)
       )
     )
     if (lineageCollapsed) {
@@ -466,6 +484,37 @@ function appendWorktreeRows(
       }
     }
   }
+}
+
+function getRepoHostLabel(
+  repoId: string,
+  repoMap: Map<string, Repo>,
+  projectIndex: ProjectGroupingIndex | null
+): string | null {
+  const setup = projectIndex?.setupByRepoId.get(repoId)
+  if (setup) {
+    return getExecutionHostLabel(setup.hostId)
+  }
+  const repo = repoMap.get(repoId)
+  return repo ? getExecutionHostLabel(getRepoExecutionHostId(repo)) : null
+}
+
+function getMixedHostContextLabels(
+  group: WorktreeGroupEntry,
+  repoMap: Map<string, Repo>,
+  projectIndex: ProjectGroupingIndex | null
+): Map<string, string> | undefined {
+  const labelsByRepoId = new Map<string, string>()
+  const uniqueLabels = new Set<string>()
+  for (const repoId of group.repoIds) {
+    const label = getRepoHostLabel(repoId, repoMap, projectIndex)
+    if (!label) {
+      continue
+    }
+    labelsByRepoId.set(repoId, label)
+    uniqueLabels.add(label)
+  }
+  return uniqueLabels.size > 1 ? labelsByRepoId : undefined
 }
 
 function orderMainWorktreeFirst(worktrees: Worktree[]): Worktree[] {
@@ -846,10 +895,13 @@ export function buildRows(
           }
         }
         const items = groupBy === 'repo' ? orderMainWorktreeFirst(group.items) : group.items
+        const hostContextLabelByRepoId =
+          groupBy === 'repo' ? getMixedHostContextLabels(group, repoMap, projectIndex) : undefined
         appendWorktreeRows(result, items, repoMap, lineageById, worktreeMap, {
           nestLineage,
           collapsedGroups,
-          groupDepth: projectGroupDepth
+          groupDepth: projectGroupDepth,
+          hostContextLabelByRepoId
         })
       }
     }

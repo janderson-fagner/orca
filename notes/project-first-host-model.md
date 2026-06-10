@@ -719,6 +719,10 @@ Landed so far:
 - Updated host-section wrapping so the default all-host Projects sidebar keeps
   project grouping outermost. Host section headers remain for explicit host
   visibility filters and non-project operational grouping modes.
+- Added first-pass host context badges for mixed-host project groups so
+  same-project workspaces still show where they run after host sections stop
+  wrapping the default all-host Projects view. Single-host project groups omit
+  the badge to avoid adding noise for local-only users.
 - Added a project-host-aware workspace creation target resolver. The visible
   composer still submits the current `repoId` for compatibility, but saved
   drafts can now carry `projectId`, `hostId`, and `projectHostSetupId`, and the
@@ -766,8 +770,8 @@ Remaining end-to-end work:
 - add clone/provision setup-on-host flows
 - split settings into explicit client, host, project, and project-host setup
   scopes
-- continue refining sidebar host context inside project groups and validate the
-  default project-first view in Electron
+- validate the default project-first sidebar view in Electron and continue
+  refining disconnected-host affordances
 - backfill explicit workspace project/setup/host ownership for existing
   metadata-only workspaces where safe, while keeping repo compatibility fallback
   for older servers and profiles

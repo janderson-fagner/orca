@@ -1,10 +1,34 @@
-# Project-First Hosts Discussion
+# Project-First Host Model Discussion
 
-## Summary
+## Purpose
 
-We started from Issue #4697 and the question of how Orca should treat VMs,
-remote servers, SSH machines, and future cloud compute. The first implemented
-direction made hosts more visible in the sidebar:
+This note captures the VM / SSH / remote-server discussion so far and turns it
+into a concrete implementation inventory.
+
+The question we are answering is:
+
+Should Orca make machines the outermost organizing object, or should projects
+remain the outermost object and machines become places where those projects can
+run?
+
+## TL;DR
+
+The durable model should be:
+
+```text
+Project -> ProjectHostSetup -> Workspace
+```
+
+There are **12 major change surfaces** required to fully fit this model.
+
+Some pieces are already partially implemented on this branch. The model is not
+complete until creation, setup, settings, sidebar behavior, runtime routing,
+cache ownership, compatibility, CLI/API, SSH, and Electron validation all speak
+the same project-first language.
+
+## Current Versus Desired Model
+
+The earlier multi-host direction made hosts more visible:
 
 ```text
 Host
@@ -12,9 +36,17 @@ Host
     Workspace
 ```
 
-That is useful for operational visibility, especially when a remote host is
-offline or incompatible, but it makes the machine feel like the user's primary
-unit of organization. After discussion, the stronger long-term model is:
+That is useful for operational awareness. It helps answer:
+
+- which hosts exist
+- which hosts are online or disconnected
+- where workspaces are running
+- which SSH or remote machine might be causing a problem
+
+But as the default durable mental model, host-first can make Orca feel like the
+user is switching between isolated machine silos.
+
+The desired long-term model is:
 
 ```text
 Project
@@ -23,321 +55,492 @@ Project
 ```
 
 In plain English: a host is where a project can run. It should not usually be
-the thing that owns the project in the user's mental model.
+the object that owns the user's project.
 
-## Product Direction
+## Core Concepts
 
-The durable Orca model should be:
+### Project
 
-```text
-Project -> ProjectHostSetup -> Workspace
-```
+A `Project` is the durable repo/project identity the user recognizes.
 
-Definitions:
+Examples:
 
-- `Project`: the durable repo/project identity the user recognizes.
-- `Host`: a local Mac, SSH target, remote runtime, VM, or future Orca cloud VM.
-- `ProjectHostSetup`: the fact that a project is available on a host at a
-  concrete path with host-specific settings.
-- `Workspace`: a branch/task/worktree running from one project setup on one
-  host.
+- Orca
+- a Linux-only CUDA project
+- a work repo available only on a company machine
+- a personal repo available on a local Mac and an SSH server
 
-This supports several important cases:
+### Host
 
-- A project exists only on the local machine.
-- A project exists only on a remote Linux server.
-- The same project exists on both local and remote hosts.
-- A project cannot run locally because it needs Linux, GPU hardware, secrets, or
-  work-only infrastructure.
-- A future Orca cloud VM can be offered as another host where a project can be
-  set up and run.
+A `Host` is a place where code can run.
 
-## Reference Research
+Examples:
 
-### Superset
+- local Mac
+- SSH target
+- remote server
+- VM
+- future Orca-provisioned cloud VM
+- remote Orca runtime
 
-Superset is the closest reference for the desired model.
+For now, "VM" is a loose product term. It can be modeled as a host with extra
+capabilities, provisioning metadata, and eventually billing metadata.
 
-Its model is effectively:
+### ProjectHostSetup
+
+A `ProjectHostSetup` means:
 
 ```text
-Project + Host -> Workspace
+this project is available on this host at this path with this setup state
 ```
 
-Relevant behavior:
+This is where host-local facts belong:
 
-- A workspace stores both the project and the host.
-- A project can be set up on multiple hosts.
-- Creation is host-targeted: choose project, choose host, then create.
-- If a project is not available on a selected host, the UI blocks or asks the
-  user to set it up.
-- Settings distinguish project-level state from host-local paths and worktree
-  locations.
+- checkout path
+- worktree base path
+- setup status
+- setup scripts
+- host-specific project settings
+- platform constraints
+- project availability on a host
 
-The important lesson for Orca is that the same project should not become two
-unrelated top-level projects just because it exists on two machines.
+### Workspace
 
-### Cmux
+A `Workspace` is a branch/task/worktree running from one project setup on one
+host.
 
-Cmux is more session/workspace-first.
+A workspace should eventually know:
 
-Its model is closer to:
+- `projectId`
+- `hostId`
+- `projectHostSetupId`
+- host-local worktree path
+
+## Why Project-First Is Better
+
+Users usually think:
 
 ```text
-Workspace/session -> local or remote execution context
+I am working on Project A.
+Where should this workspace run?
 ```
 
-Relevant behavior:
+They do not usually think:
 
-- SSH is a strong first-class execution mode.
-- Remote browser/localhost behavior is polished.
-- File and terminal views follow the remote session.
-- It does not appear to center a durable "project is available on these hosts"
-  abstraction.
+```text
+I am inside Machine B.
+Which unrelated copy of Project A is here?
+```
 
-The important lesson for Orca is SSH polish, not the core data model.
+Project-first also handles the hard cases cleanly:
 
-## UX Decisions So Far
+- project exists only locally
+- project exists only on a remote Linux server
+- project exists on both local and remote hosts
+- project requires GPU hardware
+- project is work-only and should only appear on a work host
+- project is platform-specific
+- future cloud VM is just another host setup option
 
-### Sidebar
+## Sidebar Direction
 
-Default organization should trend project-first:
+The default sidebar should trend project-first.
+
+For a single-host project, avoid noisy host nesting:
+
+```text
+Orca
+  feature-a
+  feature-b
+```
+
+For a multi-host project, host context should appear only where it helps:
 
 ```text
 Orca
   Local Mac
-    feature-sidebar
+    feature-a
   openclaw 2
     fix-ssh-agent-status
 ```
 
-But host visibility still matters. Hosts should remain available as:
+Host-first grouping still has value as an operational view or filter. It is good
+for troubleshooting and status visibility, but it should not be the only durable
+organization model.
 
-- filters
-- optional grouping
-- status/health surfaces
-- setup targets
-- operational troubleshooting context
+### Disconnected Or Hidden Hosts
 
-For single-host projects, the sidebar should avoid noisy host nesting. A local
-only user should mostly feel like Orca still works the way it used to.
+Configured SSH targets are not the same as project availability.
 
-### Create Workspace
+Recommended behavior:
+
+- show a disconnected host when it has relevant project setup history or
+  workspaces
+- do not show a never-used SSH target in the project sidebar just because it is
+  configured
+- keep host connection management in host/settings surfaces
+- use clear disconnected wording and actions instead of relying only on a gray
+  dot
+
+## Workspace Creation Direction
 
 Creating a workspace should eventually ask:
 
 1. Which project?
 2. Which host should run it?
-3. What branch/task/name?
+3. What branch/task/workspace name?
 
-If the chosen project is not set up on the chosen host, Orca should offer setup
-actions such as clone or import existing folder.
+If the project is not available on the selected host, Orca should offer:
 
-### Settings
+- clone project to that host
+- import an existing folder on that host
+- select a different host
 
-Settings need to make ownership explicit:
+The user should not have to know about compatibility repo ids.
 
-- Client settings belong to the desktop client.
-- Host settings belong to a machine/runtime.
-- Project settings belong to the durable project.
-- Project-host setup settings belong to that project on that specific host.
+## Project Setup Direction
+
+"Add project" and "make this project available on another host" are related but
+separate actions.
+
+Important flows:
+
+- import a local folder as a new project
+- import an SSH folder as a new project
+- set up an existing project on another host
+- clone an existing project onto a selected host
+- when adding a new host, optionally initialize one or more projects there
+- later, provision an Orca cloud VM and materialize selected projects there
+
+## Settings Direction
+
+Settings need explicit ownership.
+
+| Setting type | Owner | Examples |
+| --- | --- | --- |
+| Client setting | desktop client | theme, local UI preferences |
+| Host setting | machine/runtime | SSH connection, display name, health, server version |
+| Project setting | durable project | project name, provider identity |
+| Project-host setup setting | project on one host | checkout path, worktree base path, setup script |
 
 A host dropdown or host table inside project settings is probably sufficient for
-host-specific project settings, similar to the existing Windows/WSL split.
+host-specific project settings, similar to existing Windows/WSL-specific
+settings patterns.
 
-### SSH And VMs
+## Version Skew
 
-SSH machines, VMs, remote servers, and future cloud machines should all fit the
-same broad host model. A VM does not need a special product concept at first; it
-can be a host with particular capabilities, provisioning metadata, or billing
-metadata later.
+Remote servers may not match the desktop client version.
+
+The model needs capability checks so a new client can talk to an old server
+without pretending unsupported features exist.
+
+The UI should disable setup/create actions with concrete reasons:
+
+- host is offline
+- server version does not support project-host setup APIs
+- project is not set up on this host
+- selected host does not support required platform/capability
+- required agent/runtime is unavailable
+
+Old client / new server should continue to work through repo/worktree
+compatibility APIs where possible.
+
+## Reference Comparison
+
+### Superset
+
+Superset is the closer reference for Orca's desired data model.
+
+Its conceptual model is:
+
+```text
+Project + Host -> Workspace
+```
+
+Useful lessons for Orca:
+
+- project identity is durable
+- a host is where the project can be materialized
+- workspace creation targets both project and host
+- a project can be set up on multiple hosts
+- if a project is not available on a host, creation can block and offer setup
+- project settings can contain host-specific path/worktree settings
+
+This maps well to Orca because Orca already has durable repos/projects,
+worktrees, agents, terminals, source control, and host-aware runtimes.
+
+### Cmux
+
+Cmux is more session/workspace-first.
+
+Its conceptual model is closer to:
+
+```text
+Workspace/session -> local or remote execution context
+```
+
+Useful lessons for Orca:
+
+- SSH should feel first class
+- remote terminals, file views, browser panes, and localhost routing should
+  follow the remote execution context
+- reconnect and persistence behavior matter
+- remote/session polish matters even if the data model differs
+
+Cmux is useful as an SSH/session polish reference. It is not the best reference
+for Orca's durable project/setup data model because it does not appear to center
+"this project is available on these hosts" as the primary abstraction.
 
 ## What Needs To Change
 
-This is a real model change, not a small sidebar adjustment. There are 12
-meaningful change surfaces.
+There are **12 major change surfaces**.
 
 ### 1. Shared Data Model
 
-Add first-class project and project-host setup concepts.
+Current `Repo` mixes durable project identity with host-local checkout details.
+The new model needs first-class project/setup concepts.
 
-Current `Repo` mixes durable project identity with host-local setup details like
-path, worktree base path, connection id, execution host id, and hook settings.
-The new model separates those responsibilities.
-
-Needed:
+Needs:
 
 - `Project`
+- `Host`
 - `ProjectHostSetup`
-- explicit host/setup ownership for workspaces
-- compatibility projection from old `Repo` records
+- explicit workspace ownership by `projectId`, `hostId`, and
+  `projectHostSetupId`
+- compatibility projection from old repo-shaped records
+
+Current branch status: partially implemented.
 
 ### 2. Persistence And Migration
 
-Existing users must migrate without drama.
+Existing users need a boring migration.
 
-Needed:
+Needs:
 
-- derive one `Project` per durable identity
-- derive one `ProjectHostSetup` per existing repo checkout
-- preserve old ids or aliases where needed
-- backfill local-only users into one project with one local setup
-- avoid merging same-name folders unless there is reliable provider identity
+- derive one project per reliable durable identity
+- derive one setup per existing repo checkout
+- avoid merging same-name folders unless provider identity is reliable
+- preserve old ids or aliases where compatibility requires it
+- backfill existing workspaces with project/setup ownership when safe
+
+Current branch status: partially implemented.
 
 ### 3. Runtime And Request Ownership
 
-Execution still happens on a host even if the UI is project-first.
+The UI can be project-first, but execution still happens on a host.
 
-Needed:
+Needs:
 
-- derive runtime target from workspace/setup host
-- keep local, SSH, remote runtime, and future cloud behind one routing contract
-- audit terminal, browser, filesystem, git, source-control, agent, hook, and
-  automation paths for repo-id assumptions
+- route terminals, agents, filesystem, browser, source control, hooks, and
+  automations through the workspace's owning host
+- avoid using the currently focused host as a hidden global default for
+  workspace-owned operations
+- scope cancellation and stale-response handling to the host/setup that owns the
+  request
+
+Current branch status: partially implemented by multi-host groundwork; still
+needs a project/setup audit.
 
 ### 4. Workspace Creation
 
-Creation needs to target a project and host, not only a repo id.
+Creation must target a project and host, not only a repo id.
 
-Needed:
+Needs:
 
 - project picker
 - run-on host picker
 - unavailable-host reasons
-- inline setup/import/clone path when a project is not set up
-- compatibility mapping to existing `createWorktree(repoId, ...)` while old APIs
-  still exist
+- inline clone/import setup actions
+- compatibility resolver from `{ projectId, hostId }` to current repo/setup
+  internals while old APIs remain
+
+Current branch status: partially implemented.
 
 ### 5. Project Setup Flow
 
-"Add project" and "make this project available on this host" become separate
-ideas.
+"Add repo" becomes a family of project/setup flows.
 
-Needed:
+Needs:
 
-- import existing folder on local or SSH host
+- import existing folder on local host
+- import existing folder over SSH
 - clone project onto selected host
 - set up an existing project on another host
-- bulk setup when a new host is added
+- bulk setup when adding a new host
 - future cloud provisioning hook
+
+Current branch status: existing-folder setup is partially implemented. Clone,
+provisioning, bulk setup, and setup for unknown/new hosts are not complete.
 
 ### 6. Sidebar Row Model
 
 The sidebar should be built from projects, hosts, setups, and workspaces rather
 than repo-only grouping.
 
-Needed:
+Needs:
 
 - project-first grouping
-- host subgroups only when useful
-- host filters/status retained
-- drag/reorder rules for project rows, host sections, and workspaces
-- clear treatment for disconnected hosts versus hidden/unavailable hosts
+- host labels/subgroups only when useful
+- host filters and online/offline status retained
+- clear disconnected-host behavior
+- drag/reorder rules for projects, host sections, and workspaces
+
+Current branch status: project grouping exists for durable project/setup
+identity, and the default all-host Projects sidebar now keeps project grouping
+outermost. Host headers remain for explicit host visibility filters and
+operational grouping modes. Mixed-host project groups now show first-pass host
+context badges on workspace cards, while single-host project groups omit them.
+Electron validation and disconnected-host polish remain.
 
 ### 7. Project Settings
 
-Project settings need a global section and host-specific setup sections.
+Project settings need a global area plus host-specific setup sections.
 
-Needed:
+Needs:
 
 - project-global settings
-- host-specific path/worktree/setup-script settings
-- host selector or host table
-- source-control settings that remain provider-neutral, not GitHub-only
+- host-specific paths, worktree paths, setup scripts, and platform constraints
+- host dropdown/table inside settings
+- provider-neutral source-control settings
+
+Current branch status: in progress. Project settings include an available-hosts
+table, setup-specific settings navigation, and an existing-folder import form.
+The full ownership split is not complete.
 
 ### 8. Host Settings
 
-Hosts need their own settings without duplicating every project setting.
+Host settings should describe the machine/runtime, not duplicate every project
+setting.
 
-Needed:
+Needs:
 
 - connection details
 - display name
 - health/status
 - server version and protocol compatibility
-- platform/capability info
+- platform/capabilities
 - host-wide defaults and overrides
 
-### 9. Compatibility And Version Skew
+Current branch status: multi-host settings groundwork exists; it still needs to
+align cleanly with project-host setup settings.
 
-New clients and old servers will exist at the same time.
+### 9. Version And Capability Compatibility
 
-Needed:
+New clients and old servers will coexist.
 
-- capability probing
+Needs:
+
+- host capability probing
 - fallback projection when project/setup APIs are missing
-- clear disabled states for old server/client combinations
-- structured errors for unsupported actions
+- disabled states with specific reasons
+- structured errors for unsupported old-server actions
+- old client / new server behavior that degrades safely
+
+Current branch status: runtime compatibility exists; project/setup capability
+gating needs to be layered on.
 
 ### 10. Caches And Local State
 
-Some caches are project-global, but many are host/setup-local.
+Some caches are project-global; many are host/setup-local.
 
-Needed:
+Needs:
 
 - classify caches as project, host, setup, or workspace scoped
-- include host/setup ids in cache keys for refs, status, paths, capabilities,
-  terminals, browser sessions, and remote filesystem state
-- scope cancellation and stale-response handling to the owning host
+- include host/setup ids in cache keys for refs, git status, filesystem state,
+  capabilities, terminals, browser sessions, and remote results
+- prevent a response from one host from overwriting another host's state for the
+  same project
+
+Current branch status: partially addressed for host partitioning; needs a
+project/setup ownership audit.
 
 ### 11. CLI And API
 
-External commands need to speak the project-first language.
+External commands should speak project-first language.
 
-Needed:
+Needs:
 
-- project list/setup commands
-- host list/status commands
-- workspace create with project and host
+- `orca project list`
+- `orca project setups`
+- `orca project setup-existing-folder --project <id> --host <id> --path <path>`
+- `orca worktree create --project <id> --host <id> ...`
+- `orca worktree create --project-host-setup <id> ...`
 - compatibility aliases for old repo/worktree commands
+- structured availability errors
+
+Current branch status: partially implemented.
 
 ### 12. Tests And Verification
 
-The change crosses storage, routing, and UI, so tests need to cover the full
-shape.
+This crosses storage, routing, UI, SSH, and compatibility.
 
-Needed:
+Needs:
 
 - migration tests
 - selector/sidebar grouping tests
 - create-workspace tests
+- setup-on-host tests
 - settings ownership tests
-- SSH setup/workspace tests
+- SSH end-to-end validation
 - version mismatch tests
-- Electron validation of sidebar, creation, and settings flows
+- Electron validation for sidebar, creation, and settings
 
-## Change Count
+Current branch status: model/API tests exist; full end-to-end UI, SSH, and
+version-skew validation remains.
 
-The short answer is: 12 major things need to change.
+## Implementation Status On This Branch
 
-The highest-risk pieces are:
+Already partially landed:
 
-1. data model and migration
-2. workspace creation and project setup
-3. runtime/request ownership
-4. settings ownership
-5. compatibility with old clients/servers
+- shared `Project` and `ProjectHostSetup` types
+- compatibility projection from existing `Repo[]`
+- persisted compatibility fields for projects and project-host setups
+- renderer hydration and fallback for older runtimes
+- project-aware sidebar grouping in existing repo grouping paths
+- default all-host Projects sidebar keeps projects outermost while preserving
+  host-section operational views for explicit host filters
+- first-pass host context badges for mixed-host project groups, without adding
+  badge noise to single-host project groups
+- project-host-aware workspace creation target resolver
+- optional workspace metadata for `projectId`, `hostId`, and
+  `projectHostSetupId`
+- setup-existing-folder API plumbing through local IPC/preload/runtime paths
+- project settings existing-folder setup form for known local, SSH, and active
+  runtime hosts
+- CLI commands for listing projects/setups and creating worktrees by
+  project/setup
+- composer `Run on` selector when a project has multiple ready setups
 
-The current branch has already started the additive migration by adding
-`Project` and `ProjectHostSetup` compatibility records, read-only APIs, runtime
-RPC methods, renderer hydration, and initial sidebar grouping support. The full
-project-first model is not finished until workspace creation, setup-on-host,
-settings, routing/caches, CLI/API, and end-to-end validation are updated too.
+Not complete yet:
+
+- clone/provision flows
+- bulk setup flows and setup for hosts that are not already known to the client
+- full project settings split into global and host-specific ownership
+- host settings/capability UI aligned with project setup
+- complete cache/request ownership audit
+- complete version-skew capability gating
+- full Electron and SSH end-to-end validation
 
 ## Recommended Implementation Shape
 
-Implement this as an additive migration:
+Implement this as an additive migration.
 
 1. Keep existing `Repo` APIs alive while adding project/setup records.
 2. Use conservative identity matching so only reliably linked checkouts merge
    into one project.
-3. Teach creation flows to resolve `{ projectId, hostId }` into the existing
-   repo/setup backend path.
-4. Add setup-on-host flows for local and SSH.
+3. Teach creation flows to resolve `{ projectId, hostId }` into a ready setup.
+4. Add setup-on-host flows for local, SSH, runtime, and future cloud hosts.
 5. Split settings into client, host, project, and project-host setup ownership.
 6. Audit host-local caches and runtime routing.
-7. Move the visible default UX to project-first once the underlying behavior is
-   real.
+7. Move visible default UX to project-first once behavior is real.
+8. Preserve a host-first operational view/filter for troubleshooting.
+9. Validate migration, creation, settings, sidebar, SSH, and version skew before
+   calling the model complete.
 
-This avoids a jarring migration for local-only users while still making SSH,
-VMs, remote servers, and future cloud hosts first-class.
+## Final Position
+
+Keep hosts visible, but do not make them the durable outermost object.
+
+The durable model should be project-first because it matches how users think
+about repo/worktree/task work, while still supporting SSH machines, VMs, remote
+servers, and future cloud compute as first-class places where a project can run.

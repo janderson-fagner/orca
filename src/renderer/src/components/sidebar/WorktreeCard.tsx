@@ -74,6 +74,7 @@ type WorktreeCardProps = {
   revealHighlightTone?: 'default' | 'ai'
   selectedWorktrees?: readonly Worktree[]
   hideRepoBadge?: boolean
+  hostContextLabel?: string
   inPinnedSection?: boolean
   contentIndent?: number
   flushSurface?: boolean
@@ -155,6 +156,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   onCardDragEnd,
   nativeDragEnabled = true,
   hideRepoBadge,
+  hostContextLabel,
   inPinnedSection = false,
   contentIndent = 0,
   flushSurface = false,
@@ -743,6 +745,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showInlineRepoBadge =
     compactCards && !!repo && !hideRepoBadge && !isFolder && !showPinnedRepoIcon
   const showRepoBadgeInMetaRow = !compactCards && !!repo && !hideRepoBadge && !showPinnedRepoIcon
+  const showHostContextBadge = !compactCards && !!hostContextLabel
   const showDetachedHeadInMetaRow = !compactCards && !isFolder && detachedHeadDisplay !== null
   const showBranch =
     !isFolder && branch.length > 0 && (!compactCards || branch !== worktree.displayName)
@@ -764,6 +767,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // metadata lane unless branch or detached-head identity has content.
   const hasDetailedMetaRowContent = Boolean(
     (showRepoBadgeInMetaRow && repo) ||
+    showHostContextBadge ||
     isFolder ||
     showBranch ||
     showDetachedHeadInMetaRow ||
@@ -1170,6 +1174,15 @@ const WorktreeCard = React.memo(function WorktreeCard({
                     {repo.displayName}
                   </span>
                 </div>
+              )}
+
+              {showHostContextBadge && (
+                <Badge
+                  variant="secondary"
+                  className="h-[16px] max-w-[7rem] shrink-0 rounded border border-border bg-accent px-1.5 text-[10px] font-medium leading-none text-muted-foreground dark:bg-accent/80 dark:border-border/50"
+                >
+                  <span className="truncate">{hostContextLabel}</span>
+                </Badge>
               )}
 
               {isFolder ? (
