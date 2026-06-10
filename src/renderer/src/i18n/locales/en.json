@@ -5037,6 +5037,11 @@
           "availableHostsDescription": "Hosts where this project is set up.",
           "availableHostsHelp": "Project paths and worktree settings are host-specific; creating a workspace can target any ready setup.",
           "currentSetup": "Current",
+          "hostSetupStateReady": "Ready",
+          "hostSetupStateNotSetUp": "Not set up",
+          "hostSetupStateSettingUp": "Setting up",
+          "hostSetupStateError": "Error",
+          "hostSetupStateUnsupported": "Unsupported",
           "499a437335": "Identity"
         },
         "RepositorySourceControlAiActionRows": {

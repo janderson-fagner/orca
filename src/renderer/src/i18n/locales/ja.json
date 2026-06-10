@@ -5017,6 +5017,11 @@
           "availableHostsDescription": "このプロジェクトがセットアップされているホスト。",
           "availableHostsHelp": "プロジェクトのパスとワークツリー設定はホストごとに異なります。ワークスペースは準備済みの任意のセットアップで作成できます。",
           "currentSetup": "現在",
+          "hostSetupStateReady": "準備完了",
+          "hostSetupStateNotSetUp": "未セットアップ",
+          "hostSetupStateSettingUp": "セットアップ中",
+          "hostSetupStateError": "エラー",
+          "hostSetupStateUnsupported": "未対応",
           "499a437335": "身元"
         },
         "RepositorySourceControlAiActionRows": {

@@ -1,7 +1,8 @@
 import { getExecutionHostLabel } from '../../../../shared/execution-host'
-import type { Repo } from '../../../../shared/types'
+import type { ProjectHostSetupState, Repo } from '../../../../shared/types'
 import { useAppStore } from '../../store'
 import { getProjectHostSetupProjectionFromState } from '../../store/selectors'
+import { cn } from '../../lib/utils'
 import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsBadge } from './SettingsFormControls'
@@ -16,12 +17,38 @@ type RepositoryHostSetupsSectionProps = {
   searchEntries: SettingsSearchEntry[]
 }
 
+function getSetupStateLabel(setupState: ProjectHostSetupState): string {
+  switch (setupState) {
+    case 'ready':
+      return translate('auto.components.settings.RepositoryPane.hostSetupStateReady', 'Ready')
+    case 'not-set-up':
+      return translate(
+        'auto.components.settings.RepositoryPane.hostSetupStateNotSetUp',
+        'Not set up'
+      )
+    case 'setting-up':
+      return translate(
+        'auto.components.settings.RepositoryPane.hostSetupStateSettingUp',
+        'Setting up'
+      )
+    case 'error':
+      return translate('auto.components.settings.RepositoryPane.hostSetupStateError', 'Error')
+    case 'unsupported':
+      return translate(
+        'auto.components.settings.RepositoryPane.hostSetupStateUnsupported',
+        'Unsupported'
+      )
+  }
+}
+
 export function RepositoryHostSetupsSection({
   repo,
   forceVisible,
   searchQuery,
   searchEntries
 }: RepositoryHostSetupsSectionProps): React.JSX.Element | null {
+  const openSettingsPage = useAppStore((state) => state.openSettingsPage)
+  const openSettingsTarget = useAppStore((state) => state.openSettingsTarget)
   const projectHostSetupProjection = useAppStore((state) =>
     getProjectHostSetupProjectionFromState(state)
   )
@@ -64,28 +91,42 @@ export function RepositoryHostSetupsSection({
         </p>
       </div>
       <div className="divide-y divide-border rounded-md border border-border">
-        {projectHostSetups.map((setup) => (
-          <div key={setup.id} className="flex items-start gap-3 px-3 py-2.5">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-sm font-medium">
-                  {getExecutionHostLabel(setup.hostId)}
-                </span>
-                <SettingsBadge tone={setup.setupState === 'ready' ? 'accent' : 'muted'}>
-                  {setup.setupState}
-                </SettingsBadge>
+        {projectHostSetups.map((setup) => {
+          const isCurrentSetup = setup.repoId === repo.id
+          return (
+            <button
+              key={setup.id}
+              type="button"
+              className={cn(
+                'flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors',
+                isCurrentSetup ? 'bg-muted/30' : 'hover:bg-muted/40'
+              )}
+              onClick={() => {
+                openSettingsPage()
+                openSettingsTarget({ pane: 'repo', repoId: setup.repoId })
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium">
+                    {getExecutionHostLabel(setup.hostId)}
+                  </span>
+                  <SettingsBadge tone={setup.setupState === 'ready' ? 'accent' : 'muted'}>
+                    {getSetupStateLabel(setup.setupState)}
+                  </SettingsBadge>
+                </div>
+                <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                  {setup.path}
+                </p>
               </div>
-              <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                {setup.path}
-              </p>
-            </div>
-            {setup.repoId === repo.id ? (
-              <SettingsBadge>
-                {translate('auto.components.settings.RepositoryPane.currentSetup', 'Current')}
-              </SettingsBadge>
-            ) : null}
-          </div>
-        ))}
+              {isCurrentSetup ? (
+                <SettingsBadge>
+                  {translate('auto.components.settings.RepositoryPane.currentSetup', 'Current')}
+                </SettingsBadge>
+              ) : null}
+            </button>
+          )
+        })}
       </div>
     </SearchableSetting>
   )

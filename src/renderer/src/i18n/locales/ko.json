@@ -5017,6 +5017,11 @@
           "availableHostsDescription": "이 프로젝트가 설정된 호스트입니다.",
           "availableHostsHelp": "프로젝트 경로와 워크트리 설정은 호스트별로 다릅니다. 워크스페이스는 준비된 모든 설정에서 만들 수 있습니다.",
           "currentSetup": "현재",
+          "hostSetupStateReady": "준비됨",
+          "hostSetupStateNotSetUp": "설정되지 않음",
+          "hostSetupStateSettingUp": "설정 중",
+          "hostSetupStateError": "오류",
+          "hostSetupStateUnsupported": "지원되지 않음",
           "499a437335": "신원"
         },
         "RepositorySourceControlAiActionRows": {

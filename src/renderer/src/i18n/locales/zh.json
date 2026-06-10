@@ -5017,6 +5017,11 @@
           "availableHostsDescription": "此项目已设置的主机。",
           "availableHostsHelp": "项目路径和工作树设置按主机区分；创建工作区可选择任何已就绪的设置。",
           "currentSetup": "当前",
+          "hostSetupStateReady": "已就绪",
+          "hostSetupStateNotSetUp": "未设置",
+          "hostSetupStateSettingUp": "设置中",
+          "hostSetupStateError": "错误",
+          "hostSetupStateUnsupported": "不支持",
           "499a437335": "身份"
         },
         "RepositorySourceControlAiActionRows": {
