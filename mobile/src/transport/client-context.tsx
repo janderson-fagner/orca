@@ -19,6 +19,7 @@ import {
   useState,
   type ReactNode
 } from 'react'
+import { AppState } from 'react-native'
 import { connect, type RpcClient } from './rpc-client'
 import { loadHosts } from './host-store'
 import type { ConnectionState, HostProfile } from './types'
@@ -320,6 +321,22 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Why: Android/iOS suspend JS timers and can silently drop sockets while
+  // the app is backgrounded; the reconnect loop may even park at its
+  // give-up cap before the user returns. Nudge every live client on
+  // foreground so sessions recover without an app restart (issue #5049).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') {
+        return
+      }
+      for (const entry of storeRef.current.values()) {
+        entry.client.notifyForeground()
+      }
+    })
+    return () => sub.remove()
+  }, [])
+
   const value = useMemo<ContextValue>(
     () => ({
       acquire,
@@ -387,16 +404,13 @@ export function useHostClient(hostId: string | undefined): {
         return
       }
       setState(next)
-      // Why: if the client was null at first acquire (async open), the
-      // first state change ('connecting'/'handshaking'/'connected') is our
-      // signal to re-read.
-      if (clientRef.current == null) {
-        const all = ctx.getAllClients()
-        const found = all.find((entry) => entry.hostId === hostId)
-        if (found) {
-          clientRef.current = found.client
-          force((n) => n + 1)
-        }
+      // Why: the client materialises after an async open, and forceReconnect
+      // swaps in a fresh client object. Re-read on every state change so a
+      // mounted screen never keeps driving a stale (closed) client.
+      const found = ctx.getAllClients().find((entry) => entry.hostId === hostId)
+      if (found && found.client !== clientRef.current) {
+        clientRef.current = found.client
+        force((n) => n + 1)
       }
     })
     const initial = ctx.acquire(hostId)
