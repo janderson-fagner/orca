@@ -67,7 +67,8 @@ import {
 import {
   normalizeExecutionHostOrder,
   normalizeExecutionHostScope,
-  normalizeVisibleExecutionHostIds
+  normalizeVisibleExecutionHostIds,
+  type ExecutionHostId
 } from '../../../../shared/execution-host'
 import {
   WORKSPACE_BOARD_COLUMN_WIDTH_DEFAULT,
@@ -624,6 +625,11 @@ export type UISlice = {
   setGithubTaskDrawerWorkItem: (item: GitHubWorkItem | null) => void
   newWorkspaceDraft: {
     repoId: string | null
+    // Why: project-first workspace creation resolves through these when present,
+    // while old drafts can keep using only repoId during the additive migration.
+    projectId?: string | null
+    hostId?: ExecutionHostId | null
+    projectHostSetupId?: string | null
     name: string
     prompt: string
     note: string

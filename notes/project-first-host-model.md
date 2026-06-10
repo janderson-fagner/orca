@@ -711,17 +711,27 @@ Landed so far:
 - Updated the sidebar `groupBy: repo` row builder to group by durable project
   identity when project/setup data exists, while keeping a repo-by-repo fallback
   for projects that have not been linked across hosts.
+- Added a project-host-aware workspace creation target resolver. The visible
+  composer still submits the current `repoId` for compatibility, but saved
+  drafts can now carry `projectId`, `hostId`, and `projectHostSetupId`, and the
+  initial creation target can resolve those fields through a ready setup before
+  falling back to the legacy repo priority order.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, and runtime RPC
   routing. Sidebar row-builder tests now cover project-first multi-host grouping
-  and same-name repo separation without project identity.
+  and same-name repo separation without project identity. Workspace target tests
+  cover local-only fallback, focused-host setup selection, explicit
+  project-plus-host resolution, same-name non-merging, and unavailable setup
+  reasons.
 
 Important limitation:
 
 - This is not the full migration yet. `Repo` remains the source of truth for the
-  compatibility records, and create-workspace/settings/sidebar flows still use
-  the current repo-centric APIs until the later steps above are implemented.
+  compatibility records, and workspace creation still maps the resolved
+  project-host setup back into the existing repo-centric `createWorktree` API.
+  Settings and setup-on-host flows still use the current repo-centric APIs until
+  later steps are implemented.
 
 Remaining end-to-end work:
 

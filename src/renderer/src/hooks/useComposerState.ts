@@ -79,7 +79,11 @@ import {
   getSelectedRepoSshGate,
   isSshConnectInProgress
 } from '@/lib/new-workspace-ssh-gate'
-import { getComposerEligibleRepos, resolveComposerRepoId } from '@/lib/new-workspace-composer-repo'
+import { getComposerEligibleRepos } from '@/lib/new-workspace-composer-repo'
+import {
+  resolveWorkspaceCreationRepoId,
+  resolveWorkspaceCreationTarget
+} from '@/lib/project-host-workspace-target'
 import { queueNewWorkspaceTerminalFocus } from '@/lib/new-workspace-terminal-focus'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
 import { getSuggestedCreatureName } from '@/components/sidebar/worktree-name-suggestions'
@@ -311,6 +315,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   } = actions
 
   const repos = useAppStore((s) => s.repos)
+  const projects = useAppStore((s) => s.projects)
+  const projectHostSetups = useAppStore((s) => s.projectHostSetups)
   const activeRepoId = useAppStore((s) => s.activeRepoId)
   const settings = useAppStore((s) => s.settings)
   const newWorkspaceDraft = useAppStore((s) => s.newWorkspaceDraft)
@@ -322,6 +328,11 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const eligibleRepos = useMemo(() => getComposerEligibleRepos(repos), [repos])
   const draftRepoId = persistDraft ? (newWorkspaceDraft?.repoId ?? null) : null
+  const draftProjectId = persistDraft ? (newWorkspaceDraft?.projectId ?? null) : null
+  const draftHostId = persistDraft ? (newWorkspaceDraft?.hostId ?? null) : null
+  const draftProjectHostSetupId = persistDraft
+    ? (newWorkspaceDraft?.projectHostSetupId ?? null)
+    : null
   const resolvedInitialWorkspaceStatus = useMemo(
     () =>
       initialWorkspaceStatus && isWorkspaceStatusId(initialWorkspaceStatus, workspaceStatuses)
@@ -330,17 +341,33 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     [initialWorkspaceStatus, workspaceStatuses]
   )
 
-  const resolvedInitialRepoId = resolveComposerRepoId({
+  const resolvedInitialRepoId = resolveWorkspaceCreationRepoId({
     eligibleRepos,
+    projects,
+    projectHostSetups,
     draftRepoId,
     initialRepoId,
     activeRepoId,
+    projectId: draftProjectId,
+    hostId: draftHostId,
+    projectHostSetupId: draftProjectHostSetupId,
     focusedHostScope: workspaceHostScope
   })
 
   const [internalRepoId, setInternalRepoId] = useState<string>(resolvedInitialRepoId)
   const [projectError, setProjectError] = useState<string | null>(null)
   const repoId = repoIdOverride ?? internalRepoId
+  const selectedWorkspaceTarget = useMemo(
+    () =>
+      resolveWorkspaceCreationTarget({
+        eligibleRepos,
+        projects,
+        projectHostSetups,
+        draftRepoId: repoId,
+        focusedHostScope: workspaceHostScope
+      }),
+    [eligibleRepos, projectHostSetups, projects, repoId, workspaceHostScope]
+  )
   const selectedRepo = eligibleRepos.find((repo) => repo.id === repoId)
   const selectedRepoSettings = useMemo(() => {
     if (!settings) {
@@ -823,6 +850,16 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     }
     setNewWorkspaceDraft({
       repoId: repoId || null,
+      projectId:
+        selectedWorkspaceTarget.status === 'ready'
+          ? selectedWorkspaceTarget.target.projectId
+          : null,
+      hostId:
+        selectedWorkspaceTarget.status === 'ready' ? selectedWorkspaceTarget.target.hostId : null,
+      projectHostSetupId:
+        selectedWorkspaceTarget.status === 'ready'
+          ? selectedWorkspaceTarget.target.projectHostSetupId
+          : null,
       name,
       prompt: agentPrompt,
       note,
@@ -848,6 +885,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     note,
     name,
     repoId,
+    selectedWorkspaceTarget,
     setNewWorkspaceDraft,
     tuiAgent
   ])
