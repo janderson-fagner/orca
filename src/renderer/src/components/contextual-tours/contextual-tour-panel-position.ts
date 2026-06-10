@@ -102,6 +102,8 @@ export function clampContextualTourPanelPosition(args: {
   return { left: clampedLeft, top: clampedTop, placement, arrowOffset }
 }
 
+// Why: flip to the opposite side when the preferred side lacks room, and fall
+// back to the horizontal axis when neither vertical side fits.
 function resolvePreferredPlacement(args: {
   preferredPlacement: ContextualTourPanelPlacement
   roomAbove: number
@@ -137,6 +139,8 @@ function resolvePreferredPlacement(args: {
   return getPreferredHorizontalPlacement(args)
 }
 
+// Why: prefer right when it fits or has at least as much room as left,
+// matching the no-preference placement heuristic above.
 function getPreferredHorizontalPlacement(args: {
   roomLeft: number
   roomRight: number

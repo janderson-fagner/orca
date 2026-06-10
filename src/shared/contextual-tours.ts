@@ -170,6 +170,8 @@ export const CONTEXTUAL_TOURS = [
       {
         title: 'Run an agent across every repo',
         body: 'Agents here run in any folder you choose. Point one at the directory above your services to work across all your repos at once.',
+        // Why: the per-action anchors only render in the empty state; fall back
+        // to the panel surface when floating tabs already exist.
         targetSelector:
           '[data-contextual-tour-target="floating-workspace-new-terminal"], [data-contextual-tour-target="floating-workspace-surface"]',
         requiredForStart: true,
