@@ -15,6 +15,7 @@ import { normalizeTaskProviderSettings } from '../../../../shared/task-providers
 import { normalizeOpenInApplications } from '../../../../shared/open-in-applications'
 import { createSettingsSearchState, type SettingsSearchState } from './settings-search-state'
 import { normalizeDisabledTuiAgents } from '../../../../shared/tui-agent-selection'
+import { bumpProviderRuntimeSessionGeneration } from '@/lib/provider-runtime-context'
 import { normalizeUiLanguage } from '../../../../shared/ui-language'
 import { translate } from '@/i18n/i18n'
 
@@ -129,6 +130,7 @@ export const createSettingsSlice: StateCreator<AppState, [], [], SettingsSlice> 
       const nextSettings = await window.api.settings.set({
         activeRuntimeEnvironmentId: nextId
       })
+      bumpProviderRuntimeSessionGeneration()
       set((s) => ({
         // Why: in the multi-host model this is a focus/default-host change,
         // not a teardown boundary. Existing host-owned sessions stay alive.
