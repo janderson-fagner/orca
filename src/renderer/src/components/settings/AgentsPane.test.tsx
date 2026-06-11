@@ -18,7 +18,8 @@ import {
   AgentsPane,
   getAgentsPaneSearchEntries,
   buildAgentAvailabilitySettingsUpdate,
-  createAgentAvailabilityUpdateQueue
+  createAgentAvailabilityUpdateQueue,
+  shouldResetUnavailableWslAgentRuntime
 } from './AgentsPane'
 import { matchesSettingsSearch } from './settings-search'
 
@@ -164,6 +165,47 @@ describe('AgentsPane', () => {
     expect(markup).not.toContain('Agent location')
     expect(markup).not.toContain('aria-label="Agent location"')
     expect(markup).not.toContain('WSL is not available on this machine.')
+  })
+
+  it('resets a hidden stale WSL agent runtime when WSL is not supported', () => {
+    expect(
+      shouldResetUnavailableWslAgentRuntime({
+        localAgentRuntime: 'wsl',
+        wslSupportedPlatform: false,
+        wslAvailable: false,
+        wslCapabilitiesLoading: false
+      })
+    ).toBe(true)
+  })
+
+  it('resets a stale WSL agent runtime when WSL is unavailable', () => {
+    expect(
+      shouldResetUnavailableWslAgentRuntime({
+        localAgentRuntime: 'wsl',
+        wslSupportedPlatform: true,
+        wslAvailable: false,
+        wslCapabilitiesLoading: false
+      })
+    ).toBe(true)
+  })
+
+  it('keeps a WSL agent runtime while WSL capabilities are loading or available', () => {
+    expect(
+      shouldResetUnavailableWslAgentRuntime({
+        localAgentRuntime: 'wsl',
+        wslSupportedPlatform: true,
+        wslAvailable: false,
+        wslCapabilitiesLoading: true
+      })
+    ).toBe(false)
+    expect(
+      shouldResetUnavailableWslAgentRuntime({
+        localAgentRuntime: 'wsl',
+        wslSupportedPlatform: true,
+        wslAvailable: true,
+        wslCapabilitiesLoading: false
+      })
+    ).toBe(false)
   })
 
   it('describes Windows lid behavior according to the device', () => {
