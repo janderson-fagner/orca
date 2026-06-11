@@ -60,6 +60,7 @@ describe('getEditorExternalWatchTargets', () => {
     runtimeEnvironmentId?: string | null
     rightSidebarOpen?: boolean
     rightSidebarTab?: EditorExternalWatchTargetState['rightSidebarTab']
+    rightSidebarExplorerView?: EditorExternalWatchTargetState['rightSidebarExplorerView']
   }): EditorExternalWatchTargetState => ({
     openFiles: args.openFiles ?? [],
     worktreesByRepo: { [args.repo.id]: [args.worktree] },
@@ -67,6 +68,7 @@ describe('getEditorExternalWatchTargets', () => {
     activeWorktreeId: args.activeWorktreeId ?? null,
     rightSidebarOpen: args.rightSidebarOpen ?? false,
     rightSidebarTab: args.rightSidebarTab ?? 'explorer',
+    rightSidebarExplorerView: args.rightSidebarExplorerView ?? 'files',
     settings:
       args.runtimeEnvironmentId === undefined
         ? null
@@ -153,6 +155,24 @@ describe('getEditorExternalWatchTargets', () => {
         runtimeEnvironmentId: 'owner-runtime'
       }
     ])
+  })
+
+  it('does not watch the active worktree while Explorer search is visible', () => {
+    const repo = makeRepo('repo-active-search')
+    const worktree = makeWorktree(repo.id, 'wt-active-search')
+
+    expect(
+      getEditorExternalWatchTargets(
+        makeState({
+          repo,
+          worktree,
+          activeWorktreeId: worktree.id,
+          rightSidebarOpen: true,
+          rightSidebarTab: 'explorer',
+          rightSidebarExplorerView: 'search'
+        })
+      ).targets
+    ).toEqual([])
   })
 
   it('keeps an explicitly local active worktree local when a runtime is focused', () => {

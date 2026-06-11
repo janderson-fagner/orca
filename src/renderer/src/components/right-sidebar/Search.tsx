@@ -35,6 +35,7 @@ export default function Search(): React.JSX.Element {
   const fileSearchLoading = searchState?.loading ?? false
   const fileSearchCollapsedFiles = searchState?.collapsedFiles ?? EMPTY_COLLAPSED_FILES
   const fileSearchSeedRequestId = searchState?.seedRequestId
+  const fileSearchFocusRequestId = searchState?.focusRequestId
 
   const updateFileSearchState = useAppStore((s) => s.updateFileSearchState)
   const consumeFileSearchSeedRequest = useAppStore((s) => s.consumeFileSearchSeedRequest)
@@ -282,6 +283,13 @@ export default function Search(): React.JSX.Element {
     scheduleSeededInputSelection
   ])
 
+  useEffect(() => {
+    if (!activeWorktreeId || fileSearchFocusRequestId === undefined) {
+      return
+    }
+    inputRef.current?.focus()
+  }, [activeWorktreeId, fileSearchFocusRequestId])
+
   const handleClearSearch = useCallback(() => {
     cancelPendingSearch()
     clearActiveSearch()
@@ -339,7 +347,11 @@ export default function Search(): React.JSX.Element {
   if (!activeWorktreeId) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
-        {translate("auto.components.right.sidebar.Search.98c8435e36", "Select a workspace to search")}</div>
+        {translate(
+          'auto.components.right.sidebar.Search.98c8435e36',
+          'Select a workspace to search'
+        )}
+      </div>
     )
   }
 
@@ -385,9 +397,15 @@ export default function Search(): React.JSX.Element {
          pinned at the top while the user scrolls through results. */}
       {deferredSearchResults && searchRows.length > 0 && (
         <div className="px-2 py-1 text-[10px] text-muted-foreground border-b border-border">
-          {deferredSearchResults.totalMatches} {translate("auto.components.right.sidebar.Search.6aeda362ed", "result")}{deferredSearchResults.totalMatches !== 1 ? 's' : ''} {translate("auto.components.right.sidebar.Search.4107975b3a", "in")}{' '}
-          {deferredSearchResults.files.length} {translate("auto.components.right.sidebar.Search.0b8104eaf2", "file")}{deferredSearchResults.files.length !== 1 ? 's' : ''}
-          {deferredSearchResults.truncated && translate("auto.components.right.sidebar.Search.dcc294f28d", "(results truncated)")}
+          {deferredSearchResults.totalMatches}{' '}
+          {translate('auto.components.right.sidebar.Search.6aeda362ed', 'result')}
+          {deferredSearchResults.totalMatches !== 1 ? 's' : ''}{' '}
+          {translate('auto.components.right.sidebar.Search.4107975b3a', 'in')}{' '}
+          {deferredSearchResults.files.length}{' '}
+          {translate('auto.components.right.sidebar.Search.0b8104eaf2', 'file')}
+          {deferredSearchResults.files.length !== 1 ? 's' : ''}
+          {deferredSearchResults.truncated &&
+            translate('auto.components.right.sidebar.Search.dcc294f28d', '(results truncated)')}
         </div>
       )}
 
@@ -435,12 +453,17 @@ export default function Search(): React.JSX.Element {
 
         {!fileSearchResults && fileSearchQuery && !fileSearchLoading && (
           <div className="flex items-center justify-center h-32 text-muted-foreground text-xs">
-            {translate("auto.components.right.sidebar.Search.d56d140747", "Press Enter to search")}</div>
+            {translate('auto.components.right.sidebar.Search.d56d140747', 'Press Enter to search')}
+          </div>
         )}
 
         {!fileSearchQuery && (
           <div className="flex items-center justify-center h-32 text-muted-foreground text-xs">
-            {translate("auto.components.right.sidebar.Search.1abfb25a66", "Type to search in files")}</div>
+            {translate(
+              'auto.components.right.sidebar.Search.1abfb25a66',
+              'Type to search in files'
+            )}
+          </div>
         )}
       </div>
     </div>

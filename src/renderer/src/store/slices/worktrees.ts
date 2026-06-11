@@ -682,6 +682,25 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     }
     return changed ? out : obj
   }
+  const pruneRightSidebarTabByWorktree = (): AppState['rightSidebarTabByWorktree'] => {
+    const omitted = omitByWorktree(s.rightSidebarTabByWorktree)
+    let changed = omitted !== s.rightSidebarTabByWorktree
+    const out: AppState['rightSidebarTabByWorktree'] = {}
+    for (const [id, tab] of Object.entries(omitted)) {
+      if (
+        tab === 'explorer' ||
+        tab === 'vault' ||
+        tab === 'source-control' ||
+        tab === 'checks' ||
+        tab === 'ports'
+      ) {
+        out[id] = tab
+      } else {
+        changed = true
+      }
+    }
+    return changed ? out : omitted
+  }
   const omitByTabId = <T>(obj: Record<string, T>): Record<string, T> => {
     let changed = false
     const out = { ...obj }
@@ -754,7 +773,8 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     activeTabIdByWorktree: omitByWorktree(s.activeTabIdByWorktree),
     tabBarOrderByWorktree: omitByWorktree(s.tabBarOrderByWorktree),
     pendingReconnectTabByWorktree: omitByWorktree(s.pendingReconnectTabByWorktree),
-    rightSidebarTabByWorktree: omitByWorktree(s.rightSidebarTabByWorktree),
+    rightSidebarTabByWorktree: pruneRightSidebarTabByWorktree(),
+    rightSidebarExplorerViewByWorktree: omitByWorktree(s.rightSidebarExplorerViewByWorktree ?? {}),
     // Split-tab / unified tab state
     unifiedTabsByWorktree: omitByWorktree(s.unifiedTabsByWorktree),
     groupsByWorktree: omitByWorktree(s.groupsByWorktree),
@@ -1533,6 +1553,10 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         delete nextExpandedDirs[worktreeId]
         const nextShowDotfilesByWorktree = { ...s.showDotfilesByWorktree }
         delete nextShowDotfilesByWorktree[worktreeId]
+        const nextRightSidebarExplorerViewByWorktree = {
+          ...s.rightSidebarExplorerViewByWorktree
+        }
+        delete nextRightSidebarExplorerViewByWorktree[worktreeId]
         // If the active file belonged to the removed worktree, clear it
         const activeFileCleared = s.activeFileId
           ? s.openFiles.some((f) => f.id === s.activeFileId && f.worktreeId === worktreeId)
@@ -1583,6 +1607,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           activeFileIdByWorktree: nextActiveFileIdByWorktree,
           activeBrowserTabIdByWorktree: nextActiveBrowserTabIdByWorktree,
           activeTabTypeByWorktree: nextActiveTabTypeByWorktree,
+          rightSidebarExplorerViewByWorktree: nextRightSidebarExplorerViewByWorktree,
           activeTabIdByWorktree: nextActiveTabIdByWorktree,
           tabBarOrderByWorktree: nextTabBarOrderByWorktree,
           pendingReconnectTabByWorktree: nextPendingReconnectTabByWorktree,
@@ -2278,6 +2303,10 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       shouldClearUnread = Boolean(worktree?.isUnread)
 
       // Restore per-worktree editor state
+      // Why: Search now lives under Explorer, so the files/search sub-route
+      // must switch with the worktree instead of leaking the previous one.
+      const restoredRightSidebarExplorerView =
+        s.rightSidebarExplorerViewByWorktree?.[worktreeId] ?? 'files'
       const restoredFileId = s.activeFileIdByWorktree[worktreeId] ?? null
       const restoredBrowserTabId = s.activeBrowserTabIdByWorktree[worktreeId] ?? null
       const restoredTabType = s.activeTabTypeByWorktree[worktreeId] ?? 'terminal'
@@ -2469,6 +2498,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         s.activeFileId !== activeFileId ||
         s.activeBrowserTabId !== activeBrowserTabId ||
         s.activeTabType !== activeTabType ||
+        s.rightSidebarExplorerView !== restoredRightSidebarExplorerView ||
         s.activeTabId !== activeTabId ||
         nextActiveTabTypeByWorktree !== s.activeTabTypeByWorktree ||
         nextEverActivated !== s.everActivatedWorktreeIds ||
@@ -2488,6 +2518,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         activeBrowserTabId,
         activeTabType,
         activeTabTypeByWorktree: nextActiveTabTypeByWorktree,
+        rightSidebarExplorerView: restoredRightSidebarExplorerView,
         activeTabId,
         everActivatedWorktreeIds: nextEverActivated,
         ...(nextWorktrees !== s.worktreesByRepo ? { worktreesByRepo: nextWorktrees } : {}),

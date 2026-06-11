@@ -29,7 +29,9 @@ vi.mock('@/store', () => ({
       rightSidebarWidth: 350,
       setRightSidebarWidth: vi.fn(),
       rightSidebarTab: 'explorer',
+      rightSidebarExplorerView: 'files',
       setRightSidebarTab: vi.fn(),
+      showRightSidebarFiles: vi.fn(),
       toggleRightSidebar: vi.fn(),
       activityBarPosition: mockAppState.activityBarPosition,
       setActivityBarPosition: vi.fn(),
@@ -96,10 +98,6 @@ vi.mock('./SourceControl', () => ({
   default: () => <div data-source-control />
 }))
 
-vi.mock('./Search', () => ({
-  default: () => <div data-search-panel />
-}))
-
 vi.mock('./ChecksPanel', () => ({
   default: () => <div data-checks-panel />
 }))
@@ -146,7 +144,6 @@ describe('rendered right sidebar titlebar drag regions', () => {
     expect(markup).toContain('right-sidebar-header-drag')
 
     expectNoDrag(buttonOpeningTag(markup, 'Explorer'))
-    expectNoDrag(buttonOpeningTag(markup, 'Search'))
     expectNoDrag(buttonOpeningTag(markup, 'Source Control'))
     expectNoDrag(buttonOpeningTag(markup, 'Checks'))
     expect(buttonOpeningTag(markup, 'Toggle right sidebar')).toContain('sidebar-toggle')
@@ -185,7 +182,6 @@ describe('rendered right sidebar titlebar drag regions', () => {
     expect(sideStrip).toContain('data-context-menu-trigger="true"')
 
     expectNoDrag(buttonOpeningTag(markup, 'Explorer'))
-    expectNoDrag(buttonOpeningTag(markup, 'Search'))
     expectNoDrag(buttonOpeningTag(markup, 'Source Control'))
     expectNoDrag(buttonOpeningTag(markup, 'Checks'))
     expect(buttonOpeningTag(markup, 'Toggle right sidebar')).toContain('sidebar-toggle')
@@ -198,7 +194,6 @@ describe('rendered right sidebar titlebar drag regions', () => {
 
     expect(markup).not.toContain('data-file-explorer')
     expect(markup).not.toContain('data-source-control')
-    expect(markup).not.toContain('data-search-panel')
     expect(markup).not.toContain('data-checks-panel')
     expect(markup).not.toContain('data-ports-panel')
   })

@@ -7511,7 +7511,9 @@
             "e041998cad": "dejar de generar"
           },
           "FileExplorer": {
-            "79b1537dd3": "Seleccione un espacio de trabajo para buscar archivos"
+            "79b1537dd3": "Seleccione un espacio de trabajo para buscar archivos",
+            "4da4d89845": "Volver al explorador",
+            "6ed5ce817b": "Buscar"
           },
           "FileExplorerBackgroundMenu": {
             "3b5e2dcb8d": "Nueva carpeta",
@@ -7547,7 +7549,8 @@
             "78f133232c": "Mostrar archivos de puntos",
             "31b4c3195d": "Más acciones del explorador",
             "d95e30fe28": "Actualizar explorador",
-            "6026b16950": "Contraer todo"
+            "6026b16950": "Contraer todo",
+            "693cbeadd0": "Buscar"
           },
           "FileExplorerTreeStatus": {
             "ce03835e1f": "No hay archivos en este espacio de trabajo",

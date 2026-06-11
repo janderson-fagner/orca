@@ -410,6 +410,7 @@ export function getDefaultUIState(): PersistedUIState {
     sidebarWidth: 280,
     rightSidebarOpen: true,
     rightSidebarTab: 'explorer',
+    rightSidebarExplorerView: 'files',
     rightSidebarWidth: 350,
     groupBy: 'repo',
     sortBy: 'recent',

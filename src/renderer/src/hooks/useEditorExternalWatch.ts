@@ -89,6 +89,7 @@ export type EditorExternalWatchTargetState = Pick<
   | 'settings'
   | 'rightSidebarOpen'
   | 'rightSidebarTab'
+  | 'rightSidebarExplorerView'
 >
 
 let cachedOpenFiles: AppState['openFiles'] | null = null
@@ -98,6 +99,7 @@ let cachedActiveWorktreeId: string | null = null
 let cachedRuntimeEnvironmentId: string | undefined
 let cachedRightSidebarOpen: boolean | null = null
 let cachedRightSidebarTab: AppState['rightSidebarTab'] | null = null
+let cachedRightSidebarExplorerView: AppState['rightSidebarExplorerView'] | null = null
 let cachedWatchedTargetsSnapshot: WatchedTargetsSnapshot = { targets: [], targetsKey: '' }
 
 export function getWatchedTargetKey(target: WatchedTarget): string {
@@ -122,7 +124,8 @@ export function getEditorExternalWatchTargets(
     cachedActiveWorktreeId === state.activeWorktreeId &&
     cachedRuntimeEnvironmentId === runtimeEnvironmentId &&
     cachedRightSidebarOpen === state.rightSidebarOpen &&
-    cachedRightSidebarTab === state.rightSidebarTab
+    cachedRightSidebarTab === state.rightSidebarTab &&
+    cachedRightSidebarExplorerView === state.rightSidebarExplorerView
   ) {
     return cachedWatchedTargetsSnapshot
   }
@@ -142,7 +145,12 @@ export function getEditorExternalWatchTargets(
     // storing the tab, so an ownerless stored tab must stay local here.
     owners.add(openFileRuntimeOwner(f))
   }
-  if (state.activeWorktreeId && state.rightSidebarOpen && state.rightSidebarTab === 'explorer') {
+  if (
+    state.activeWorktreeId &&
+    state.rightSidebarOpen &&
+    state.rightSidebarTab === 'explorer' &&
+    state.rightSidebarExplorerView === 'files'
+  ) {
     // Why: the right sidebar stays mounted while hidden; do not create a
     // worktree-level watcher just because the user clicked a workspace.
     // macOS can surface privacy prompts for those passive filesystem probes.
@@ -188,6 +196,7 @@ export function getEditorExternalWatchTargets(
   cachedRuntimeEnvironmentId = runtimeEnvironmentId
   cachedRightSidebarOpen = state.rightSidebarOpen
   cachedRightSidebarTab = state.rightSidebarTab
+  cachedRightSidebarExplorerView = state.rightSidebarExplorerView
 
   if (targetsKey === cachedWatchedTargetsSnapshot.targetsKey) {
     return cachedWatchedTargetsSnapshot

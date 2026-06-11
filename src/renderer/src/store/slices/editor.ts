@@ -23,7 +23,8 @@ import type {
   Tab,
   TabGroup,
   GitUpstreamStatus,
-  RightSidebarTab,
+  ActiveRightSidebarTab,
+  RightSidebarExplorerView,
   SearchResult,
   WorkspaceSessionState,
   WorkspaceVisibleTabType
@@ -51,7 +52,30 @@ import { createUntitledMarkdownFileWithTemplateSelection } from '@/lib/create-un
 import { extractIpcErrorMessage } from '@/lib/ipc-error'
 import { translate } from '@/i18n/i18n'
 
-export type { RightSidebarTab } from '../../../../shared/types'
+export type {
+  ActiveRightSidebarTab,
+  RightSidebarExplorerView,
+  RightSidebarTab
+} from '../../../../shared/types'
+
+const DEFAULT_FILE_SEARCH_STATE = {
+  query: '',
+  caseSensitive: false,
+  wholeWord: false,
+  useRegex: false,
+  includePattern: '',
+  excludePattern: '',
+  results: null,
+  loading: false,
+  collapsedFiles: new Set<string>()
+} satisfies Omit<
+  EditorSlice['fileSearchStateByWorktree'][string],
+  'seedRequestId' | 'focusRequestId'
+>
+
+function defaultFileSearchState(): EditorSlice['fileSearchStateByWorktree'][string] {
+  return { ...DEFAULT_FILE_SEARCH_STATE, collapsedFiles: new Set<string>() }
+}
 
 export type DiffSource =
   | 'unstaged'
@@ -303,13 +327,21 @@ export type EditorSlice = {
   // Right sidebar
   rightSidebarOpen: boolean
   rightSidebarWidth: number
-  rightSidebarTab: RightSidebarTab
-  rightSidebarTabByWorktree: Record<string, RightSidebarTab>
+  rightSidebarTab: ActiveRightSidebarTab
+  rightSidebarExplorerView: RightSidebarExplorerView
+  rightSidebarTabByWorktree: Record<string, ActiveRightSidebarTab>
+  rightSidebarExplorerViewByWorktree: Record<string, RightSidebarExplorerView>
   activityBarPosition: ActivityBarPosition
   toggleRightSidebar: () => void
   setRightSidebarOpen: (open: boolean) => void
   setRightSidebarWidth: (width: number) => void
-  setRightSidebarTab: (tab: RightSidebarTab) => void
+  setRightSidebarTab: (tab: ActiveRightSidebarTab) => void
+  setRightSidebarExplorerView: (view: RightSidebarExplorerView) => void
+  showRightSidebarFiles: () => void
+  showRightSidebarSearch: (payload?: {
+    query?: string | null
+    includePattern?: string | null
+  }) => void
   setActivityBarPosition: (position: ActivityBarPosition) => void
 
   // File explorer state
@@ -541,6 +573,7 @@ export type EditorSlice = {
       loading: boolean
       collapsedFiles: Set<string>
       seedRequestId?: number
+      focusRequestId?: number
     }
   >
   updateFileSearchState: (
@@ -1364,12 +1397,91 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   rightSidebarOpen: false,
   rightSidebarWidth: 280,
   rightSidebarTab: 'explorer',
+  rightSidebarExplorerView: 'files',
   rightSidebarTabByWorktree: {},
+  rightSidebarExplorerViewByWorktree: {},
   activityBarPosition: 'top',
   toggleRightSidebar: () => set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen })),
   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
   setRightSidebarWidth: (width) => set({ rightSidebarWidth: width }),
-  setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
+  setRightSidebarTab: (tab) =>
+    set({
+      rightSidebarTab: tab,
+      ...(tab === 'explorer' ? { rightSidebarExplorerView: 'files' as const } : {})
+    }),
+  setRightSidebarExplorerView: (view) =>
+    set((s) => ({
+      rightSidebarExplorerView: view,
+      ...(s.activeWorktreeId
+        ? {
+            rightSidebarExplorerViewByWorktree: {
+              ...s.rightSidebarExplorerViewByWorktree,
+              [s.activeWorktreeId]: view
+            }
+          }
+        : {})
+    })),
+  showRightSidebarFiles: () =>
+    set((s) => ({
+      rightSidebarOpen: true,
+      rightSidebarTab: 'explorer',
+      rightSidebarExplorerView: 'files',
+      ...(s.activeWorktreeId
+        ? {
+            rightSidebarExplorerViewByWorktree: {
+              ...s.rightSidebarExplorerViewByWorktree,
+              [s.activeWorktreeId]: 'files'
+            }
+          }
+        : {})
+    })),
+  showRightSidebarSearch: (payload) =>
+    set((s) => {
+      const next = {
+        rightSidebarOpen: true,
+        rightSidebarTab: 'explorer' as const,
+        rightSidebarExplorerView: 'search' as const,
+        ...(s.activeWorktreeId
+          ? {
+              rightSidebarExplorerViewByWorktree: {
+                ...s.rightSidebarExplorerViewByWorktree,
+                [s.activeWorktreeId]: 'search' as const
+              }
+            }
+          : {})
+      }
+      if (!s.activeWorktreeId) {
+        return next
+      }
+
+      const query = payload?.query?.trim() ? payload.query : null
+      const includePattern = payload?.includePattern?.trim() ? payload.includePattern : null
+      const current = s.fileSearchStateByWorktree[s.activeWorktreeId] || defaultFileSearchState()
+      const shouldSeed = Boolean(query || (includePattern && current.query.trim()))
+      const shouldFocus = !shouldSeed
+      const nextSearchState = {
+        ...current,
+        ...(query ? { query } : {}),
+        ...(includePattern ? { includePattern } : {}),
+        ...(shouldSeed
+          ? {
+              results: null,
+              loading: false,
+              collapsedFiles: new Set<string>(),
+              seedRequestId: (current.seedRequestId ?? 0) + 1
+            }
+          : {}),
+        ...(shouldFocus ? { focusRequestId: (current.focusRequestId ?? 0) + 1 } : {})
+      }
+
+      return {
+        ...next,
+        fileSearchStateByWorktree: {
+          ...s.fileSearchStateByWorktree,
+          [s.activeWorktreeId]: nextSearchState
+        }
+      }
+    }),
   setActivityBarPosition: (position) => set({ activityBarPosition: position }),
 
   // File explorer
@@ -1414,11 +1526,16 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     }),
   pendingExplorerReveal: null,
   revealInExplorer: (worktreeId, filePath) =>
-    set({
+    set((s) => ({
       rightSidebarOpen: true,
       rightSidebarTab: 'explorer',
+      rightSidebarExplorerView: 'files',
+      rightSidebarExplorerViewByWorktree: {
+        ...s.rightSidebarExplorerViewByWorktree,
+        [worktreeId]: 'files'
+      },
       pendingExplorerReveal: { worktreeId, filePath, requestId: Date.now() }
-    }),
+    })),
   clearPendingExplorerReveal: () => set({ pendingExplorerReveal: null }),
 
   // Open files
@@ -3503,17 +3620,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   fileSearchStateByWorktree: {},
   updateFileSearchState: (worktreeId, updates) =>
     set((s) => {
-      const current = s.fileSearchStateByWorktree[worktreeId] || {
-        query: '',
-        caseSensitive: false,
-        wholeWord: false,
-        useRegex: false,
-        includePattern: '',
-        excludePattern: '',
-        results: null,
-        loading: false,
-        collapsedFiles: new Set()
-      }
+      const current = s.fileSearchStateByWorktree[worktreeId] || defaultFileSearchState()
       return {
         fileSearchStateByWorktree: {
           ...s.fileSearchStateByWorktree,
@@ -3523,17 +3630,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     }),
   seedFileSearchQuery: (worktreeId, query) =>
     set((s) => {
-      const current = s.fileSearchStateByWorktree[worktreeId] || {
-        query: '',
-        caseSensitive: false,
-        wholeWord: false,
-        useRegex: false,
-        includePattern: '',
-        excludePattern: '',
-        results: null,
-        loading: false,
-        collapsedFiles: new Set()
-      }
+      const current = s.fileSearchStateByWorktree[worktreeId] || defaultFileSearchState()
       return {
         fileSearchStateByWorktree: {
           ...s.fileSearchStateByWorktree,
@@ -3550,17 +3647,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     }),
   seedFileSearchIncludePattern: (worktreeId, includePattern) =>
     set((s) => {
-      const current = s.fileSearchStateByWorktree[worktreeId] || {
-        query: '',
-        caseSensitive: false,
-        wholeWord: false,
-        useRegex: false,
-        includePattern: '',
-        excludePattern: '',
-        results: null,
-        loading: false,
-        collapsedFiles: new Set()
-      }
+      const current = s.fileSearchStateByWorktree[worktreeId] || defaultFileSearchState()
       return {
         fileSearchStateByWorktree: {
           ...s.fileSearchStateByWorktree,

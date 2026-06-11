@@ -3442,6 +3442,38 @@ describe('Store', () => {
     expect(store.getUI().rightSidebarTab).toBe('checks')
   })
 
+  it('preserves explicit rightSidebarExplorerView in persisted UI', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: { rightSidebarTab: 'explorer', rightSidebarExplorerView: 'search' },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getUI().rightSidebarTab).toBe('explorer')
+    expect(store.getUI().rightSidebarExplorerView).toBe('search')
+  })
+
+  it('maps legacy persisted search tab to the Explorer search view', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: { rightSidebarTab: 'search' },
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+    expect(store.getUI().rightSidebarTab).toBe('search')
+    expect(store.getUI().rightSidebarExplorerView).toBe('search')
+  })
+
   it('normalizes invalid rightSidebarTab in persisted UI', async () => {
     writeDataFile({
       schemaVersion: 1,

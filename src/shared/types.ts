@@ -2775,6 +2775,8 @@ export type RightSidebarTab =
   | 'source-control'
   | 'checks'
   | 'ports'
+export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
+export type RightSidebarExplorerView = 'files' | 'search'
 
 export type ProjectOrderBy = 'manual' | 'recent'
 export type WorkspaceHostScope = 'all' | 'local' | `ssh:${string}` | `runtime:${string}`
@@ -2787,6 +2789,7 @@ export type PersistedUIState = {
   sidebarWidth: number
   rightSidebarOpen: boolean
   rightSidebarTab: RightSidebarTab
+  rightSidebarExplorerView: RightSidebarExplorerView
   rightSidebarWidth: number
   groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
   sortBy: 'name' | 'smart' | 'recent' | 'repo' | 'manual'
