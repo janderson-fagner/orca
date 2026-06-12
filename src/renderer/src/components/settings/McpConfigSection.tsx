@@ -5,13 +5,9 @@ import { useMountedRef } from '@/hooks/useMountedRef'
 import type { Repo } from '../../../../shared/types'
 import {
   canInspectLocalMcpConfigRoot,
-  getMcpConfigCandidateParentDir,
-  getMcpConfigParentDirs,
   inspectMcpConfigContent,
   MCP_CONFIG_CANDIDATES,
-  MCP_STARTER_CONFIG,
-  selectExistingMcpConfigCandidates,
-  type McpConfigDirectoryEntry
+  MCP_STARTER_CONFIG
 } from '../../../../shared/mcp-config'
 import { useAppStore } from '../../store'
 import { joinPath } from '../../lib/path'
@@ -22,10 +18,10 @@ import { McpConfigFileRow, type LoadedMcpConfigInspection } from './McpConfigFil
 import {
   EMPTY_MCP_WORKTREES,
   countMcpConfigServers,
-  isMissingMcpConfigFileError,
   selectMcpTargetWorktree
 } from './mcp-config-inspection-state'
 import { McpMissingConfigList } from './McpMissingConfigList'
+import { loadMcpConfigInspections } from './mcp-config-inspection'
 import { translate } from '@/i18n/i18n'
 
 type McpConfigSectionProps = {
@@ -124,81 +120,7 @@ export function McpConfigSection({ repo }: McpConfigSectionProps): React.JSX.Ele
         return
       }
 
-      const entriesByRelativeDir = new Map<string, readonly McpConfigDirectoryEntry[]>()
-      const rootEntries = await window.api.fs.readDir({ dirPath: targetRootPath, connectionId })
-      entriesByRelativeDir.set('', rootEntries)
-
-      const rootDirectoryNames = new Set(
-        rootEntries.filter((entry) => entry.isDirectory).map((entry) => entry.name)
-      )
-      const unreadableParentDirMessages = new Map<string, string>()
-      await Promise.all(
-        getMcpConfigParentDirs().map(async (relativeDir) => {
-          if (!rootDirectoryNames.has(relativeDir)) {
-            return
-          }
-          try {
-            const entries = await window.api.fs.readDir({
-              dirPath: joinPath(targetRootPath, relativeDir),
-              connectionId
-            })
-            entriesByRelativeDir.set(relativeDir, entries)
-          } catch (error) {
-            unreadableParentDirMessages.set(
-              relativeDir,
-              extractIpcErrorMessage(error, `Unable to inspect ${relativeDir}.`)
-            )
-          }
-        })
-      )
-
-      const existingRelativePaths = new Set(
-        selectExistingMcpConfigCandidates(entriesByRelativeDir).map(
-          (candidate) => candidate.relativePath
-        )
-      )
-
-      const next = await Promise.all(
-        MCP_CONFIG_CANDIDATES.map(async (candidate): Promise<LoadedMcpConfigInspection> => {
-          const absolutePath = joinPath(targetRootPath, candidate.relativePath)
-          const parentDirReadError = unreadableParentDirMessages.get(
-            getMcpConfigCandidateParentDir(candidate)
-          )
-          if (parentDirReadError) {
-            return {
-              ...inspectMcpConfigContent(candidate, null),
-              exists: false,
-              status: 'invalid',
-              absolutePath,
-              readError: parentDirReadError
-            }
-          }
-
-          if (!existingRelativePaths.has(candidate.relativePath)) {
-            return { ...inspectMcpConfigContent(candidate, null), absolutePath }
-          }
-
-          try {
-            const result = await window.api.fs.readFile({ filePath: absolutePath, connectionId })
-            const inspection = inspectMcpConfigContent(
-              candidate,
-              result.isBinary ? '' : result.content
-            )
-            return { ...inspection, absolutePath }
-          } catch (error) {
-            if (isMissingMcpConfigFileError(error)) {
-              return { ...inspectMcpConfigContent(candidate, null), absolutePath }
-            }
-            return {
-              ...inspectMcpConfigContent(candidate, null),
-              exists: false,
-              status: 'invalid',
-              absolutePath,
-              readError: extractIpcErrorMessage(error, 'Unable to read config file.')
-            }
-          }
-        })
-      )
+      const next = await loadMcpConfigInspections(targetRootPath, connectionId)
       if (mountedRef.current) {
         setConfigs(next)
       }

@@ -4,18 +4,11 @@ import type { MobileNetworkInterface } from '../settings/mobile-network-interfac
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { AndroidLogo, IosBrandIcon } from './MobileBrandIcons'
 export { HeroIntro } from './MobileHeroIntro'
-export { HeroPaired } from './MobileHeroPaired'
+export { HeroPaired, type PairedDevice } from './MobileHeroPairedDevices'
 import { translate } from '@/i18n/i18n'
 
 export type Platform = 'ios' | 'android'
 export type StepIndex = 0 | 1
-
-export type PairedDevice = {
-  deviceId: string
-  name: string
-  pairedAt: number
-  lastSeenAt: number
-}
 
 // Why: header copy needs to refer to the *user's* device by its native name.
 function getDeviceLabel(): string {
