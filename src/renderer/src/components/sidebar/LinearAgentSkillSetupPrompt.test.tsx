@@ -357,9 +357,12 @@ describe('LinearAgentSkillSetupPrompt', () => {
     await renderPrompt({ linked: true, remote: false, surface: 'modal' })
 
     expect(container?.textContent).not.toContain('Set up Linear agent skill')
-    expect(document.body.textContent).toContain('Install Linear ticket access')
     expect(document.body.textContent).toContain(
-      'Install the Linear skill so agents can read linked Linear tickets through the Orca CLI.'
+      'Enable agents to read and edit the attached Linear ticket.'
+    )
+    expect(document.body.textContent).toContain('Mock install')
+    expect(document.body.textContent).not.toContain(
+      'Before opening setup, Orca may show a system prompt'
     )
 
     const notNowButton = Array.from(document.body.querySelectorAll('button')).find(
@@ -370,7 +373,9 @@ describe('LinearAgentSkillSetupPrompt', () => {
     })
 
     expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBeNull()
-    expect(document.body.textContent).not.toContain('Install Linear ticket access')
+    expect(document.body.textContent).not.toContain(
+      'Enable agents to read and edit the attached Linear ticket.'
+    )
   })
 
   it('permanently dismisses the modal-only prompt when requested', async () => {
@@ -384,6 +389,8 @@ describe('LinearAgentSkillSetupPrompt', () => {
     })
 
     expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBe('1')
-    expect(document.body.textContent).not.toContain('Install Linear ticket access')
+    expect(document.body.textContent).not.toContain(
+      'Enable agents to read and edit the attached Linear ticket.'
+    )
   })
 })

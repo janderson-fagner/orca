@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, TicketCheck, X } from 'lucide-react'
+import { Info, RefreshCw, TicketCheck, X } from 'lucide-react'
 import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import type { SkillDiscoveryTarget } from '../../../../shared/skills'
 import { Button } from '@/components/ui/button'
@@ -197,20 +197,29 @@ export function LinearAgentSkillSetupPrompt({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[640px]">
         <div className="px-6 pt-6 pr-14">
-          <DialogHeader className="gap-2">
-            <DialogTitle className="text-base leading-snug">
+          <DialogHeader>
+            <DialogTitle className="sr-only">
               {translate(
                 'auto.components.sidebar.LinearAgentSkillSetupPrompt.modalTitle',
-                'Install Linear ticket access'
+                'Enable Linear ticket access'
               )}
             </DialogTitle>
-            <DialogDescription className="text-xs leading-relaxed">
+            <DialogDescription className="sr-only">
               {translate(
                 'auto.components.sidebar.LinearAgentSkillSetupPrompt.modalDescription',
-                'Install the Linear skill so agents can read linked Linear tickets through the Orca CLI.'
+                'Install the Linear skill from a terminal.'
               )}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex items-start gap-2 text-[13px] leading-snug text-foreground">
+            <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <p>
+              {translate(
+                'auto.components.sidebar.LinearAgentSkillSetupPrompt.modalPrompt',
+                'Enable agents to read and edit the attached Linear ticket.'
+              )}
+            </p>
+          </div>
         </div>
         <AgentSkillSetupPanel
           className="px-6 pt-4 pb-3"
@@ -218,9 +227,9 @@ export function LinearAgentSkillSetupPrompt({
           hideHeader
           title={translate(
             'auto.components.sidebar.LinearAgentSkillSetupPrompt.modalTitle',
-            'Install Linear ticket access'
+            'Enable Linear ticket access'
           )}
-          description={missingLabel}
+          description=""
           command={command}
           terminalTitle={translate(
             'auto.components.sidebar.LinearAgentSkillSetupPrompt.terminalTitle',
@@ -240,7 +249,7 @@ export function LinearAgentSkillSetupPrompt({
             'auto.components.sidebar.LinearAgentSkillSetupPrompt.install',
             'Install CLI & Skill'
           )}
-          preInstallNotice={AGENT_SKILL_CLI_PREREQUISITE_NOTICE}
+          preInstallNotice={surface === 'inline' ? AGENT_SKILL_CLI_PREREQUISITE_NOTICE : undefined}
           getPrerequisiteStatus={
             agentRuntime.runtime === 'wsl'
               ? () => window.api.cli.getWslInstallStatus(getWslCliDistroRequest(agentRuntime))
