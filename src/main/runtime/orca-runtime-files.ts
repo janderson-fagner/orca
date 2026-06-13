@@ -30,6 +30,11 @@ import type {
   RuntimeFilePreviewResult,
   RuntimeFileReadResult
 } from '../../shared/runtime-types'
+import type {
+  AsyncSubscription,
+  subscribe as ParcelSubscribe,
+  SubscribeCallback
+} from '@parcel/watcher'
 import { wslAwareSpawn } from '../git/runner'
 import { parseWslPath, toWindowsWslPath } from '../wsl'
 import { isENOENT, resolveAuthorizedPath } from '../ipc/filesystem-auth'
@@ -61,6 +66,18 @@ const MOBILE_FILE_READ_MAX_BYTES = 512 * 1024
 const RUNTIME_PREVIEWABLE_BINARY_MAX_BYTES = 10 * 1024 * 1024
 const WINDOWS_RUNTIME_FILE_WATCH_DEBOUNCE_MS = 150
 const RUNTIME_FILE_WATCH_EVENT_STAT_LIMIT = 200
+// Why: on Linux/Windows @parcel/watcher uses a brute-force backend that
+// recursively walks the whole tree on its libuv threadpool thread before
+// subscribe() resolves. On a huge tree backed by slow storage (e.g. a home
+// directory on NFS opened as a worktree) that crawl can run for minutes and
+// hold a threadpool slot, starving every other async fs/crypto op — on the
+// headless `serve` runtime this wedges all clients (issue #5308). Cap the
+// initial crawl so an over-large root fails the watch instead of the runtime;
+// the explorer still works via manual reads, just without live updates.
+const RUNTIME_FILE_WATCH_SUBSCRIBE_TIMEOUT_MS = 15_000
+// Why: bound concurrent stat() calls per watcher batch so a burst can't
+// occupy every libuv threadpool thread at once (same starvation risk).
+const RUNTIME_FILE_WATCH_STAT_CONCURRENCY = 8
 // Why: runtime files.watch subscriptions are cleaned up through synchronous RPC
 // callbacks. Track native Parcel unsubscribe work so app shutdown can drain it.
 const pendingRuntimeFileWatcherUnsubscribes = new Set<Promise<void>>()
@@ -295,50 +312,7 @@ export class RuntimeFileCommands {
       return watchWindowsRuntimeFileExplorer(rootPath, callback)
     }
     const watcher = await import('@parcel/watcher')
-    const subscription = await watcher.subscribe(
-      rootPath,
-      (err, events) => {
-        if (err) {
-          console.error('[runtime-files.watch] watcher error', { rootPath, err })
-          callback([{ kind: 'overflow', absolutePath: rootPath }])
-          return
-        }
-        // Why: large watcher batches usually mean a generated directory or
-        // branch switch. Avoid stat fanout and ask the renderer to refresh.
-        if (events.length > RUNTIME_FILE_WATCH_EVENT_STAT_LIMIT) {
-          callback([{ kind: 'overflow', absolutePath: rootPath }])
-          return
-        }
-        void Promise.all(
-          events.map(async (event): Promise<FsChangeEvent> => {
-            let isDirectory = false
-            try {
-              isDirectory = (await stat(event.path)).isDirectory()
-            } catch {
-              isDirectory = false
-            }
-            return {
-              kind: event.type,
-              absolutePath: event.path,
-              isDirectory
-            }
-          })
-        ).then(callback)
-      },
-      {
-        ignore: [
-          '.git',
-          'node_modules',
-          'dist',
-          'build',
-          '.next',
-          '.cache',
-          '__pycache__',
-          'target',
-          '.venv'
-        ]
-      }
-    )
+    const subscription = await subscribeWithCrawlTimeout(watcher, rootPath, callback)
     return () => {
       trackRuntimeFileWatcherUnsubscribe(rootPath, () => subscription.unsubscribe())
     }
@@ -850,6 +824,94 @@ export class RuntimeFileCommands {
       throw new Error('binary_file')
     }
     return result.content
+  }
+}
+
+const RUNTIME_FILE_WATCH_IGNORE = [
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  '.next',
+  '.cache',
+  '__pycache__',
+  'target',
+  '.venv'
+]
+
+/** Run an async mapper over items with a bounded number in flight at once. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = Array.from<R>({ length: items.length })
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await mapper(items[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+/** Subscribe to a Parcel watcher, but bound the initial recursive crawl so a
+ *  pathologically large/slow root fails the watch instead of holding a libuv
+ *  threadpool slot indefinitely (issue #5308). */
+async function subscribeWithCrawlTimeout(
+  watcher: { subscribe: typeof ParcelSubscribe },
+  rootPath: string,
+  callback: (events: FsChangeEvent[]) => void
+): Promise<AsyncSubscription> {
+  const onBatch: SubscribeCallback = (err, events) => {
+    if (err) {
+      console.error('[runtime-files.watch] watcher error', { rootPath, err })
+      callback([{ kind: 'overflow', absolutePath: rootPath }])
+      return
+    }
+    // Why: large watcher batches usually mean a generated directory or branch
+    // switch. Avoid stat fanout and ask the renderer to refresh.
+    if (events.length > RUNTIME_FILE_WATCH_EVENT_STAT_LIMIT) {
+      callback([{ kind: 'overflow', absolutePath: rootPath }])
+      return
+    }
+    void mapWithConcurrency(
+      events,
+      RUNTIME_FILE_WATCH_STAT_CONCURRENCY,
+      async (event): Promise<FsChangeEvent> => {
+        let isDirectory = false
+        try {
+          isDirectory = (await stat(event.path)).isDirectory()
+        } catch {
+          isDirectory = false
+        }
+        return { kind: event.type, absolutePath: event.path, isDirectory }
+      }
+    ).then(callback)
+  }
+
+  const subscribePromise = watcher.subscribe(rootPath, onBatch, {
+    ignore: RUNTIME_FILE_WATCH_IGNORE
+  })
+
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      // Best-effort: if the slow subscribe ever resolves, drop it so the native
+      // crawl thread isn't leaked.
+      void subscribePromise.then((sub) => sub.unsubscribe()).catch(() => {})
+      reject(new Error('watch_subscribe_timeout'))
+    }, RUNTIME_FILE_WATCH_SUBSCRIBE_TIMEOUT_MS)
+  })
+
+  try {
+    return await Promise.race([subscribePromise, timeout])
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
   }
 }
 

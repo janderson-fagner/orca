@@ -148,4 +148,87 @@ describe('RuntimeFileCommands file watching', () => {
     await drainPromise
     expect(drained).toBe(true)
   })
+
+  // Issue #5308: @parcel/watcher's Linux/Windows brute-force backend recursively
+  // crawls the whole tree on a libuv threadpool thread before subscribe()
+  // resolves. On a huge/slow root (a home dir on NFS opened as a worktree) that
+  // crawl can run for minutes, starving all other async fs/crypto work and
+  // wedging the serve runtime. The crawl must be time-bounded.
+  it('fails the watch if the initial subscribe crawl exceeds the timeout', async () => {
+    resolveAuthorizedPathMock.mockResolvedValue('/home5/Brian')
+    statMock.mockResolvedValue({ isDirectory: () => true })
+
+    // subscribe() never resolves — simulates an unbounded recursive crawl.
+    const unsubscribeMock = vi.fn(async () => {})
+    let resolveSubscribe: (sub: { unsubscribe: () => Promise<void> }) => void = () => {}
+    subscribeParcelWatcherMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubscribe = resolve
+        })
+    )
+    const { commands } = createRuntimeFileCommands('/home5/Brian')
+
+    const watchPromise = commands.watchFileExplorer('id:wt-1', vi.fn())
+    const rejection = expect(watchPromise).rejects.toThrow('watch_subscribe_timeout')
+    await vi.advanceTimersByTimeAsync(15_000)
+    await rejection
+
+    // If the slow crawl ever finishes, its subscription is dropped, not leaked.
+    resolveSubscribe({ unsubscribe: unsubscribeMock })
+    await vi.runOnlyPendingTimersAsync()
+    expect(unsubscribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds concurrent stat() calls when resolving a watcher event batch', async () => {
+    resolveAuthorizedPathMock.mockResolvedValue('/repo')
+    statMock.mockResolvedValue({ isDirectory: () => true })
+
+    let onBatch: ((err: Error | null, events: { path: string; type: string }[]) => void) | null =
+      null
+    subscribeParcelWatcherMock.mockImplementation((_root, cb) => {
+      onBatch = cb
+      return Promise.resolve({ unsubscribe: vi.fn(async () => {}) })
+    })
+
+    // Track how many stat() calls are running concurrently. Each call resolves
+    // on the next microtask, so workers immediately pull their next item —
+    // peak concurrency reflects the limiter, not artificial gating.
+    let inFlight = 0
+    let peakInFlight = 0
+    statMock.mockImplementation(async (targetPath: string) => {
+      // The root directory check at watch setup must report a directory.
+      if (targetPath === '/repo') {
+        return { isDirectory: () => true }
+      }
+      inFlight++
+      peakInFlight = Math.max(peakInFlight, inFlight)
+      await Promise.resolve()
+      inFlight--
+      return { isDirectory: () => false }
+    })
+
+    const onEvents = vi.fn()
+    const { commands } = createRuntimeFileCommands('/repo')
+    await commands.watchFileExplorer('id:wt-1', onEvents)
+    expect(onBatch).not.toBeNull()
+
+    // 50 events in one batch (under the 200 overflow cap) must not run 50 stats
+    // at once — the threadpool only has a few threads.
+    const events = Array.from({ length: 50 }, (_unused, i) => ({
+      path: `/repo/file-${i}`,
+      type: 'update'
+    }))
+    onBatch?.(null, events)
+    await vi.runAllTimersAsync()
+
+    expect(onEvents).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ absolutePath: '/repo/file-0', kind: 'update' })
+      ])
+    )
+    // 50 event stats + 1 root-directory check at setup.
+    expect(statMock).toHaveBeenCalledTimes(51)
+    expect(peakInFlight).toBeLessThanOrEqual(8)
+  })
 })
