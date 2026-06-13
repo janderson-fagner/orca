@@ -13,7 +13,7 @@ vi.mock('node:child_process', () => ({
   spawn: spawnMock
 }))
 
-import { commandExecFileAsync, gitExecFileAsync } from './runner'
+import { commandExecFileAsync, gitExecFileAsync, GIT_DEFAULT_TIMEOUT_MS } from './runner'
 
 type MockChildProcess = EventEmitter & {
   stdout: EventEmitter
@@ -209,5 +209,50 @@ describe('runner execFile timeout handling', () => {
 
     await rejection
     expect(child.kill).toHaveBeenCalled()
+  })
+
+  // Issue #5308: a hung read-path git command (non-git folder on a wedged NFS
+  // mount, or git waiting on a credential prompt) with NO explicit timeout must
+  // still self-resolve at the default ceiling instead of hanging forever and
+  // wedging the serve runtime for all clients.
+  it('rejects a hung read-path git command at the default timeout when none is set', async () => {
+    const child = createMockChildProcess(1234)
+    execFileMock.mockReturnValue(child)
+
+    const promise = gitExecFileAsync(['worktree', 'list', '--porcelain', '-z'], {
+      cwd: '/home5/Brian'
+    })
+    const rejection = expect(promise).rejects.toThrow('git timed out.')
+    await vi.advanceTimersByTimeAsync(GIT_DEFAULT_TIMEOUT_MS)
+
+    await rejection
+    expect(child.kill).toHaveBeenCalled()
+  })
+
+  // Long-running network subcommands opt out of the default ceiling so large
+  // clones/fetches aren't killed mid-transfer.
+  it('does not apply the default timeout to network subcommands', async () => {
+    const child = createMockChildProcess(1234)
+    let execCallback: ((err: Error | null, stdout: string, stderr: string) => void) | undefined
+    execFileMock.mockImplementation((_cmd, _args, _opts, cb) => {
+      execCallback = cb
+      return child
+    })
+
+    let settled = false
+    const promise = gitExecFileAsync(['fetch', '--prune'], { cwd: '/repo' })
+      .catch(() => undefined)
+      .finally(() => {
+        settled = true
+      })
+    // Advance well past the read-path ceiling; fetch must still be running.
+    await vi.advanceTimersByTimeAsync(GIT_DEFAULT_TIMEOUT_MS * 5)
+    expect(settled).toBe(false)
+    expect(child.kill).not.toHaveBeenCalled()
+
+    // Let the fetch "finish" so the test doesn't leak a pending promise.
+    execCallback?.(null, '', '')
+    await promise
+    expect(settled).toBe(true)
   })
 })

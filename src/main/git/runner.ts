@@ -480,6 +480,66 @@ export function gitOptionalLocksDisabledEnv(
   }
 }
 
+// Why: a git subprocess that never exits (waiting on a credential/stdin
+// prompt, or a wedged NFS/network filesystem under the cwd) otherwise leaves
+// gitExecFileAsync pending forever. On the headless `serve` runtime these
+// read-path calls pile up and the whole runtime stops answering clients
+// (issue #5308). A generous ceiling kills a truly-hung process without
+// tripping on normal local git work.
+export const GIT_DEFAULT_TIMEOUT_MS = 60_000
+
+// Subcommands that legitimately run longer than the read-path ceiling — they
+// move data over the network or recurse into submodules/LFS. Capping these
+// would break large-repo clones/fetches, so they opt out of the default.
+const GIT_UNBOUNDED_SUBCOMMANDS = new Set([
+  'clone',
+  'fetch',
+  'pull',
+  'push',
+  'remote',
+  'submodule',
+  'lfs'
+])
+
+// Global flags that precede the subcommand: skip them (and their values, for
+// the ones that take an argument) to find the real subcommand.
+const GIT_GLOBAL_FLAGS_WITH_VALUE = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace'])
+
+function findGitSubcommand(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (GIT_GLOBAL_FLAGS_WITH_VALUE.has(arg)) {
+      i++ // skip the flag's value
+      continue
+    }
+    if (arg.startsWith('-')) {
+      continue // valueless global flag (e.g. --no-pager)
+    }
+    return arg
+  }
+  return undefined
+}
+
+/**
+ * Resolve the effective timeout for a git invocation. An explicit caller
+ * timeout (including an explicit 0 opt-out) always wins; otherwise read-path
+ * commands get GIT_DEFAULT_TIMEOUT_MS and long-running network subcommands
+ * stay unbounded.
+ */
+export function resolveGitDefaultTimeoutMs(
+  args: string[],
+  explicitTimeout: number | undefined
+): number | undefined {
+  if (explicitTimeout !== undefined) {
+    return explicitTimeout
+  }
+  const subcommand = findGitSubcommand(args)
+  if (subcommand && GIT_UNBOUNDED_SUBCOMMANDS.has(subcommand)) {
+    return undefined
+  }
+  return GIT_DEFAULT_TIMEOUT_MS
+}
+
 /**
  * Async git command execution. Drop-in replacement for
  * `execFileAsync('git', args, { cwd, encoding, ... })`.
@@ -500,7 +560,7 @@ export async function gitExecFileAsync(
         cwd: resolved.cwd,
         encoding: (options.encoding ?? 'utf-8') as BufferEncoding,
         maxBuffer: options.maxBuffer,
-        timeout: options.timeout,
+        timeout: resolveGitDefaultTimeoutMs(args, options.timeout),
         env: options.env
       })
       return { stdout: stdout as string, stderr: stderr as string }
