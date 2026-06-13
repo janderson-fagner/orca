@@ -47,6 +47,7 @@ import { WorktreeCardPortsDetails, WorktreeCardPortsTrigger } from './WorktreeCa
 import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
 import { useWorktreeCardDetailsHoverControl } from './worktree-card-details-hover-state'
+import { isEventTargetInsideCurrentTarget } from './worktree-card-dom-events'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
 import { RepoBadgeMark } from '@/components/repo/RepoBadgeLabel'
 import { RepoIconGlyph } from '@/components/repo/repo-icon'
@@ -477,6 +478,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // Stable click handler – ignore clicks that are really text selections.
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!isEventTargetInsideCurrentTarget(event.currentTarget, event.target)) {
+        return
+      }
       const selection = window.getSelection()
       // Why: only suppress the click when the selection is *inside this card*
       // (a real drag-select on the card's own text). A selection anchored
@@ -531,22 +535,28 @@ const WorktreeCard = React.memo(function WorktreeCard({
     [updateWorktreeMeta, worktree.id]
   )
 
-  const handleDoubleClick = useCallback(() => {
-    openModal('edit-meta', {
-      worktreeId: worktree.id,
-      currentDisplayName: worktree.displayName,
-      currentIssue: worktree.linkedIssue,
-      currentPR: worktree.linkedPR,
-      currentComment: worktree.comment
-    })
-  }, [
-    openModal,
-    worktree.comment,
-    worktree.displayName,
-    worktree.id,
-    worktree.linkedIssue,
-    worktree.linkedPR
-  ])
+  const handleDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!isEventTargetInsideCurrentTarget(event.currentTarget, event.target)) {
+        return
+      }
+      openModal('edit-meta', {
+        worktreeId: worktree.id,
+        currentDisplayName: worktree.displayName,
+        currentIssue: worktree.linkedIssue,
+        currentPR: worktree.linkedPR,
+        currentComment: worktree.comment
+      })
+    },
+    [
+      openModal,
+      worktree.comment,
+      worktree.displayName,
+      worktree.id,
+      worktree.linkedIssue,
+      worktree.linkedPR
+    ]
+  )
 
   const handleToggleUnreadQuick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -637,6 +647,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
   const handleDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (!isEventTargetInsideCurrentTarget(event.currentTarget, event.target)) {
+        event.preventDefault()
+        return
+      }
       if (isDeleting) {
         event.preventDefault()
         return
@@ -649,6 +663,16 @@ const WorktreeCard = React.memo(function WorktreeCard({
       onCardDragStart?.(event, worktree.id, Array.isArray(dragIds) ? dragIds : [dragIds])
     },
     [isDeleting, isMultiSelected, onCardDragStart, selectedWorktrees, worktree.id]
+  )
+
+  const handleDragEnd = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!isEventTargetInsideCurrentTarget(event.currentTarget, event.target)) {
+        return
+      }
+      onCardDragEnd?.(event)
+    },
+    [onCardDragEnd]
   )
 
   const handleContextMenuSelect = useCallback(
@@ -898,7 +922,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       onDoubleClick={handleDoubleClick}
       draggable={nativeDragEnabled && !isDeleting && !titleRenaming}
       onDragStart={nativeDragEnabled ? handleDragStart : undefined}
-      onDragEnd={nativeDragEnabled ? onCardDragEnd : undefined}
+      onDragEnd={nativeDragEnabled ? handleDragEnd : undefined}
       aria-busy={isDeleting}
       style={cardStyle}
     >
