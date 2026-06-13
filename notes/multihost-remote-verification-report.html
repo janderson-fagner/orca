@@ -189,6 +189,15 @@
             explicit <code>hostId: local</code> task source context, and verified the cache key used
             a local GitHub source scope.
           </li>
+          <li class="pass">
+            Opened Linear Tasks in the live Electron app with the connected legacy Linear API-key
+            workspace. The visible list rendered 36 Linear issues, and the store contained a
+            source-scoped cache key with an explicit <code>linear:local</code> task-source prefix.
+          </li>
+          <li class="warn">
+            Jira task-source verification remains blocked in this profile because Jira is not
+            connected.
+          </li>
         </ul>
       </section>
 
@@ -318,6 +327,10 @@
         <figure>
           <img src="artifacts/host-context-electron-local-github-tasks-open.png" alt="Local GitHub Tasks source" />
           <figcaption>Local project with local GitHub credentials rendered GitHub issues in Tasks.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-electron-linear-explicit-source.png" alt="Linear Tasks source" />
+          <figcaption>Linear Tasks rendered through the connected local Linear account with source-scoped cache evidence.</figcaption>
         </figure>
       </section>
     </main>
