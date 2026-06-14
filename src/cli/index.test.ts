@@ -3722,7 +3722,7 @@ describe('orca cli worktree awareness', () => {
       setupId: 'setup-gpu',
       updates: {
         displayName: 'GPU VM',
-        path: '/srv/orca',
+        path: path.resolve('/tmp/repo', '/srv/orca'),
         worktreeBasePath: '../worktrees',
         gitUsername: undefined,
         kind: undefined,
