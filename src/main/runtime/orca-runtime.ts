@@ -171,9 +171,11 @@ import {
   toDetectedWorktree
 } from '../../shared/worktree-ownership'
 import {
+  BROWSER_HEADLESS_RUNTIME_CAPABILITY,
   MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION,
   RUNTIME_CAPABILITIES,
-  RUNTIME_PROTOCOL_VERSION
+  RUNTIME_PROTOCOL_VERSION,
+  type RuntimeCapability
 } from '../../shared/protocol-version'
 import type {
   WorkspacePortKillRequest,
@@ -251,6 +253,7 @@ import { joinWorktreeRelativePath } from './runtime-relative-paths'
 import { collectMemorySnapshot } from '../memory/collector'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
+import type { BrowserBackend } from '../browser/browser-backend'
 import { BrowserError } from '../browser/cdp-bridge'
 import {
   getPRForBranch,
@@ -1605,6 +1608,7 @@ export class OrcaRuntimeService {
   private clientEventListeners = new Set<(event: RuntimeClientEvent) => void>()
   private forkBackfillStarted = false
   private agentBrowserBridge: AgentBrowserBridge | null = null
+  private offscreenBrowserBackend: BrowserBackend | null = null
   private emulatorBridge: EmulatorBridge | null = null
   private resolvedWorktreeCache: ResolvedWorktreeCache | null = null
   private resolvedWorktreeInFlight: ResolvedWorktreeInFlight | null = null
@@ -2235,9 +2239,21 @@ export class OrcaRuntimeService {
   }
 
   getStatus(): RuntimeStatus {
-    const capabilities = this.getAvailableAuthoritativeWindow()
-      ? [...RUNTIME_CAPABILITIES]
-      : RUNTIME_CAPABILITIES.filter((capability) => capability !== 'browser.screencast.v1')
+    // Why: browser panes need a backend that can create and stream a page. A
+    // desktop renderer provides one via <webview>; a headless serve provides one
+    // via the offscreen backend. Either way the same browser.screencast.v1 path
+    // works, so advertise it when either is present. browser.headless.v1
+    // additionally tells clients this host owns browser pages with no renderer,
+    // so they must not fall back to a local desktop browser tab.
+    const hasRenderer = Boolean(this.getAvailableAuthoritativeWindow())
+    const hasOffscreen = !hasRenderer && Boolean(this.offscreenBrowserBackend)
+    const canBrowse = hasRenderer || hasOffscreen
+    const capabilities: RuntimeCapability[] = RUNTIME_CAPABILITIES.filter(
+      (capability) => capability !== 'browser.screencast.v1' || canBrowse
+    )
+    if (hasOffscreen) {
+      capabilities.push(BROWSER_HEADLESS_RUNTIME_CAPABILITY)
+    }
     return {
       runtimeId: this.runtimeId,
       rendererGraphEpoch: this.rendererGraphEpoch,
@@ -2315,6 +2331,14 @@ export class OrcaRuntimeService {
 
   getAgentBrowserBridge(): AgentBrowserBridge | null {
     return this.agentBrowserBridge
+  }
+
+  setOffscreenBrowserBackend(backend: BrowserBackend | null): void {
+    this.offscreenBrowserBackend = backend
+  }
+
+  getOffscreenBrowserBackend(): BrowserBackend | null {
+    return this.offscreenBrowserBackend
   }
 
   setEmulatorBridge(bridge: EmulatorBridge | null): void {
@@ -17283,7 +17307,8 @@ export class OrcaRuntimeService {
     getAgentBrowserBridge: () => this.agentBrowserBridge,
     resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
     getAuthoritativeWindow: () => this.getAuthoritativeWindow(),
-    getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow()
+    getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow(),
+    getOffscreenBrowserBackend: () => this.offscreenBrowserBackend
   })
 
   private readonly emulatorCommands = new RuntimeEmulatorCommands({

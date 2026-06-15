@@ -50,6 +50,7 @@ import type {
   BrowserWaitResult
 } from '../../shared/runtime-types'
 import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
+import type { BrowserBackend } from '../browser/browser-backend'
 import { browserManager } from '../browser/browser-manager'
 import { BrowserError } from '../browser/cdp-bridge'
 import {
@@ -142,6 +143,11 @@ export type RuntimeBrowserCommandHost = {
   resolveWorktreeSelector(selector: string): Promise<{ id: string }>
   getAuthoritativeWindow(): BrowserWindow
   getAvailableAuthoritativeWindow(): BrowserWindow | null
+  // Why: headless serve has no renderer window; browser pages are backed by a
+  // main-process offscreen backend instead. Null when offscreen browsing is
+  // unavailable (e.g. environment can't support it), which keeps capability
+  // reporting honest.
+  getOffscreenBrowserBackend(): BrowserBackend | null
 }
 
 export class RuntimeBrowserCommands {
@@ -1311,11 +1317,15 @@ export class RuntimeBrowserCommands {
     const worktreeId = params.worktree
       ? (await this.host.resolveWorktreeSelector(params.worktree)).id
       : undefined
+    // Why: a desktop renderer mounts a <webview>; a headless serve has none and
+    // backs the page with a main-process offscreen WebContents instead. Both
+    // register into BrowserManager so all downstream commands resolve uniformly.
     if (!this.host.getAvailableAuthoritativeWindow()) {
-      throw new BrowserError(
-        'browser_error',
-        'Browser tab creation requires a desktop renderer; headless orca serve does not support browser panes yet.'
-      )
+      const offscreen = this.host.getOffscreenBrowserBackend()
+      if (!offscreen) {
+        throw new BrowserError('browser_error', 'This host does not support browser panes.')
+      }
+      return this.createBrowserTabOffscreen(offscreen, url, worktreeId, params.profileId)
     }
     const { browserPageId } = await this.createBrowserTabInRenderer(
       url,
@@ -1629,6 +1639,19 @@ export class RuntimeBrowserCommands {
       }
     }
 
+    // Why: headless serve owns its pages via the offscreen backend, with no
+    // renderer to ask. Destroy the offscreen page directly when that backend is
+    // the one serving this host (no renderer window).
+    const offscreen = this.host.getAvailableAuthoritativeWindow()
+      ? null
+      : this.host.getOffscreenBrowserBackend()
+    if (offscreen) {
+      if (tabId) {
+        await offscreen.closeTab(tabId)
+      }
+      return { closed: true }
+    }
+
     const win = this.host.getAuthoritativeWindow()
     const requestId = randomUUID()
     await new Promise<void>((resolve, reject) => {
@@ -1695,6 +1718,25 @@ export class RuntimeBrowserCommands {
       )
     }
     return this.enrichBrowserTabInfo(tab)
+  }
+
+  // Why: headless serve path. The offscreen backend registers the page
+  // synchronously, so there is no webview-mount wait. The page already loaded the
+  // URL during createTab, so we only sync the bridge's active tab and notify the
+  // (absent) renderer is skipped — nav state is read from the live WebContents.
+  private async createBrowserTabOffscreen(
+    offscreen: BrowserBackend,
+    url: string,
+    worktreeId?: string,
+    profileId?: string
+  ): Promise<{ browserPageId: string }> {
+    const { browserPageId } = await offscreen.createTab({ url, worktreeId, profileId })
+    const bridge = this.host.getAgentBrowserBridge()
+    const wcId = bridge?.getRegisteredTabs(worktreeId).get(browserPageId)
+    if (bridge && wcId != null) {
+      bridge.setActiveTab(wcId, worktreeId)
+    }
+    return { browserPageId }
   }
 
   private async createBrowserTabInRenderer(

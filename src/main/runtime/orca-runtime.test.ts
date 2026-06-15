@@ -976,6 +976,26 @@ describe('OrcaRuntimeService', () => {
     expect(runtime.getStatus().capabilities).toContain('browser.screencast.v1')
   })
 
+  it('advertises headless browser capability when an offscreen backend backs a windowless host', () => {
+    const runtime = createRuntime()
+    runtime.setOffscreenBrowserBackend({ createTab: vi.fn(), closeTab: vi.fn() })
+
+    const capabilities = runtime.getStatus().capabilities
+    // Headless serve can still create/stream pages, so screencast is supported...
+    expect(capabilities).toContain('browser.screencast.v1')
+    // ...and the headless marker tells clients not to fall back to a local tab.
+    expect(capabilities).toContain('browser.headless.v1')
+  })
+
+  it('does not advertise headless browser capability when a renderer window exists', () => {
+    const runtime = createRuntime()
+    electronMocks.BrowserWindow.fromId.mockReturnValue({ isDestroyed: () => false } as never)
+    runtime.attachWindow(TEST_WINDOW_ID)
+    runtime.setOffscreenBrowserBackend({ createTab: vi.fn(), closeTab: vi.fn() })
+
+    expect(runtime.getStatus().capabilities).not.toContain('browser.headless.v1')
+  })
+
   it('claims the first window as authoritative and ignores later windows', () => {
     const runtime = createRuntime()
 
@@ -10167,7 +10187,7 @@ describe('OrcaRuntimeService', () => {
     expect(result.tab).toMatchObject({ parentTabId: 'tab-renderer', isActive: false })
   })
 
-  it('reports browser tab creation as unsupported for headless runtime servers', async () => {
+  it('reports browser tab creation as unsupported for a windowless host with no offscreen backend', async () => {
     const runtime = new OrcaRuntimeService(store)
     runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
 
@@ -10175,8 +10195,20 @@ describe('OrcaRuntimeService', () => {
       runtime.browserTabCreate({ worktree: `id:${TEST_WORKTREE_ID}`, url: 'https://example.com' })
     ).rejects.toMatchObject({
       code: 'browser_error',
-      message: expect.stringContaining('headless orca serve')
+      message: expect.stringContaining('does not support browser panes')
     })
+  })
+
+  it('creates a browser tab via the offscreen backend for a headless runtime server', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+    const createTab = vi.fn(async () => ({ browserPageId: 'page-headless' }))
+    runtime.setOffscreenBrowserBackend({ createTab, closeTab: vi.fn() })
+
+    await expect(
+      runtime.browserTabCreate({ worktree: `id:${TEST_WORKTREE_ID}`, url: 'https://example.com' })
+    ).resolves.toEqual({ browserPageId: 'page-headless' })
+    expect(createTab).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com' }))
   })
 
   it('cancels an in-flight same-connection browser screencast before replacing it', async () => {
