@@ -1407,6 +1407,8 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
 // Why: bounded LRU — opening many PRs with many files during a session
 // would otherwise grow this module-level map without bound until reload.
 const PR_FILE_CONTENT_CACHE_MAX = 64
+// Why: raw-content overflow is only a sentinel; force the reported size past
+// the render budget so downstream checks reliably choose fallback mode.
 const GITHUB_PR_RAW_CONTENT_OVERFLOW_CHARACTER_COUNT = MAX_RENDERED_DIFF_COMBINED_CHARACTERS + 1
 const PR_FILE_CONTENT_CACHE_MAX_BYTES = MAX_RENDERED_DIFF_COMBINED_CHARACTERS * 4
 type PRFileContentCacheEntry = {
@@ -1450,18 +1452,20 @@ function getPRFileContentsCacheByteCount(contents: GitHubPRFileContents): number
   return getUtf8ByteCount(contents.original) + getUtf8ByteCount(contents.modified)
 }
 
-function shouldRetainPRFileContents(contents: GitHubPRFileContents): boolean {
+function getRetainedPRFileContentsByteCount(contents: GitHubPRFileContents): number | null {
   if (isPRFileContentsTooLargeSentinel(contents)) {
-    return true
+    return 0
   }
-  return getPRFileContentsCacheByteCount(contents) <= MAX_RENDERED_DIFF_COMBINED_CHARACTERS
+  const byteCount = getPRFileContentsCacheByteCount(contents)
+  return byteCount <= PR_FILE_CONTENT_CACHE_MAX_BYTES ? byteCount : null
 }
 
 function touchPRFileContentCache(
   key: string,
   value: Promise<GitHubPRFileContents> | GitHubPRFileContents
 ): void {
-  if (!(value instanceof Promise) && !shouldRetainPRFileContents(value)) {
+  const retainedByteCount = value instanceof Promise ? 0 : getRetainedPRFileContentsByteCount(value)
+  if (retainedByteCount === null) {
     const existing = prFileContentCache.get(key)
     prFileContentCacheBytes -= existing?.byteCount ?? 0
     prFileContentCache.delete(key)
@@ -1473,7 +1477,7 @@ function touchPRFileContentCache(
   // Why: re-insert to move to the most-recently-used position; Map preserves
   // insertion order so the oldest key is always first when evicting.
   prFileContentCache.delete(key)
-  const byteCount = value instanceof Promise ? 0 : getPRFileContentsCacheByteCount(value)
+  const byteCount = retainedByteCount
   prFileContentCache.set(key, { value, byteCount })
   prFileContentCacheBytes += byteCount
   while (
@@ -1498,8 +1502,9 @@ function getPRFileContentCacheKey(args: {
   headSha: string
   baseSha: string
 }): string {
+  const repositoryKey = args.repoId ? `repo:${args.repoId}` : `path:${args.repoPath}`
   return [
-    args.repoId,
+    repositoryKey,
     args.prNumber,
     args.file.path,
     args.file.oldPath ?? '',
@@ -1524,7 +1529,8 @@ function loadPRFileContents(args: {
     touchPRFileContentCache(cacheKey, cached.value)
     return Promise.resolve(cached.value)
   }
-  const request = window.api.gh
+  let request: Promise<GitHubPRFileContents>
+  request = window.api.gh
     .prFileContents({
       repoPath: args.repoPath,
       repoId: args.repoId,
@@ -1537,11 +1543,17 @@ function loadPRFileContents(args: {
       baseSha: args.baseSha
     })
     .then((contents) => {
-      touchPRFileContentCache(cacheKey, contents)
+      if (prFileContentCache.get(cacheKey)?.value === request) {
+        touchPRFileContentCache(cacheKey, contents)
+      }
       return contents
     })
     .catch((err) => {
-      prFileContentCache.delete(cacheKey)
+      const cachedRequest = prFileContentCache.get(cacheKey)
+      if (cachedRequest?.value === request) {
+        prFileContentCacheBytes -= cachedRequest.byteCount
+        prFileContentCache.delete(cacheKey)
+      }
       throw err
     })
   touchPRFileContentCache(cacheKey, request)

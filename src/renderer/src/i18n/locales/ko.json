@@ -9797,7 +9797,9 @@
           "f5cf81cec2": "차이점 로드 중...",
           "72f71f52eb": "이 파일에는 텍스트 비교를 사용할 수 없습니다.",
           "7ce8436458": "브랜치 비교에서는 이 파일에 대해 텍스트 비교를 사용할 수 없습니다.",
-          "bdbf02d5df": "바이너리"
+          "bdbf02d5df": "바이너리",
+          "b5675b0694": "저장",
+          "593f2193f6": "이 초안은 안전한 표시 한도를 초과했지만 계속 저장할 수 있습니다."
         },
         "DiffSectionHeader": {
           "8915726e93": "경로 복사"
@@ -10175,7 +10177,12 @@
           "877c25a02f": "이유",
           "5fca073b72": "제한",
           "f1d136a163": "한쪽당 줄 수",
-          "23433fcdea": "합산 문자 수"
+          "23433fcdea": "합산 문자 수",
+          "7944ed9fb8": "계산하지 않음"
+        },
+        "DiffViewer": {
+          "b5675b0694": "저장",
+          "593f2193f6": "이 초안은 안전한 표시 한도를 초과했지만 계속 저장할 수 있습니다."
         }
       },
       "diff": {
@@ -10939,10 +10946,5 @@
         }
       }
     }
-  },
-  "auto.components.editor.LargeDiffFallback.7944ed9fb8": "계산하지 않음",
-  "auto.components.editor.DiffSectionBody.b5675b0694": "저장",
-  "auto.components.editor.DiffSectionBody.593f2193f6": "이 초안은 안전한 표시 한도를 초과했지만 계속 저장할 수 있습니다.",
-  "auto.components.editor.DiffViewer.b5675b0694": "저장",
-  "auto.components.editor.DiffViewer.593f2193f6": "이 초안은 안전한 표시 한도를 초과했지만 계속 저장할 수 있습니다."
+  }
 }

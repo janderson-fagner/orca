@@ -107,6 +107,11 @@ test.describe('Large diff freeze repro', () => {
     await waitForSessionReady(orcaPage)
     const fixture = createIsolatedLargeDiffRepo()
     const lineCount = Number(process.env.ORCA_LARGE_DIFF_REPRO_LINES ?? '60000')
+    if (!Number.isFinite(lineCount) || lineCount < 0) {
+      throw new Error(
+        `Invalid ORCA_LARGE_DIFF_REPRO_LINES: ${process.env.ORCA_LARGE_DIFF_REPRO_LINES}`
+      )
+    }
     const expectFallback = lineCount > MAX_RENDERED_DIFF_LINES_PER_SIDE
 
     try {

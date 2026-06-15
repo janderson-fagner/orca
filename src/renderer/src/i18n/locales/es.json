@@ -9797,7 +9797,9 @@
           "f5cf81cec2": "Cargando diferencias...",
           "72f71f52eb": "La diferenciación de texto no está disponible para este archivo.",
           "7ce8436458": "La diferencia de texto no está disponible para este archivo en la comparación de ramas.",
-          "bdbf02d5df": "binario"
+          "bdbf02d5df": "binario",
+          "b5675b0694": "Guardar",
+          "593f2193f6": "Este borrador superó el límite seguro de visualización, pero aún se puede guardar."
         },
         "DiffSectionHeader": {
           "8915726e93": "Copiar ruta"
@@ -10175,7 +10177,12 @@
           "877c25a02f": "Motivo",
           "5fca073b72": "Límites",
           "f1d136a163": "líneas por lado",
-          "23433fcdea": "caracteres combinados"
+          "23433fcdea": "caracteres combinados",
+          "7944ed9fb8": "No contado"
+        },
+        "DiffViewer": {
+          "b5675b0694": "Guardar",
+          "593f2193f6": "Este borrador superó el límite seguro de visualización, pero aún se puede guardar."
         }
       },
       "diff": {
@@ -10939,10 +10946,5 @@
         }
       }
     }
-  },
-  "auto.components.editor.LargeDiffFallback.7944ed9fb8": "No contado",
-  "auto.components.editor.DiffSectionBody.b5675b0694": "Guardar",
-  "auto.components.editor.DiffSectionBody.593f2193f6": "Este borrador superó el límite seguro de visualización, pero aún se puede guardar.",
-  "auto.components.editor.DiffViewer.b5675b0694": "Guardar",
-  "auto.components.editor.DiffViewer.593f2193f6": "Este borrador superó el límite seguro de visualización, pero aún se puede guardar."
+  }
 }
