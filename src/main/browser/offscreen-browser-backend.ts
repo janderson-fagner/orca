@@ -126,7 +126,19 @@ export class OffscreenBrowserBackend implements BrowserBackend {
         cleanup()
         resolve()
       }
-      const onFail = (_e: unknown, errorCode: number, errorDescription: string): void => {
+      const onFail = (
+        _e: unknown,
+        errorCode: number,
+        errorDescription: string,
+        _validatedURL: string,
+        isMainFrame: boolean
+      ): void => {
+        // Why: subframe/iframe (e.g. ad/tracker) load failures also fire
+        // did-fail-load. Only the main frame failing means the page itself
+        // failed; ignore the rest or an otherwise-usable page gets rejected.
+        if (!isMainFrame) {
+          return
+        }
         if (settled) {
           return
         }

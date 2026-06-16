@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, rmSync } from 'fs'
 import { app } from 'electron'
 
 // Why: headless `orca serve` backs browser panes with offscreen BrowserWindows.
@@ -17,6 +17,46 @@ let xvfbProcess: ChildProcess | null = null
 
 function xvfbSocketPath(displayNumber: number): string {
   return `/tmp/.X11-unix/X${displayNumber}`
+}
+
+function xDisplayLockPath(displayNumber: number): string {
+  return `/tmp/.X${displayNumber}-lock`
+}
+
+// Why: a socket file can outlive the X server that made it. The X lock file holds
+// the server PID; if that process is gone, the display is dead despite the socket.
+function isDisplayServerAlive(displayNumber: number): boolean {
+  const lockPath = xDisplayLockPath(displayNumber)
+  if (!existsSync(lockPath)) {
+    // No lock means no server claimed this display; the bare socket is stale.
+    return false
+  }
+  let pid: number
+  try {
+    pid = Number.parseInt(readFileSync(lockPath, 'utf8').trim(), 10)
+  } catch {
+    return false
+  }
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false
+  }
+  try {
+    // signal 0 probes existence without affecting the process.
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeStaleDisplayArtifacts(displayNumber: number): void {
+  for (const path of [xDisplayLockPath(displayNumber), xvfbSocketPath(displayNumber)]) {
+    try {
+      rmSync(path, { force: true })
+    } catch {
+      // Best effort; if removal fails, Xvfb startup below will surface the error.
+    }
+  }
 }
 
 function hasXvfbBinary(): boolean {
@@ -69,12 +109,17 @@ export function ensureVirtualDisplayForHeadlessServe(options: { isServeMode: boo
     return false
   }
 
-  // Why: a stale socket from a crashed prior run would make us skip startup and
-  // then fail to connect. If our chosen display socket already exists, assume a
-  // usable server is there (ours or another) and reuse it.
+  // Why: reuse an existing display ONLY if a live X server actually backs it.
+  // A crashed prior run can leave an orphan socket; trusting it by path alone
+  // would advertise browser support that then fails at tab creation.
   if (existsSync(xvfbSocketPath(VIRTUAL_DISPLAY_NUMBER))) {
-    process.env.DISPLAY = VIRTUAL_DISPLAY
-    return true
+    if (isDisplayServerAlive(VIRTUAL_DISPLAY_NUMBER)) {
+      process.env.DISPLAY = VIRTUAL_DISPLAY
+      return true
+    }
+    // Why: stale socket/lock — clean them up so Xvfb can rebind the display
+    // below instead of refusing to start on an "in use" number.
+    removeStaleDisplayArtifacts(VIRTUAL_DISPLAY_NUMBER)
   }
 
   try {

@@ -459,4 +459,50 @@ describe('RuntimeBrowserCommands headless offscreen routing', () => {
     // The renderer close IPC must not be used in headless mode.
     expect(ipcMainOnMock).not.toHaveBeenCalledWith('browser:tabCloseReply', expect.anything())
   })
+
+  it('closes the active headless tab on an implicit close', async () => {
+    const { RuntimeBrowserCommands } = await import('./orca-runtime-browser')
+    webContentsFromIdMock.mockReturnValue({ isDestroyed: () => false })
+    const closeTab = vi.fn(async () => {})
+    const bridge = {
+      getRegisteredTabs: vi.fn(() => new Map([['page-active', 303]])),
+      getActivePageId: vi.fn(() => 'page-active'),
+      getActiveWebContentsId: vi.fn(() => 303)
+    } as unknown as AgentBrowserBridge
+    const commands = new RuntimeBrowserCommands(
+      createHost({
+        getAgentBrowserBridge: () => bridge,
+        getAvailableAuthoritativeWindow: vi.fn(() => null),
+        getOffscreenBrowserBackend: vi.fn(() => ({ createTab: vi.fn(), closeTab }))
+      })
+    )
+
+    // No --page / --index: resolves the active page rather than no-op succeeding.
+    await expect(commands.browserTabClose({ worktree: 'id:wt-1' })).resolves.toEqual({
+      closed: true
+    })
+    expect(closeTab).toHaveBeenCalledWith('page-active')
+  })
+
+  it('reports not-closed (no false success) when no headless tab can be resolved', async () => {
+    const { RuntimeBrowserCommands } = await import('./orca-runtime-browser')
+    const closeTab = vi.fn(async () => {})
+    const bridge = {
+      getRegisteredTabs: vi.fn(() => new Map()),
+      getActivePageId: vi.fn(() => null),
+      getActiveWebContentsId: vi.fn(() => null)
+    } as unknown as AgentBrowserBridge
+    const commands = new RuntimeBrowserCommands(
+      createHost({
+        getAgentBrowserBridge: () => bridge,
+        getAvailableAuthoritativeWindow: vi.fn(() => null),
+        getOffscreenBrowserBackend: vi.fn(() => ({ createTab: vi.fn(), closeTab }))
+      })
+    )
+
+    await expect(commands.browserTabClose({ worktree: 'id:wt-1' })).resolves.toEqual({
+      closed: false
+    })
+    expect(closeTab).not.toHaveBeenCalled()
+  })
 })

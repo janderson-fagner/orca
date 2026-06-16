@@ -1646,9 +1646,13 @@ export class RuntimeBrowserCommands {
       ? null
       : this.host.getOffscreenBrowserBackend()
     if (offscreen) {
-      if (tabId) {
-        await offscreen.closeTab(tabId)
+      // Why: for implicit close (no --page/--index) resolve the active page like
+      // the renderer path does, so we don't report success while closing nothing.
+      const resolvedTabId = tabId ?? bridge.getActivePageId(worktreeId)
+      if (!resolvedTabId) {
+        return { closed: false }
       }
+      await offscreen.closeTab(resolvedTabId)
       return { closed: true }
     }
 
