@@ -6,7 +6,6 @@ export const STAR_NAG_OUTCOMES = [
   'direct_star_succeeded',
   'direct_star_failed',
   'opened_repo',
-  'already_starred',
   'later',
   'dismissed',
   'disabled',

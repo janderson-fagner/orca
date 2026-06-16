@@ -1531,7 +1531,6 @@ const api = {
     later: (): Promise<void> => ipcRenderer.invoke('star-nag:later'),
     complete: (): Promise<void> => ipcRenderer.invoke('star-nag:complete'),
     disable: (): Promise<void> => ipcRenderer.invoke('star-nag:disable'),
-    alreadyStarred: (): Promise<void> => ipcRenderer.invoke('star-nag:alreadyStarred'),
     openWeb: (): Promise<void> => ipcRenderer.invoke('star-nag:openWeb'),
     starOrca: (): Promise<boolean> => ipcRenderer.invoke('star-nag:starOrca'),
     forceShow: (): Promise<void> => ipcRenderer.invoke('star-nag:forceShow')

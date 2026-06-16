@@ -52,11 +52,6 @@ export function StarNagCard(): React.JSX.Element | null {
     void window.api.starNag.later()
   }
 
-  const handleAlreadyStarred = (): void => {
-    setVisible(false)
-    void window.api.starNag.alreadyStarred()
-  }
-
   useEffect(() => {
     if (!visible) {
       return
@@ -85,6 +80,9 @@ export function StarNagCard(): React.JSX.Element | null {
       try {
         await window.api.shell.openUrl(ORCA_REPO_URL)
         await window.api.starNag.openWeb()
+        if (mountedRef.current) {
+          setVisible(false)
+        }
       } catch {
         // Why: failing to open the external browser is recoverable; keep the
         // prompt available so the user can retry or choose another action.
@@ -164,14 +162,9 @@ export function StarNagCard(): React.JSX.Element | null {
                 ? translate('auto.components.StarNagCard.157bb5ecbb', 'Open GitHub')
                 : translate('auto.components.StarNagCard.2d67b6c849', 'Star on GitHub')}
           </Button>
-          <div className="flex items-center justify-between gap-2">
-            <Button variant="secondary" size="sm" className="h-7 px-2.5" onClick={handleLater}>
-              {translate('auto.components.StarNagCard.8c967b4d15', 'Later')}
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 px-2.5" onClick={handleAlreadyStarred}>
-              {translate('auto.components.StarNagCard.73dfd4eb8d', 'Already starred')}
-            </Button>
-          </div>
+          <Button variant="secondary" size="sm" className="h-7 w-full" onClick={handleLater}>
+            {translate('auto.components.StarNagCard.8c967b4d15', 'Later')}
+          </Button>
         </div>
       </Card>
     </div>

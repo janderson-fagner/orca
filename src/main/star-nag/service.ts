@@ -77,7 +77,6 @@ export class StarNagService {
     ipcMain.handle('star-nag:later', () => this.defer('later'))
     ipcMain.handle('star-nag:complete', () => this.markCompleted())
     ipcMain.handle('star-nag:disable', () => this.disable())
-    ipcMain.handle('star-nag:alreadyStarred', () => this.alreadyStarred())
     ipcMain.handle('star-nag:openWeb', () => this.openWeb())
     ipcMain.handle('star-nag:starOrca', () => this.starOrcaFromNag())
     ipcMain.handle('star-nag:forceShow', () => this.forceShow())
@@ -291,11 +290,6 @@ export class StarNagService {
     this.markCompleted()
   }
 
-  private alreadyStarred(): void {
-    this.trackOutcome('already_starred')
-    this.markCompleted()
-  }
-
   private openWeb(): void {
     const session = this.promptSession
     if (!session || session.openedRepoTracked) {
@@ -303,6 +297,7 @@ export class StarNagService {
     }
     session.openedRepoTracked = true
     trackStarNagSessionOutcome(session, 'opened_repo', { mode: 'web' })
+    this.markCompleted()
   }
 
   private async starOrcaFromNag(): Promise<boolean> {

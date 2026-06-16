@@ -1711,7 +1711,6 @@ export type PreloadApi = {
     later: () => Promise<void>
     complete: () => Promise<void>
     disable: () => Promise<void>
-    alreadyStarred: () => Promise<void>
     openWeb: () => Promise<void>
     starOrca: () => Promise<boolean>
     forceShow: () => Promise<void>

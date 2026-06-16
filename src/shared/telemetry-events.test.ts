@@ -237,7 +237,6 @@ describe('star_nag_outcome schema', () => {
       'direct_star_succeeded',
       'direct_star_failed',
       'opened_repo',
-      'already_starred',
       'later'
     ]) {
       expect(eventSchemas.star_nag_outcome.safeParse({ ...valid, outcome }).success).toBe(true)

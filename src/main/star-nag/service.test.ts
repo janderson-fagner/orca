@@ -616,6 +616,8 @@ describe('StarNagService', () => {
       'star_nag_outcome',
       expect.objectContaining({ outcome: 'opened_repo', mode: 'web' })
     )
+    expect(opened.ui.starNagCompleted).toBe(true)
+    expect(opened.ui.starNagDeferredUntil).toBeNull()
   })
 
   it('emits opened_repo at most once for one prompt session', () => {
@@ -635,7 +637,7 @@ describe('StarNagService', () => {
     expect(openedRepoOutcomes).toHaveLength(1)
   })
 
-  it('emits later cooldown and already_starred completion outcomes', () => {
+  it('emits later cooldown outcome without completing', () => {
     const window = createWindow()
     browserWindowMock.getAllWindows.mockReturnValue([window])
     const later = createHarness()
@@ -653,20 +655,6 @@ describe('StarNagService', () => {
     )
     expect(later.ui.starNagCompleted).toBeUndefined()
     expect(later.ui.starNagDeferredUntil).toBeGreaterThan(Date.now())
-
-    trackMock.mockClear()
-    ipcMainHandleMock.mockClear()
-    const already = createHarness()
-    already.service.registerIpcHandlers()
-    getIpcHandler('star-nag:forceShow')()
-    getIpcHandler('star-nag:alreadyStarred')()
-
-    expect(trackMock).toHaveBeenCalledWith(
-      'star_nag_outcome',
-      expect.objectContaining({ outcome: 'already_starred', mode: 'gh' })
-    )
-    expect(already.ui.starNagCompleted).toBe(true)
-    expect(already.ui.starNagDeferredUntil).toBeNull()
   })
 
   it('emits direct-star attempted and succeeded outcomes plus app_starred_orca', async () => {
@@ -820,6 +808,7 @@ describe('StarNagService', () => {
       'star_nag_outcome',
       expect.objectContaining({ outcome: 'opened_repo', mode: 'web' })
     )
-    expect(ui.starNagCompleted).toBeUndefined()
+    expect(ui.starNagCompleted).toBe(true)
+    expect(ui.starNagDeferredUntil).toBeNull()
   })
 })
