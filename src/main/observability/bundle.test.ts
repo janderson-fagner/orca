@@ -490,7 +490,7 @@ describe('uploadBundle and deleteBundle', () => {
     ).rejects.toThrow(/^diagnostic response exceeded size limit$/)
   })
 
-  it('returns diagnostic blob links from successful uploads', async () => {
+  it('returns only the diagnostic ticket from successful uploads', async () => {
     const baseUrl = await listen((req, res) => {
       res.setHeader('content-type', 'application/json')
       if (req.url === '/token') {
@@ -504,14 +504,10 @@ describe('uploadBundle and deleteBundle', () => {
         )
         return
       }
-      const downloadUrl = `${baseUrl}/diagnostics/download/ticketabcdefghijklmnop?token=signed`
       res.statusCode = 201
       res.end(
         JSON.stringify({
-          ticket_id: 'ticketabcdefghijklmnop',
-          blob_url: 'https://blob.vercel-storage.com/diagnostics/ticket.ndjson',
-          blob_download_url: downloadUrl,
-          blob_pathname: 'diagnostics/ticket.ndjson'
+          ticket_id: 'ticketabcdefghijklmnop'
         })
       )
     })
@@ -523,9 +519,7 @@ describe('uploadBundle and deleteBundle', () => {
         bundleSubmissionId: generateBundleSubmissionId()
       })
     ).resolves.toEqual({
-      ticketId: 'ticketabcdefghijklmnop',
-      blobDownloadUrl: `${baseUrl}/diagnostics/download/ticketabcdefghijklmnop?token=signed`,
-      blobPathname: 'diagnostics/ticket.ndjson'
+      ticketId: 'ticketabcdefghijklmnop'
     })
   })
 
