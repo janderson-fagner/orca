@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { AlertTriangle, Clipboard, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import {
   formatCrashReportText,
@@ -73,6 +75,7 @@ export function CrashReportDialogSurface({
 }: CrashReportDialogSurfaceProps): React.JSX.Element {
   const mountedRef = useMountedRef()
   const [notes, setNotes] = useState('')
+  const [includeDiagnosticLogs, setIncludeDiagnosticLogs] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [viewer, setViewer] = useState<GitHubViewer | null>(null)
   // Why: account lookup can resolve after the dialog closes or reopens.
@@ -114,6 +117,7 @@ export function CrashReportDialogSurface({
       clearViewer()
       return
     }
+    setIncludeDiagnosticLogs(true)
     loadViewerForOpenDialog()
   }, [clearViewer, loadViewerForOpenDialog, open])
 
@@ -152,6 +156,7 @@ export function CrashReportDialogSurface({
       const result = await window.api.crashReports.submit({
         ...(report ? { reportId: report.id } : {}),
         notes,
+        includeDiagnosticLogs,
         // Why: crash reporting must degrade to anonymous if gh is unavailable;
         // identity lookup is best-effort and never blocks report creation.
         submitAnonymously: !viewer,
@@ -229,25 +234,25 @@ export function CrashReportDialogSurface({
         <div className="space-y-3">
           {report ? (
             <>
-            <div className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs">
-              <div className="font-medium text-foreground">{formatSummary(report)}</div>
-              <div className="mt-1 text-muted-foreground">
-                {new Date(report.createdAt).toLocaleString()} · {report.platform} {report.arch} ·
-                {translate('auto.components.crash.report.CrashReportDialog.835037edc9', 'Orca')}{' '}
-                {report.appVersion}
+              <div className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs">
+                <div className="font-medium text-foreground">{formatSummary(report)}</div>
+                <div className="mt-1 text-muted-foreground">
+                  {new Date(report.createdAt).toLocaleString()} · {report.platform} {report.arch} ·
+                  {translate('auto.components.crash.report.CrashReportDialog.835037edc9', 'Orca')}{' '}
+                  {report.appVersion}
+                </div>
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <div className="text-[11px] font-medium text-muted-foreground">
-                {translate(
-                  'auto.components.crash.report.CrashReportDialog.6d3ebe216a',
-                  'Diagnostic text'
-                )}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  {translate(
+                    'auto.components.crash.report.CrashReportDialog.6d3ebe216a',
+                    'Diagnostic text'
+                  )}
+                </div>
+                <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/20 p-3 font-mono text-[11px] leading-5 text-muted-foreground scrollbar-sleek">
+                  {diagnosticText}
+                </pre>
               </div>
-              <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/20 p-3 font-mono text-[11px] leading-5 text-muted-foreground scrollbar-sleek">
-                {diagnosticText}
-              </pre>
-            </div>
             </>
           ) : (
             <div className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
@@ -266,6 +271,23 @@ export function CrashReportDialogSurface({
             placeholder={getNotesPlaceholder(report)}
             className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
+          <div className="flex items-start gap-2 rounded-md border border-border/70 bg-muted/20 p-3">
+            <Checkbox
+              id="crash-report-attach-diagnostics"
+              checked={includeDiagnosticLogs}
+              onCheckedChange={(checked) => setIncludeDiagnosticLogs(checked === true)}
+              disabled={submitting}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="crash-report-attach-diagnostics" className="text-xs">
+                Attach recent diagnostic logs
+              </Label>
+              <div className="text-xs leading-5 text-muted-foreground">
+                Sends a capped redacted log bundle with the report.
+              </div>
+            </div>
+          </div>
         </div>
 
         <DialogFooter className="gap-2">

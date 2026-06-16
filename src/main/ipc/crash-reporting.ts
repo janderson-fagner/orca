@@ -1,7 +1,7 @@
 /* oxlint-disable max-lines -- Why: crash-reporting IPC handlers share renderer
    error capture, diagnostic upload, and crash-store submission state. */
 import os from 'node:os'
-import { app, clipboard, dialog, ipcMain } from 'electron'
+import { app, clipboard, ipcMain } from 'electron'
 import {
   type CrashReportBreadcrumbData,
   type CrashReportDiagnosticBundle,
@@ -309,6 +309,15 @@ function buildUncapturedCrashReportText(
   )
 }
 
+function skippedCrashDiagnosticBundle(): CrashDiagnosticBundleUpload {
+  return {
+    diagnosticBundle: {
+      status: 'not_uploaded',
+      reason: 'diagnostic log upload skipped by user'
+    }
+  }
+}
+
 async function collectAndUploadCrashDiagnosticBundle(): Promise<CrashDiagnosticBundleUpload> {
   const status = getDiagnosticsStatus()
   if (!status.bundleEnabled) {
@@ -316,37 +325,6 @@ async function collectAndUploadCrashDiagnosticBundle(): Promise<CrashDiagnosticB
       diagnosticBundle: {
         status: 'not_uploaded',
         reason: status.disabledReason ?? 'diagnostic bundle collection is disabled'
-      }
-    }
-  }
-
-  const consent = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Attach Logs', 'Send Without Logs'],
-    defaultId: 1,
-    cancelId: 1,
-    title: 'Attach diagnostic logs?',
-    message: 'Attach recent redacted diagnostic logs to this crash report?',
-    detail:
-      'Orca will upload a capped redacted diagnostic bundle to support and link it in the crash report. Choose Send Without Logs to submit only the crash details.'
-  })
-  if (consent.response !== 0) {
-    return {
-      diagnosticBundle: {
-        status: 'not_uploaded',
-        reason: 'diagnostic log upload skipped by user'
-      }
-    }
-  }
-
-  // Why: the renderer is untrusted; re-check the diagnostics setting after the
-  // main-process consent dialog before collecting or uploading log bytes.
-  const statusAfterConsent = getDiagnosticsStatus()
-  if (!statusAfterConsent.bundleEnabled) {
-    return {
-      diagnosticBundle: {
-        status: 'not_uploaded',
-        reason: statusAfterConsent.disabledReason ?? 'diagnostic bundle collection is disabled'
       }
     }
   }
@@ -492,7 +470,10 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
     async (_event, args: CrashReportSubmitArgs): Promise<CrashReportSubmitResult> => {
       const report = await getRequestedCrashReport(store, args)
       if (!report) {
-        const diagnosticUpload = await collectAndUploadCrashDiagnosticBundle()
+        const diagnosticUpload =
+          args.includeDiagnosticLogs === false
+            ? skippedCrashDiagnosticBundle()
+            : await collectAndUploadCrashDiagnosticBundle()
         const diagnosticBundle = diagnosticUpload.diagnosticBundle
         const result = await submitFeedback({
           feedback: buildUncapturedCrashReportText(args.notes, diagnosticBundle),
@@ -532,7 +513,10 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
 
       inFlightSubmissions.add(report.id)
       try {
-        const diagnosticUpload = await collectAndUploadCrashDiagnosticBundle()
+        const diagnosticUpload =
+          args.includeDiagnosticLogs === false
+            ? skippedCrashDiagnosticBundle()
+            : await collectAndUploadCrashDiagnosticBundle()
         const diagnosticBundle = diagnosticUpload.diagnosticBundle
         const result = await submitFeedback({
           feedback: formatCrashReportText(report, args.notes, diagnosticBundle),

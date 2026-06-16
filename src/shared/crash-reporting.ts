@@ -92,6 +92,7 @@ export type ReactErrorBoundaryReportResult =
 export type CrashReportSubmitArgs = {
   reportId?: string
   notes?: string
+  includeDiagnosticLogs?: boolean
   submitAnonymously?: boolean
   githubLogin: string | null
   githubEmail: string | null
