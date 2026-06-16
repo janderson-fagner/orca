@@ -169,6 +169,7 @@ import type {
   HostedReviewInfo,
   HostedReviewProvider
 } from '../../../../shared/hosted-review'
+import { resolveHostedReviewCreationProvider } from '../../../../shared/hosted-review-creation-providers'
 import { humanizeBranchSlug } from '../../../../shared/branch-name-from-work'
 import { STATUS_COLORS, STATUS_LABELS } from './status-display'
 import { isCustomAgentId } from '../../../../shared/commit-message-agent-spec'
@@ -1204,8 +1205,9 @@ function SourceControlInner(): React.JSX.Element {
     branchName === hostedReviewCreationState.branch
       ? hostedReviewCreationState.data
       : null
-  const hostedReviewCreateProvider =
-    hostedReviewCreation?.provider === 'gitlab' ? 'gitlab' : 'github'
+  const hostedReviewCreateProvider = resolveHostedReviewCreationProvider(
+    hostedReviewCreation?.provider
+  )
   const hostedReviewCreateCopy = localizedHostedReviewCopy(hostedReviewCreateProvider)
   const hostedReviewCacheKey =
     activeRepo && branchName
@@ -2140,13 +2142,34 @@ function SourceControlInner(): React.JSX.Element {
         if (activeWorktreeId && result.provider === 'gitlab') {
           await updateWorktreeMeta(activeWorktreeId, { linkedGitLabMR: result.number })
         }
+        if (activeWorktreeId && result.provider === 'azure-devops') {
+          await updateWorktreeMeta(activeWorktreeId, { linkedAzureDevOpsPR: result.number })
+        }
+        if (activeWorktreeId && result.provider === 'gitea') {
+          await updateWorktreeMeta(activeWorktreeId, { linkedGiteaPR: result.number })
+        }
+        const linkedReviewNumbers = {
+          linkedGitHubPR: result.provider === 'github' ? result.number : linkedGitHubPR,
+          fallbackGitHubPR: fallbackGitHubPRNumber,
+          linkedGitLabMR: result.provider === 'gitlab' ? result.number : linkedGitLabMR,
+          linkedBitbucketPR,
+          linkedAzureDevOpsPR:
+            result.provider === 'azure-devops' ? result.number : linkedAzureDevOpsPR,
+          linkedGiteaPR: result.provider === 'gitea' ? result.number : linkedGiteaPR
+        }
         if (result.provider === 'gitlab') {
           await fetchHostedReviewForBranch(activeRepo.path, branchName, {
             force: true,
             repoId: activeRepo.id,
-            linkedGitHubPR,
-            fallbackGitHubPR: fallbackGitHubPRNumber,
-            linkedGitLabMR: result.number
+            ...linkedReviewNumbers
+          })
+          return
+        }
+        if (result.provider !== 'github') {
+          await fetchHostedReviewForBranch(activeRepo.path, branchName, {
+            force: true,
+            repoId: activeRepo.id,
+            ...linkedReviewNumbers
           })
           return
         }
@@ -2154,8 +2177,7 @@ function SourceControlInner(): React.JSX.Element {
           fetchHostedReviewForBranch(activeRepo.path, branchName, {
             force: true,
             repoId: activeRepo.id,
-            linkedGitHubPR: result.number,
-            linkedGitLabMR
+            ...linkedReviewNumbers
           }),
           fetchPRForBranch(activeRepo.path, branchName, {
             force: true,
@@ -2190,6 +2212,9 @@ function SourceControlInner(): React.JSX.Element {
       fallbackGitHubPRNumber,
       fetchHostedReviewForBranch,
       fetchPRForBranch,
+      linkedAzureDevOpsPR,
+      linkedBitbucketPR,
+      linkedGiteaPR,
       linkedGitHubPR,
       linkedGitLabMR,
       setRightSidebarOpen,

@@ -8389,7 +8389,9 @@
             "createPrIntentPublishing": "正在发布分支…",
             "createPrIntentForcePushing": "正在使用 lease 强制推送…",
             "createPrIntentPushing": "正在推送 commits…",
-            "createPrIntentRemoteFailed": "无法更新远程分支。请重试创建 PR。"
+            "createPrIntentRemoteFailed": "无法更新远程分支。请重试创建 PR。",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "无法启动选定的 Agent。",

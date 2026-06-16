@@ -8389,7 +8389,9 @@
             "createPrIntentPublishing": "Publishing branch…",
             "createPrIntentForcePushing": "Force pushing with lease…",
             "createPrIntentPushing": "Pushing commits…",
-            "createPrIntentRemoteFailed": "Could not update the remote branch. Retry Create PR."
+            "createPrIntentRemoteFailed": "Could not update the remote branch. Retry Create PR.",
+            "createPrIntentGeneratingDetails": "Generating review details…",
+            "createPrIntentCreatingReview": "Creating review…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",

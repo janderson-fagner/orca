@@ -1,5 +1,6 @@
 import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
 import type { HostedReviewCreationEligibility } from '../../../../shared/hosted-review'
+import { supportsHostedReviewCreation } from '../../../../shared/hosted-review-creation-providers'
 import type { GitUpstreamStatus } from '../../../../shared/types'
 
 export type CreatePrIntentKind =
@@ -38,7 +39,7 @@ export function resolveCreatePrIntentEligibility({
     !hasCurrentBranch ||
     !hostedReviewCreation ||
     hostedReviewCreation.canCreate ||
-    (hostedReviewCreation.provider !== 'github' && hostedReviewCreation.provider !== 'gitlab')
+    !supportsHostedReviewCreation(hostedReviewCreation.provider)
   ) {
     return { eligible: false, kind: null }
   }
