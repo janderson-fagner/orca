@@ -241,6 +241,7 @@ describe('registerCrashReportingHandlers', () => {
     expect(dialogShowMessageBoxMock).toHaveBeenCalledWith(
       expect.objectContaining({
         buttons: ['Attach Logs', 'Send Without Logs'],
+        defaultId: 1,
         message: 'Attach recent redacted diagnostic logs to this crash report?'
       })
     )
@@ -336,6 +337,7 @@ describe('registerCrashReportingHandlers', () => {
     expect(dialogShowMessageBoxMock).toHaveBeenCalledWith(
       expect.objectContaining({
         buttons: ['Attach Logs', 'Send Without Logs'],
+        defaultId: 1,
         cancelId: 1
       })
     )

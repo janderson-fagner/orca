@@ -323,7 +323,7 @@ async function collectAndUploadCrashDiagnosticBundle(): Promise<CrashDiagnosticB
   const consent = await dialog.showMessageBox({
     type: 'question',
     buttons: ['Attach Logs', 'Send Without Logs'],
-    defaultId: 0,
+    defaultId: 1,
     cancelId: 1,
     title: 'Attach diagnostic logs?',
     message: 'Attach recent redacted diagnostic logs to this crash report?',
