@@ -39,8 +39,6 @@ function getCheckStatusLabel(check: PRCheckDetail): string {
       return translate('auto.components.editor.CheckRunDetailsPanel.5a1c8e3d67', 'Neutral')
     case 'pending':
       return translate('auto.components.editor.CheckRunDetailsPanel.3d9f2b8e14', 'Pending')
-    default:
-      return conclusion
   }
 }
 

@@ -165,7 +165,9 @@
         "editor": {
           "dcb521ed29": "このファイルは競合状態にありますが、編集できる作業ツリー ファイルがありません。",
           "51f15c37d3": "ディレクトリを開けません: {{value0}}",
-          "f2e00db373": "ファイルが見つかりません: {{value0}}"
+          "f2e00db373": "ファイルが見つかりません: {{value0}}",
+          "checkRunDetailsUnavailable": "No details are available for this check.",
+          "checkRunDetailsLoadFailed": "Failed to load check details."
         },
         "github": {
           "f129c42773": "GitHub は新規コメントを返しませんでした。",
@@ -9955,7 +9957,8 @@
           "8a0898ae4c": "このファイルではテキストの差分を使用できません。",
           "3c6e71df22": "ブランチ比較では、このファイルのテキスト差分は使用できません。",
           "d07e4b8553": "ブランチ",
-          "d16e037f40": "リッチ"
+          "d16e037f40": "リッチ",
+          "6c4f1a8d2e": "Check details are unavailable."
         },
         "EditorPanelHeader": {
           "fb8331694e": "プレビューを横に開く",
@@ -10069,7 +10072,8 @@
           "06357eea60": "目次",
           "27d0a9c49a": "目次",
           "65b036a6c8": "{{value0}} を展開します",
-          "97ad46f11f": "{{value0}} を折りたたむ"
+          "97ad46f11f": "{{value0}} を折りたたむ",
+          "8f4d2c1a9b": "Resize table of contents"
         },
         "MarkdownTemplatePicker": {
           "22cd94426f": "無題.md",
@@ -10318,6 +10322,30 @@
         "DiffViewer": {
           "b5675b0694": "保存",
           "593f2193f6": "この下書きは安全に表示できる上限を超えましたが、保存はできます。"
+        },
+        "CheckRunDetailsPanel": {
+          "8f2d0f5a91": "Passed",
+          "4c8e1b2d73": "Failed",
+          "91a4c7e2b0": "Cancelled",
+          "2f6d8a1c45": "Timed out",
+          "7b3e9d4f12": "Skipped",
+          "5a1c8e3d67": "Neutral",
+          "3d9f2b8e14": "Pending",
+          "b7f5e2c91a": "Refresh",
+          "a54ae21c6f": "Status:",
+          "fd46a70f1a": "Started",
+          "00e1c1658a": "Completed",
+          "aa8494ae3c": "check #",
+          "2dd5ddabc4": "workflow #",
+          "1f2b980522": "Loading check details…",
+          "d098e5529a": "Output",
+          "f2fe8a4e8f": "Annotations",
+          "cdbfda4dec": "Annotation",
+          "066fedd446": "Failed jobs",
+          "49731703ea": "Jobs",
+          "ee07b33924": "unknown",
+          "07eccfa397": "No details are available for this check.",
+          "a916648574": "Open details"
         }
       },
       "diff": {

@@ -25,4 +25,7 @@ export type DiffViewerProps = {
   onContentChange?: (content: string) => void
   onSave?: (content: string) => void
   largeDiffRenderLimit?: LargeDiffRenderLimit
+  // Why: main-process limited diffs intentionally blank text bodies before IPC;
+  // the fallback must not treat that placeholder as a saveable draft.
+  largeDiffSaveContentAvailable?: boolean
 }

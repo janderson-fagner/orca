@@ -10,6 +10,7 @@ import * as path from 'path'
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { execFileSync } from 'child_process'
+import { MAX_RENDERED_DIFF_COMBINED_CHARACTERS } from '../shared/large-diff-render-limit'
 import {
   createMockDispatcher,
   gitInit,
@@ -451,6 +452,34 @@ describe('GitHandler', () => {
       expect(result.kind).toBe('text')
       expect(result.originalContent).toBe('original')
       expect(result.modifiedContent).toBe('staged-content')
+    })
+
+    it('omits over-limit text bodies before returning diff payloads', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'file.txt'), 'original')
+      gitCommit(tmpDir, 'initial')
+      const oversizedText = 'a'.repeat(MAX_RENDERED_DIFF_COMBINED_CHARACTERS + 1)
+      writeFileSync(path.join(tmpDir, 'file.txt'), oversizedText)
+
+      const result = (await dispatcher.callRequest('git.diff', {
+        worktreePath: tmpDir,
+        filePath: 'file.txt',
+        staged: false
+      })) as {
+        kind: string
+        originalContent: string
+        modifiedContent: string
+        largeDiffRenderLimit?: { limited: boolean; reason?: string; characterCount?: number }
+      }
+
+      expect(result.kind).toBe('text')
+      expect(result.originalContent).toBe('')
+      expect(result.modifiedContent).toBe('')
+      expect(result.largeDiffRenderLimit?.limited).toBe(true)
+      expect(result.largeDiffRenderLimit?.reason).toBe('character-count')
+      expect(result.largeDiffRenderLimit?.characterCount).toBe(
+        oversizedText.length + 'original'.length
+      )
     })
 
     it('returns diff for tracked files in valid dot-dot-prefixed directories', async () => {

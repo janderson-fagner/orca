@@ -4,16 +4,18 @@ type DiffViewerLargeDiffSaveActionInput = {
   editable?: boolean
   modifiedContent: string
   onSave?: (content: string) => void
+  saveContentAvailable?: boolean
 }
 
 export function getDiffViewerLargeDiffSaveAction({
   editable,
   modifiedContent,
-  onSave
+  onSave,
+  saveContentAvailable = true
 }: DiffViewerLargeDiffSaveActionInput):
   | { label: string; description: string; onClick: () => void }
   | undefined {
-  if (!editable || !onSave || modifiedContent.length === 0) {
+  if (!editable || !onSave || !saveContentAvailable) {
     return undefined
   }
 

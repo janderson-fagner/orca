@@ -42,7 +42,8 @@ export default function DiffViewer({
   addLineCommentPlaceholder,
   onContentChange,
   onSave,
-  largeDiffRenderLimit
+  largeDiffRenderLimit,
+  largeDiffSaveContentAvailable
 }: DiffViewerProps): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
@@ -412,7 +413,12 @@ export default function DiffViewer({
           <LargeDiffFallback
             filePath={relativePath}
             renderLimit={renderLimit}
-            action={getDiffViewerLargeDiffSaveAction({ editable, modifiedContent, onSave })}
+            action={getDiffViewerLargeDiffSaveAction({
+              editable,
+              modifiedContent,
+              onSave,
+              saveContentAvailable: largeDiffSaveContentAvailable
+            })}
           />
         ) : (
           <DiffEditor

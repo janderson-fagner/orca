@@ -384,6 +384,19 @@ describe('getDiff', () => {
     )
   })
 
+  it('marks git blobs that overflow maxBuffer as binary instead of pretending they are missing', async () => {
+    gitExecFileAsyncBufferMock.mockRejectedValueOnce(
+      Object.assign(new Error('stdout maxBuffer length exceeded'), { code: 'ENOBUFS' })
+    )
+    readFileMock.mockResolvedValue(Buffer.from('working-tree-content'))
+
+    const result = await getDiff('/repo', 'src/file.txt', false)
+
+    expect(result.kind).toBe('binary')
+    expect(result.originalIsBinary).toBe(true)
+    expect(result.originalContent).toBe('')
+  })
+
   it('includes preview metadata for pdf diffs', async () => {
     const pdfBuffer = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00])
     gitExecFileAsyncBufferMock.mockResolvedValueOnce({ stdout: pdfBuffer })

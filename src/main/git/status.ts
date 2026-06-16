@@ -980,7 +980,10 @@ async function readGitBlobAtIndexPath(
     })
 
     return { ...bufferToBlob(stdout, filePath), exists: true }
-  } catch {
+  } catch (error) {
+    if (isMaxBufferOverflowError(error)) {
+      return { content: '', isBinary: true, exists: true }
+    }
     return { content: '', isBinary: false, exists: false }
   }
 }
@@ -1002,7 +1005,10 @@ async function readGitBlobAtOidPath(
     )
 
     return { ...bufferToBlob(stdout, filePath), exists: true }
-  } catch {
+  } catch (error) {
+    if (isMaxBufferOverflowError(error)) {
+      return { content: '', isBinary: true, exists: true }
+    }
     return { content: '', isBinary: false, exists: false }
   }
 }
