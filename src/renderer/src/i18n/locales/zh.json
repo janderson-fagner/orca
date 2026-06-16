@@ -8034,7 +8034,8 @@
           "FileExplorer": {
             "79b1537dd3": "选择一个工作区来浏览文件",
             "4da4d89845": "返回资源管理器",
-            "6ed5ce817b": "搜索"
+            "6ed5ce817b": "搜索",
+            "2f4483d6c4": "没有文件匹配此筛选条件"
           },
           "FileExplorerBackgroundMenu": {
             "3b5e2dcb8d": "新建文件夹",
@@ -8071,7 +8072,8 @@
             "31b4c3195d": "更多资源管理器操作",
             "d95e30fe28": "刷新资源管理器",
             "6026b16950": "全部折叠",
-            "693cbeadd0": "搜索"
+            "693cbeadd0": "搜索",
+            "c1f3f3ec70": "搜索文件内容"
           },
           "FileExplorerTreeStatus": {
             "ce03835e1f": "此工作区中没有文件",
@@ -8197,6 +8199,10 @@
             "4567e6e0b6": "匹配整个单词",
             "464ae3974f": "火柴盒",
             "693cbeadd0": "搜索"
+          },
+          "SearchQueryRow": {
+            "queryLabel": "搜索文件",
+            "clearLabel": "清除搜索"
           },
           "SearchResultItems": {
             "cc06595a3b": "复制线路径",
@@ -8793,6 +8799,16 @@
             "copyLogPath": "Copy Log Path",
             "messageCount": "{{value0}} msgs",
             "tokenCount": "{{value0}} tok"
+          },
+          "FileExplorerNameFilter": {
+            "26fb73c6e3": "查找文件",
+            "4d5a6b2a49": "清除文件筛选器",
+            "7a9fb1e6aa": "内容"
+          },
+          "FileExplorerViewSwitch": {
+            "c4e9a2b713": "名称",
+            "b3c8f1a902": "按名称筛选文件",
+            "f8a2c4d1e0": "资源管理器搜索模式"
           },
           "GitHistoryCommitFiles": {
             "a1b2c3d4e5": "正在加载文件…",

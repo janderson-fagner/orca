@@ -8034,7 +8034,8 @@
           "FileExplorer": {
             "79b1537dd3": "Select a workspace to browse files",
             "4da4d89845": "Back to Explorer",
-            "6ed5ce817b": "Search"
+            "6ed5ce817b": "Search",
+            "2f4483d6c4": "No files match this filter"
           },
           "FileExplorerBackgroundMenu": {
             "3b5e2dcb8d": "New Folder",
@@ -8071,7 +8072,8 @@
             "31b4c3195d": "More Explorer Actions",
             "d95e30fe28": "Refresh Explorer",
             "6026b16950": "Collapse All",
-            "693cbeadd0": "Search"
+            "693cbeadd0": "Search",
+            "c1f3f3ec70": "Search file contents"
           },
           "FileExplorerTreeStatus": {
             "ce03835e1f": "No files in this workspace",
@@ -8197,6 +8199,10 @@
             "4567e6e0b6": "Match Whole Word",
             "464ae3974f": "Match Case",
             "693cbeadd0": "Search"
+          },
+          "SearchQueryRow": {
+            "queryLabel": "Search files",
+            "clearLabel": "Clear search"
           },
           "SearchResultItems": {
             "cc06595a3b": "Copy Line Path",
@@ -8793,6 +8799,16 @@
             "copyLogPath": "Copy Log Path",
             "messageCount": "{{value0}} msgs",
             "tokenCount": "{{value0}} tok"
+          },
+          "FileExplorerNameFilter": {
+            "26fb73c6e3": "Find files",
+            "4d5a6b2a49": "Clear file filter",
+            "7a9fb1e6aa": "Contents"
+          },
+          "FileExplorerViewSwitch": {
+            "c4e9a2b713": "Names",
+            "b3c8f1a902": "Filter files by name",
+            "f8a2c4d1e0": "Explorer search mode"
           },
           "GitHistoryCommitFiles": {
             "a1b2c3d4e5": "Loading files…",
@@ -10048,7 +10064,8 @@
           "06357eea60": "Table of Contents",
           "27d0a9c49a": "Table of contents",
           "65b036a6c8": "Expand {{value0}}",
-          "97ad46f11f": "Collapse {{value0}}"
+          "97ad46f11f": "Collapse {{value0}}",
+          "8f4d2c1a9b": "Resize table of contents"
         },
         "MarkdownTemplatePicker": {
           "22cd94426f": "untitled.md",
