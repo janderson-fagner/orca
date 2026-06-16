@@ -872,8 +872,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showRepoBadgeInMetaRow = !compactCards && !!repo && !hideRepoBadge && !showPinnedRepoIcon
   const showHostContextBadge = !compactCards && !!hostContextLabel
   const showDetachedHeadInMetaRow = !compactCards && !isFolder && detachedHeadDisplay !== null
-  const showBranch =
-    !isFolder && branch.length > 0 && (!compactCards || branch !== worktree.displayName)
+  const showBranch = !isFolder && branch.length > 0 && cardProps.includes('branch')
   // Why: rebases already surface in source control; keep dense cards from
   // carrying a persistent rebase chip while preserving other interruption cues.
   const showConflictOperationBadge =
@@ -904,7 +903,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
     ? hasMetadataBadge || cacheStartedAt != null
     : hasDetailedMetaRowContent
   const showHeaderActions = showTitleRowUnread || showTitleRowPrimary || showDeleteQuickAction
-  const showBranchIdentityHover = compactCards && showBranch
+  const showBranchIdentityHover =
+    !isFolder &&
+    branch.length > 0 &&
+    !cardProps.includes('branch') &&
+    branch !== worktree.displayName
   const showInlineAgentList = showDetailedCardProperties && cardProps.includes('inline-agents')
   // Why: sidebar rows need a small surface inset, while their content remains
   // aligned with the pre-inset layout and the repo header hierarchy.
@@ -917,7 +920,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       : undefined
 
   const titleDetailsWrapper =
-    compactCards && (showBranchIdentityHover || hasDetails || hasPorts)
+    showBranchIdentityHover || (compactCards && (hasDetails || hasPorts))
       ? (title: React.ReactElement) => (
           <WorktreeCardDetailsHover
             issue={metaIssue}
@@ -942,7 +945,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
                 ? handleOpenReviewInOrca
                 : undefined
             }
-            // Why: compact mode hides the metadata badge row, so title hover
+            // Why: when metadata is hidden from the card body, title hover
             // carries the same explicit-link affordance without adding chrome.
             onUnlinkReview={
               !affiliateListMode && hasExplicitLinkedReview ? handleUnlinkReview : undefined
@@ -1050,6 +1053,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
             unreadTooltip={unreadTooltip}
             onPointerDown={stopQuickActionPointerPropagation}
             onToggleUnread={handleToggleUnreadQuick}
+            showReviewStatus={showPR}
+            prDisplay={metaReview}
           />
         </div>
       ) : null}

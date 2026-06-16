@@ -1,4 +1,4 @@
-import type { AgentActivityDisplayMode, WorktreeCardProperty } from '../../../../shared/types'
+import type { AgentActivityDisplayMode, WorktreeCardMode } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 
 export const GROUP_BY_OPTIONS = [
@@ -28,68 +28,17 @@ export const GROUP_BY_OPTIONS = [
   }
 ] as const
 
-export const CARD_LAYOUT_OPTIONS = [
+export const WORKTREE_CARD_MODE_OPTIONS: { id: WorktreeCardMode; label: string }[] = [
   {
-    id: 'detailed',
+    id: 'Default',
     get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.cc17bd443b', 'Detailed')
+      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2d4f0eb933', 'Default')
     }
   },
   {
-    id: 'compact',
+    id: 'Compact',
     get label() {
       return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
-    }
-  }
-] as const
-
-export const PROPERTY_OPTIONS: { id: WorktreeCardProperty; label: string }[] = [
-  {
-    id: 'issue',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.91dfc653e8',
-        'GitHub ticket'
-      )
-    }
-  },
-  {
-    id: 'linear-issue',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.ca4d3c522e',
-        'Linear issue'
-      )
-    }
-  },
-  {
-    id: 'pr',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.b8dcc6f321',
-        'PR/MR link'
-      )
-    }
-  },
-  {
-    id: 'comment',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.26c71e536c', 'Notes')
-    }
-  },
-  {
-    id: 'ports',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.b64d8bcca0', 'Ports')
-    }
-  },
-  {
-    id: 'inline-agents',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.d7084e8bc8',
-        'Agent activity'
-      )
     }
   }
 ]

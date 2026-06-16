@@ -203,4 +203,39 @@ describe('WorktreeCard compact hover details', () => {
     expect(markup).toContain('58941')
     expect(markup).not.toContain('data-worktree-card-meta-row=""')
   }, 20_000)
+
+  it('keeps hidden branch identity available from a fresh Default title hover', async () => {
+    settings = { compactWorktreeCards: false }
+    worktreeCardProperties = ['status', 'unread', 'issue', 'linear-issue', 'pr', 'comment', 'ports']
+    const { default: WorktreeCard } = await import('./WorktreeCard')
+
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree({ displayName: 'Human title' })}
+        repo={makeRepo()}
+        isActive={false}
+      />
+    )
+
+    expect(markup).toContain('data-hover-open-delay="100"')
+    expect(markup).toContain('feature/local-branch')
+    expect(markup).toContain('Human title')
+  })
+
+  it('shows the branch row for migrated Default cards with branch enabled', async () => {
+    settings = { compactWorktreeCards: false }
+    worktreeCardProperties = ['status', 'unread', 'branch']
+    const { default: WorktreeCard } = await import('./WorktreeCard')
+
+    const markup = renderToStaticMarkup(
+      <WorktreeCard
+        worktree={makeWorktree({ displayName: 'Human title' })}
+        repo={makeRepo()}
+        isActive={false}
+      />
+    )
+
+    expect(markup).toContain('data-worktree-card-meta-row=""')
+    expect(markup).toContain('feature/local-branch')
+  })
 })

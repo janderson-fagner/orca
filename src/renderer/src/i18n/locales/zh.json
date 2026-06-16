@@ -3579,7 +3579,8 @@
           "projectSshHost": "项目 SSH",
           "activeRuntimeHost": "活动服务器",
           "projectRuntimeHost": "项目服务器",
-          "631b97eea9": "主机范围"
+          "631b97eea9": "主机范围",
+          "2d4f0eb933": "Default"
         },
         "SshDisconnectedDialog": {
           "ca4a7892af": "正在连接...",

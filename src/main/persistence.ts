@@ -64,7 +64,8 @@ import type {
   TerminalLayoutSnapshot,
   TerminalTab,
   WorkspaceSessionPatch,
-  WorkspaceSessionState
+  WorkspaceSessionState,
+  WorktreeCardProperty
 } from '../shared/types'
 import { projectHostSetupProjectionFromRepos } from '../shared/project-host-setup-projection'
 import {
@@ -84,6 +85,7 @@ import {
   getDefaultUIState,
   getDefaultRepoHookSettings,
   getDefaultWorkspaceSession,
+  getWorktreeCardModeProperties,
   normalizeAgentActivityDisplayMode,
   normalizeWorktreeCardProperties,
   ONBOARDING_FLOW_VERSION,
@@ -988,15 +990,12 @@ function resolveSetupGuideSidebarDismissedOnLoad(
   return onboarding.closedAt !== null || persistedDismissed === true
 }
 
-// Why: read a settings field that was removed from the GlobalSettings type
-// but still round-trips on disk via the ...parsed.settings spread. One-shot
-// use only — for the inline-agents default-on migration's Case B discriminator.
-// Delete with the migration in the cleanup release (2+ stable releases after
-// _inlineAgentsDefaultedForAllUsers ships).
-function readDeprecatedExperimentFlag(parsed: PersistedState | undefined): boolean {
+function areWorktreeCardPropertiesEqual(
+  a: readonly WorktreeCardProperty[] | undefined,
+  b: readonly WorktreeCardProperty[]
+): boolean {
   return (
-    (parsed?.settings as { experimentalAgentDashboard?: boolean } | undefined)
-      ?.experimentalAgentDashboard === true
+    a !== undefined && a.length === b.length && a.every((property, index) => property === b[index])
   )
 }
 
@@ -2705,80 +2704,39 @@ export class Store {
             ) {
               this.loadNeedsSave = true
             }
-            // Why: the 'inline-agents' card property was added after the
-            // feature shipped behind an experimental toggle. Now that the
-            // feature is default-on for everyone, every existing user needs
-            // 'inline-agents' appended to their persisted
-            // worktreeCardProperties on first load after upgrade so the
-            // inline agent rows render without further opt-in. A flag
-            // prevents re-firing so a deliberate uncheck from the Workspaces
-            // view options menu sticks across restarts.
-            //
-            // TRAP — do not key this on `_inlineAgentsDefaultedForExperiment`.
-            // That legacy flag was stamped unconditionally on every successful
-            // load() in prior builds, regardless of whether the experiment was
-            // toggled on. Every prior-RC user therefore already has it set to
-            // true on disk, including the opt-out cohort this widened
-            // migration was specifically written to reach. Gating on the
-            // legacy flag would silently skip exactly those users. The
-            // dedicated `_inlineAgentsDefaultedForAllUsers` flag exists so
-            // the new default-on migration can distinguish "already migrated
-            // under the new rules" from "happened to launch a prior build".
-            //
-            // Case B preservation: a user who turned the experiment on and then
-            // deliberately unchecked 'inline-agents' from the sidebar options
-            // menu has the same on-disk shape as a never-touched user. The
-            // discriminator below reads the deprecated `experimentalAgentDashboard`
-            // value as a one-shot signal. Both branches of the migration stamp
-            // `_inlineAgentsDefaultedForAllUsers`, so subsequent launches don't
-            // depend on the deprecated value continuing to round-trip.
             const rawCardProps = parsed.ui?.worktreeCardProperties
-            const inlineAgentsMigrated = parsed.ui?._inlineAgentsDefaultedForAllUsers === true
-            const expandedCardPropsMigrated =
-              parsed.ui?._expandedWorktreeCardPropertiesDefaulted === true
-            const hadExperimentOn = readDeprecatedExperimentFlag(parsed)
-            const deliberateUncheck =
-              hadExperimentOn &&
-              Array.isArray(rawCardProps) &&
-              !rawCardProps.includes('inline-agents')
-            const needsInlineAgentsMigration =
-              !inlineAgentsMigrated &&
-              !deliberateUncheck &&
-              Array.isArray(rawCardProps) &&
-              !rawCardProps.includes('inline-agents')
+            const worktreeCardModeDefaulted = parsed.ui?._worktreeCardModeDefaulted === true
+            const worktreeCardMode =
+              (parsed.settings?.compactWorktreeCards ??
+              parsed.settings?.experimentalCompactWorktreeCards ??
+              defaults.settings.compactWorktreeCards)
+                ? 'Compact'
+                : 'Default'
             const migratedCardProps = (() => {
+              const modeProps = getWorktreeCardModeProperties(worktreeCardMode)
               if (!Array.isArray(rawCardProps)) {
-                return undefined
+                return modeProps
               }
-              const candidate = needsInlineAgentsMigration
-                ? [...rawCardProps, 'inline-agents' as const]
-                : rawCardProps
-              const expandedCandidate = (() => {
-                if (expandedCardPropsMigrated) {
-                  return candidate
-                }
-                const next = [...candidate]
-                // Why: Linear used to be controlled by the generic issue
-                // property and Ports were always visible. Add the split-out
-                // properties once so existing cards keep their prior surface.
-                if (candidate.includes('issue') && !candidate.includes('linear-issue')) {
-                  next.push('linear-issue' as const)
-                }
-                if (!candidate.includes('ports')) {
-                  next.push('ports' as const)
-                }
-                return next
-              })()
-              const normalized = normalizeWorktreeCardProperties(expandedCandidate)
-              const changed =
-                normalized.length !== rawCardProps.length ||
-                normalized.some((property, index) => property !== rawCardProps[index])
-              return changed ? normalized : undefined
+              if (worktreeCardModeDefaulted) {
+                return normalizeWorktreeCardProperties(rawCardProps)
+              }
+              // Why: old detailed cards always showed a branch row. Preserve
+              // that once only for profiles that had persisted card properties
+              // before the two-mode default marker existed; fresh defaults
+              // keep the reviewed no-branch surface.
+              if (worktreeCardMode === 'Default' && Array.isArray(rawCardProps)) {
+                return normalizeWorktreeCardProperties([...modeProps, 'branch'])
+              }
+              return modeProps
             })()
             if (
-              migratedCardProps !== undefined ||
-              !inlineAgentsMigrated ||
-              !expandedCardPropsMigrated
+              !worktreeCardModeDefaulted ||
+              !areWorktreeCardPropertiesEqual(
+                Array.isArray(rawCardProps)
+                  ? normalizeWorktreeCardProperties(rawCardProps)
+                  : undefined,
+                migratedCardProps
+              )
             ) {
               this.loadNeedsSave = true
             }
@@ -2815,12 +2773,11 @@ export class Store {
               _workspaceStatusesDefaultWorkflowMigrated: true,
               _workspaceStatusesDefaultVisualsMigrated: true,
               _sortBySmartMigrated: true,
-              ...(migratedCardProps !== undefined
-                ? { worktreeCardProperties: migratedCardProps }
-                : {}),
+              worktreeCardProperties: migratedCardProps,
+              _worktreeCardModeDefaulted: true,
               // Why: keep stamping the legacy flag for forward-compat with
               // a rollback to a pre-default-on build that still reads it.
-              // The new flag is the one that actually gates the migration.
+              // The mode marker is the one that now gates card-property migration.
               _inlineAgentsDefaultedForExperiment: true,
               _inlineAgentsDefaultedForAllUsers: true,
               _expandedWorktreeCardPropertiesDefaulted: true

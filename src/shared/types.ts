@@ -2865,6 +2865,9 @@ export type WorktreeCardProperty =
   | 'unread'
   // Legacy persisted preference. CI status is now represented by linked PR metadata.
   | 'ci'
+  // Internal migration-only property for legacy detailed cards that showed
+  // branch identity as a visible row.
+  | 'branch'
   // GitHub issue metadata shown on workspace cards.
   | 'issue'
   // Linear issue metadata shown on workspace cards.
@@ -2876,9 +2879,9 @@ export type WorktreeCardProperty =
   // workspace card when the experimental agent-activity feature is on. On by
   // default (see DEFAULT_WORKTREE_CARD_PROPERTIES in shared/constants.ts) —
   // live agent activity is the primary reason users opt into the feature.
-  // Users who prefer a compact sidebar can uncheck it from the Workspaces
-  // view options.
   | 'inline-agents'
+
+export type WorktreeCardMode = 'Default' | 'Compact'
 
 export type AgentActivityDisplayMode = 'compact' | 'full'
 
@@ -2974,6 +2977,9 @@ export type PersistedUIState = {
   uiZoomLevel: number
   editorFontZoomLevel: number
   worktreeCardProperties: WorktreeCardProperty[]
+  /** One-shot migration flag for deriving card properties from the two
+   *  user-facing worktree card modes. */
+  _worktreeCardModeDefaulted?: boolean
   agentActivityDisplayMode?: AgentActivityDisplayMode
   workspaceStatuses?: WorkspaceStatusDefinition[]
   workspaceBoardOpacity?: number

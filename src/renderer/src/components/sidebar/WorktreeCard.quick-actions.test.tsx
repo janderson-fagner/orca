@@ -223,8 +223,8 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).toContain('This worktree will be renamed from the first agent message')
   })
 
-  it('renders the repeated branch metadata row in detailed cards', () => {
-    worktreeCardProperties = []
+  it('renders the migrated branch metadata row when branch is enabled', () => {
+    worktreeCardProperties = ['branch']
 
     const markup = renderToStaticMarkup(
       <WorktreeCard
@@ -314,7 +314,7 @@ describe('WorktreeCard quick actions', () => {
 
     expect(markup).toContain('primary')
     expect(markup).not.toContain('aria-label="Primary worktree"')
-    expect(markup).toContain('data-worktree-card-meta-row=""')
+    expect(markup).not.toContain('data-worktree-card-meta-row=""')
   })
 
   it('moves unread and primary into the title row when compact cards are enabled', () => {

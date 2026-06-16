@@ -3612,7 +3612,8 @@
           "e029a2d775": "Status",
           "c2c7a45cda": "None",
           "680043342f": "compact",
-          "c7591b6014": "repo"
+          "c7591b6014": "repo",
+          "2d4f0eb933": "Default"
         },
         "SshDisconnectedDialog": {
           "ca4a7892af": "Connecting...",

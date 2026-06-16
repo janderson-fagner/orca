@@ -694,6 +694,7 @@ type RuntimeStore = {
     defaultRepoSelection?: GlobalSettings['defaultRepoSelection']
     defaultLinearTeamSelection?: GlobalSettings['defaultLinearTeamSelection']
     githubProjects?: GlobalSettings['githubProjects']
+    compactWorktreeCards?: GlobalSettings['compactWorktreeCards']
     gitlabProjects?: GlobalSettings['gitlabProjects']
     experimentalWorktreeSymlinks?: boolean
     mobileAutoRestoreFitMs?: number | null
@@ -2009,6 +2010,7 @@ export class OrcaRuntimeService {
     | 'defaultRepoSelection'
     | 'defaultLinearTeamSelection'
     | 'githubProjects'
+    | 'compactWorktreeCards'
   > {
     if (!this.store?.getSettings) {
       throw new Error('runtime_unavailable')
@@ -2026,7 +2028,8 @@ export class OrcaRuntimeService {
       visibleTaskProviders: settings.visibleTaskProviders ?? [...TASK_PROVIDERS],
       defaultRepoSelection: settings.defaultRepoSelection ?? null,
       defaultLinearTeamSelection: settings.defaultLinearTeamSelection ?? null,
-      githubProjects: settings.githubProjects
+      githubProjects: settings.githubProjects,
+      compactWorktreeCards: settings.compactWorktreeCards === true
     }
   }
 
@@ -2044,6 +2047,7 @@ export class OrcaRuntimeService {
       | 'defaultRepoSelection'
       | 'defaultLinearTeamSelection'
       | 'githubProjects'
+      | 'compactWorktreeCards'
     >
   ): Pick<
     GlobalSettings,
@@ -2059,6 +2063,7 @@ export class OrcaRuntimeService {
     | 'defaultRepoSelection'
     | 'defaultLinearTeamSelection'
     | 'githubProjects'
+    | 'compactWorktreeCards'
   > {
     if (!this.store?.getSettings || !this.store.updateSettings) {
       throw new Error('runtime_unavailable')

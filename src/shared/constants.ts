@@ -31,7 +31,10 @@ import {
 
 export { DEFAULT_STATUS_BAR_ITEMS } from './status-bar-defaults'
 export {
+  COMPACT_WORKTREE_CARD_PROPERTIES,
   DEFAULT_WORKTREE_CARD_PROPERTIES,
+  getWorktreeCardModeProperties,
+  getWorktreeCardModeUpdates,
   normalizeWorktreeCardProperties
 } from './worktree-card-properties'
 
@@ -441,6 +444,7 @@ export function getDefaultUIState(): PersistedUIState {
     uiZoomLevel: 0,
     editorFontZoomLevel: 0,
     worktreeCardProperties: [...DEFAULT_WORKTREE_CARD_PROPERTIES],
+    _worktreeCardModeDefaulted: true,
     agentActivityDisplayMode: DEFAULT_AGENT_ACTIVITY_DISPLAY_MODE,
     workspaceStatuses: cloneDefaultWorkspaceStatuses(),
     workspaceBoardOpacity: 1,

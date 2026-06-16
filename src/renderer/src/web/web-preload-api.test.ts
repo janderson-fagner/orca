@@ -134,6 +134,7 @@ describe('web keybindings preload API', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.doUnmock('./web-runtime-client')
   })
 
   it('returns snapshots and persists customized bindings in browser storage', async () => {
@@ -306,6 +307,70 @@ describe('web settings preload API', () => {
     expect(settings.autoRenameBranchFromWorkDefaultedOn).toBe(true)
     expect(stored.autoRenameBranchFromWork).toBe(false)
     expect(stored.autoRenameBranchFromWorkDefaultedOn).toBe(true)
+  })
+
+  it('hydrates compact worktree cards from a paired runtime', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: { settings: { compactWorktreeCards: true } },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    const settings = await globals.window.api.settings.get()
+    const stored = JSON.parse(globals.storage.getItem('orca.web.settings.v1') ?? '{}') as {
+      compactWorktreeCards?: boolean
+    }
+
+    expect(settings.compactWorktreeCards).toBe(true)
+    expect(stored.compactWorktreeCards).toBe(true)
+    expect(runtimeCalls).toEqual([{ method: 'settings.get', params: undefined }])
+  })
+
+  it('forwards compact worktree card updates to a paired runtime', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: { settings: { compactWorktreeCards: true } },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    const settings = await globals.window.api.settings.set({ compactWorktreeCards: true })
+
+    expect(settings.compactWorktreeCards).toBe(true)
+    expect(runtimeCalls).toEqual([
+      { method: 'settings.update', params: { compactWorktreeCards: true } }
+    ])
   })
 })
 

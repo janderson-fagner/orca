@@ -3547,11 +3547,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     const shouldRefreshIssues = shouldRefreshIssueDecorations(state)
     const isPRStatusGrouping = state.groupBy === 'pr-status'
     const rightSidebarShowsPR = rightSidebarShowsPullRequestData(state)
-    const shouldRefreshPRs =
-      isPRStatusGrouping ||
-      rightSidebarShowsPR ||
-      cardProps.includes('pr') ||
-      cardProps.includes('ci')
+    const shouldRefreshPRs = isPRStatusGrouping || rightSidebarShowsPR || cardProps.includes('pr')
 
     for (const worktrees of Object.values(state.worktreesByRepo)) {
       for (const wt of worktrees) {
@@ -3871,7 +3867,6 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
     const shouldRefreshPR =
       state.groupBy === 'pr-status' ||
       cardProps.includes('pr') ||
-      cardProps.includes('ci') ||
       rightSidebarShowsPullRequestData(state)
 
     if (shouldRefreshPR && !worktree.isBare && branch) {

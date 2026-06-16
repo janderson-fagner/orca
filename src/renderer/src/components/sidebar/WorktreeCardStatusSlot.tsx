@@ -6,6 +6,8 @@ import { getWorktreeStatusLabel } from '@/lib/worktree-status'
 import { FilledBellIcon } from './WorktreeCardHelpers'
 import StatusIndicator from './StatusIndicator'
 import { useWorktreeActivityStatus } from './use-worktree-activity-status'
+import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
+import { getReviewLabel, ReviewIcon } from './worktree-review-helpers'
 
 type WorktreeCardStatusSlotProps = {
   worktreeId: string
@@ -15,7 +17,32 @@ type WorktreeCardStatusSlotProps = {
   unreadTooltip: string
   onToggleUnread: React.MouseEventHandler<HTMLButtonElement>
   onPointerDown: React.PointerEventHandler<HTMLButtonElement>
+  showReviewStatus?: boolean
+  prDisplay?: WorktreeCardPrDisplay | null
   className?: string
+}
+
+function getReviewStatusTooltip(review: WorktreeCardPrDisplay): string {
+  const label = getReviewLabel(review)
+  if (review.status === 'failure') {
+    return `${label} checks: Failed`
+  }
+  if (review.status === 'pending') {
+    return `${label} checks: Pending`
+  }
+  if (review.status === 'success') {
+    return `${label} checks: Passing`
+  }
+  if (review.state === 'merged') {
+    return `${label}: Merged`
+  }
+  if (review.state === 'closed') {
+    return `${label}: Closed`
+  }
+  if (review.state === 'draft') {
+    return `${label}: Draft`
+  }
+  return `${label}: Open`
 }
 
 export function WorktreeCardStatusSlot({
@@ -26,26 +53,47 @@ export function WorktreeCardStatusSlot({
   unreadTooltip,
   onToggleUnread,
   onPointerDown,
+  showReviewStatus = false,
+  prDisplay = null,
   className
 }: WorktreeCardStatusSlotProps): React.JSX.Element | null {
   const status = useWorktreeActivityStatus(worktreeId)
   const statusLabel = getWorktreeStatusLabel(status) || status
+  const canShowReviewStatus =
+    showReviewStatus && prDisplay !== null && (status === 'active' || status === 'done')
+  const passiveStatusLabel =
+    canShowReviewStatus && prDisplay ? getReviewStatusTooltip(prDisplay) : statusLabel
+  const passiveStatus =
+    canShowReviewStatus && prDisplay ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={cn('inline-flex size-4 items-center justify-center', className)}>
+            <ReviewIcon review={prDisplay} className="size-3.5" />
+            <span className="sr-only">{passiveStatusLabel}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={8}>
+          <span>{passiveStatusLabel}</span>
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <>
+        <StatusIndicator status={status} aria-hidden="true" className={className} />
+        <span className="sr-only">{statusLabel}</span>
+      </>
+    )
 
   if (!showStatus && !showUnreadAction) {
     return null
   }
 
   if (!showUnreadAction) {
-    return (
-      <>
-        <StatusIndicator status={status} aria-hidden="true" className={className} />
-        <span className="sr-only">{statusLabel}</span>
-      </>
-    )
+    return passiveStatus
   }
 
   const actionLabel = isUnread ? 'Mark as read' : 'Mark as unread'
-  const tooltip = showStatus && !isUnread ? `${statusLabel} · ${unreadTooltip}` : unreadTooltip
+  const tooltip =
+    showStatus && !isUnread ? `${passiveStatusLabel} · ${unreadTooltip}` : unreadTooltip
 
   return (
     <>
@@ -66,6 +114,14 @@ export function WorktreeCardStatusSlot({
           >
             {isUnread ? (
               <FilledBellIcon className="size-[13px] text-amber-500 drop-shadow-sm" />
+            ) : showStatus && canShowReviewStatus && prDisplay ? (
+              <>
+                <ReviewIcon
+                  review={prDisplay}
+                  className="size-3.5 transition-opacity group-hover/unread:opacity-0 group-focus-within/unread:opacity-0"
+                />
+                <Bell className="absolute size-3 text-muted-foreground/40 opacity-0 transition-opacity group-hover/unread:opacity-100 group-focus-within/unread:opacity-100" />
+              </>
             ) : showStatus ? (
               <>
                 <StatusIndicator

@@ -32,6 +32,7 @@ import {
   getDefaultUIState,
   getDefaultWorkspaceSession,
   normalizeAgentActivityDisplayMode,
+  normalizeWorktreeCardProperties,
   ONBOARDING_FLOW_VERSION
 } from '../../../shared/constants'
 import { legacyBaseRefSearchResult } from '../../../shared/base-ref-search-result'
@@ -443,7 +444,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       getConfig: () => createE2EConfig({})
     },
     settings: {
-      get: async () => getStoredSettings(),
+      get: async () => getRuntimeBackedStoredSettings(),
       set: async (updates) => {
         if (updates.activeRuntimeEnvironmentId === null) {
           disconnectActiveRuntimeEnvironment()
@@ -456,7 +457,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
           preserveAutoRenameBranchFromWorkUpdate: 'autoRenameBranchFromWork' in sanitizedUpdates
         })
         writeJson(SETTINGS_STORAGE_KEY, next)
-        return next
+        return syncRuntimeBackedSettings(sanitizedUpdates, next)
       },
       listFonts: () => Promise.resolve([]),
       onChanged: () => noopUnsubscribe
@@ -2611,6 +2612,55 @@ function getStoredSettings(): GlobalSettings {
   )
 }
 
+async function getRuntimeBackedStoredSettings(): Promise<GlobalSettings> {
+  const local = getStoredSettings()
+  if (!requireActiveEnvironmentOrNull()) {
+    return local
+  }
+  try {
+    const result = await callRuntimeResult<{ settings: Partial<GlobalSettings> }>(
+      'settings.get',
+      undefined,
+      15_000
+    )
+    const next = mergeSettings(local, result.settings)
+    writeJson(SETTINGS_STORAGE_KEY, next)
+    return next
+  } catch {
+    // Why: unpaired/offline web clients keep a local settings fallback.
+    return local
+  }
+}
+
+async function syncRuntimeBackedSettings(
+  updates: Partial<GlobalSettings>,
+  localNext: GlobalSettings
+): Promise<GlobalSettings> {
+  if (!requireActiveEnvironmentOrNull()) {
+    return localNext
+  }
+  const runtimeUpdates: Partial<GlobalSettings> = {}
+  if (typeof updates.compactWorktreeCards === 'boolean') {
+    runtimeUpdates.compactWorktreeCards = updates.compactWorktreeCards
+  }
+  if (Object.keys(runtimeUpdates).length === 0) {
+    return localNext
+  }
+  try {
+    const result = await callRuntimeResult<{ settings: Partial<GlobalSettings> }>(
+      'settings.update',
+      runtimeUpdates,
+      15_000
+    )
+    const next = mergeSettings(localNext, result.settings)
+    writeJson(SETTINGS_STORAGE_KEY, next)
+    return next
+  } catch {
+    // Why: unpaired/offline web clients still need local settings persistence.
+    return localNext
+  }
+}
+
 function getStoredOnboarding(): OnboardingState {
   const storedRaw = window.localStorage.getItem(ONBOARDING_STORAGE_KEY)
   if (storedRaw) {
@@ -2702,6 +2752,11 @@ function mergeWebUIState(
   return {
     ...base,
     ...safeUpdates,
+    worktreeCardProperties: normalizeWorktreeCardProperties(
+      safeUpdates.worktreeCardProperties ?? base.worktreeCardProperties
+    ),
+    _worktreeCardModeDefaulted:
+      safeUpdates._worktreeCardModeDefaulted ?? base._worktreeCardModeDefaulted,
     agentActivityDisplayMode: normalizeAgentActivityDisplayMode(
       safeUpdates.agentActivityDisplayMode ?? base.agentActivityDisplayMode
     )

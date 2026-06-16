@@ -26,6 +26,7 @@ const WorktreeCardProperty = z.enum([
   'status',
   'unread',
   'ci',
+  'branch',
   'issue',
   'linear-issue',
   'pr',
@@ -131,6 +132,7 @@ const SettingsUpdate = z
     defaultTaskViewPreset: z
       .enum(['issues', 'my-issues', 'prs', 'my-prs', 'review', 'all'])
       .optional(),
+    compactWorktreeCards: z.boolean().optional(),
     agentStatusHooksEnabled: z.boolean().optional(),
     defaultRepoSelection: z.array(z.string()).nullable().optional(),
     defaultLinearTeamSelection: z.array(z.string()).nullable().optional(),
@@ -168,6 +170,7 @@ const UiUpdate = z
     uiZoomLevel: z.number().finite().optional(),
     editorFontZoomLevel: z.number().finite().optional(),
     worktreeCardProperties: z.array(WorktreeCardProperty).optional(),
+    _worktreeCardModeDefaulted: z.boolean().optional(),
     agentActivityDisplayMode: AgentActivityDisplayMode.optional(),
     workspaceStatuses: z.array(WorkspaceStatusDefinition).optional(),
     workspaceBoardOpacity: z.number().finite().optional(),

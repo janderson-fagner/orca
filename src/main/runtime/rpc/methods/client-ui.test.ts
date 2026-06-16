@@ -50,6 +50,7 @@ describe('client UI RPC methods', () => {
       visibleTaskProviders: ['github', 'linear'],
       defaultRepoSelection: ['repo-1', 'repo-2'],
       defaultLinearTeamSelection: ['team-1', 'team-2'],
+      compactWorktreeCards: true,
       githubProjects: {
         pinned: [],
         recent: [],
@@ -72,6 +73,7 @@ describe('client UI RPC methods', () => {
         defaultTaskSource: 'linear',
         visibleTaskProviders: ['github', 'linear'],
         defaultTaskViewPreset: 'my-prs',
+        compactWorktreeCards: true,
         defaultRepoSelection: settings.defaultRepoSelection,
         defaultLinearTeamSelection: ['team-1', 'team-2'],
         githubProjects: settings.githubProjects
@@ -84,6 +86,7 @@ describe('client UI RPC methods', () => {
       defaultTaskSource: 'linear',
       visibleTaskProviders: ['github', 'linear'],
       defaultTaskViewPreset: 'my-prs',
+      compactWorktreeCards: true,
       defaultRepoSelection: settings.defaultRepoSelection,
       defaultLinearTeamSelection: ['team-1', 'team-2'],
       githubProjects: settings.githubProjects
@@ -164,7 +167,8 @@ describe('client UI RPC methods', () => {
   it('accepts persisted literal UI arrays and nested UI state', async () => {
     const updated: PersistedUIState = {
       ...getDefaultUIState(),
-      worktreeCardProperties: ['status', 'inline-agents'],
+      worktreeCardProperties: ['status', 'branch', 'inline-agents'],
+      _worktreeCardModeDefaulted: true,
       statusBarItems: ['codex'],
       taskResumeState: {
         githubMode: 'items',
@@ -199,7 +203,8 @@ describe('client UI RPC methods', () => {
     const dispatcher = new RpcDispatcher({ runtime, methods: CLIENT_UI_METHODS })
 
     const payload = {
-      worktreeCardProperties: ['status', 'inline-agents'],
+      worktreeCardProperties: ['status', 'branch', 'inline-agents'],
+      _worktreeCardModeDefaulted: true,
       statusBarItems: ['codex'],
       taskResumeState: {
         githubMode: 'items',
@@ -261,6 +266,21 @@ describe('client UI RPC methods', () => {
 
     const response = await dispatcher.dispatch(
       makeRequest('ui.set', { showActiveOnly: 'yes', unknownField: true })
+    )
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
+    expect(runtime.updateUIState).not.toHaveBeenCalled()
+  })
+
+  it('rejects unknown worktree card properties', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      updateUIState: vi.fn()
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: CLIENT_UI_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('ui.set', { worktreeCardProperties: ['status', 'pr-status'] })
     )
 
     expect(response).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
