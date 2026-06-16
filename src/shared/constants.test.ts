@@ -31,6 +31,10 @@ describe('getDefaultSettings', () => {
     expect(getDefaultSettings('/tmp').terminalUseSeparateLightTheme).toBe(true)
   })
 
+  it('asks before closing terminals with running processes by default', () => {
+    expect(getDefaultSettings('/tmp').skipCloseTerminalWithRunningProcessConfirm).toBe(false)
+  })
+
   it('uses system language by default', () => {
     expect(getDefaultSettings('/tmp').uiLanguage).toBe('system')
   })

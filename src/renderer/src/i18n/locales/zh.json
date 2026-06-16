@@ -2224,7 +2224,14 @@
             "ebd2fa844d": "关闭",
             "1d1a7a9c1f": "取消",
             "6b9a6975f8": "terminal 仍有正在运行的进程。如果关闭 terminal，该进程将被终止。",
-            "78b79d854d": "关闭 Terminal？"
+            "78b79d854d": "关闭 Terminal？",
+            "stop_agent_title": "Stop this agent?",
+            "stop_command_title": "Stop running command?",
+            "stop_agent_description": "Closing this terminal will stop the agent's current work.",
+            "stop_command_description": "Closing this terminal will stop the command running inside it.",
+            "dont_ask_again": "Don't ask again for running terminals",
+            "stop_agent_confirm": "Stop Agent",
+            "stop_command_confirm": "Stop and Close"
           },
           "MobileDriverOverlay": {
             "c6460cf584": "收回",
@@ -6015,7 +6022,9 @@
           "af0c3b6e39": "在 Windows 上，右键单击将剪贴板粘贴到 terminal 中。使用 Ctrl+右键单击打开上下文菜单。",
           "29154326bb": "在",
           "ab20575a8a": "离开",
-          "ab3a1f9068": "执行程序"
+          "ab3a1f9068": "执行程序",
+          "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
+          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "预览 {{value0}} 主题",
@@ -7623,7 +7632,9 @@
               "description": "Import theme YAML files as Orca terminal themes.",
               "keyword_yaml": "yaml",
               "keyword_custom": "自定义"
-            }
+            },
+            "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
+            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
           },
           "windows": {
             "search": {

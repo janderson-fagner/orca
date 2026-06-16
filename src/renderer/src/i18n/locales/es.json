@@ -2224,7 +2224,14 @@
             "ebd2fa844d": "Cerca",
             "1d1a7a9c1f": "Cancelar",
             "6b9a6975f8": "La terminal todavía tiene un proceso en ejecución. Si cierra la terminal, el proceso finalizará.",
-            "78b79d854d": "¿Cerrar terminal?"
+            "78b79d854d": "¿Cerrar terminal?",
+            "stop_agent_title": "Stop this agent?",
+            "stop_command_title": "Stop running command?",
+            "stop_agent_description": "Closing this terminal will stop the agent's current work.",
+            "stop_command_description": "Closing this terminal will stop the command running inside it.",
+            "dont_ask_again": "Don't ask again for running terminals",
+            "stop_agent_confirm": "Stop Agent",
+            "stop_command_confirm": "Stop and Close"
           },
           "MobileDriverOverlay": {
             "c6460cf584": "Devolver",
@@ -6030,7 +6037,9 @@
           "af0c3b6e39": "En Windows, haga clic derecho y pegue el portapapeles en la terminal. Utilice Ctrl+clic derecho para abrir el menú contextual.",
           "29154326bb": "en",
           "ab20575a8a": "apagado",
-          "ab3a1f9068": "wsl.exe"
+          "ab3a1f9068": "wsl.exe",
+          "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
+          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "Vista previa del tema {{value0}}",
@@ -7638,7 +7647,9 @@
               "description": "Import theme YAML files as Orca terminal themes.",
               "keyword_yaml": "yaml",
               "keyword_custom": "custom"
-            }
+            },
+            "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
+            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
           },
           "windows": {
             "search": {
