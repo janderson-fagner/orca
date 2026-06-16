@@ -17,7 +17,7 @@ import {
   trackStarNagSessionOutcome
 } from './prompt-session-telemetry'
 
-const STAR_NAG_COOLDOWN_DAYS = 30
+const STAR_NAG_COOLDOWN_DAYS = 3
 const STAR_NAG_COOLDOWN_MS = STAR_NAG_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
 
 /**

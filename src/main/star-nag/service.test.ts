@@ -288,7 +288,7 @@ describe('StarNagService', () => {
     const window = createWindow()
     browserWindowMock.getAllWindows.mockReturnValue([window])
     const { service, emitAgentStarted } = createHarness({
-      starNagDeferredUntil: Date.now() + 30 * 24 * 60 * 60 * 1000
+      starNagDeferredUntil: Date.now() + 3 * 24 * 60 * 60 * 1000
     })
 
     service.start()
@@ -303,7 +303,7 @@ describe('StarNagService', () => {
     const window = createWindow()
     browserWindowMock.getAllWindows.mockReturnValue([window])
     const { service } = createHarness({
-      starNagDeferredUntil: Date.now() + 30 * 24 * 60 * 60 * 1000
+      starNagDeferredUntil: Date.now() + 3 * 24 * 60 * 60 * 1000
     })
 
     service.registerIpcHandlers()
@@ -590,7 +590,7 @@ describe('StarNagService', () => {
       agents_since_baseline_bucket: '35-69',
       nth_repo_added: 3,
       next_threshold: STAR_NAG_INITIAL_THRESHOLD * 2,
-      cooldown_days: 30
+      cooldown_days: 3
     })
 
     trackMock.mockClear()
@@ -646,7 +646,7 @@ describe('StarNagService', () => {
 
     expect(trackMock).toHaveBeenCalledWith(
       'star_nag_outcome',
-      expect.objectContaining({ outcome: 'later', cooldown_days: 30 })
+      expect.objectContaining({ outcome: 'later', cooldown_days: 3 })
     )
     expect(consoleInfoMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ event: 'star_nag_later' })
