@@ -190,6 +190,31 @@ describe('WorktreeCard linked PR display', () => {
     expect(markup).toContain('Linked PR #789')
   })
 
+  it('uses the hosted review title when the stored workspace title is the branch', async () => {
+    hostedReviewCache = {
+      'local::repo-1::feature/local-branch': {
+        data: makeHostedReview(),
+        fetchedAt: Date.now()
+      }
+    }
+    const { default: WorktreeCard } = await import('./WorktreeCard')
+
+    const markup = renderWorktreeCardMarkup(
+      <WorktreeCard
+        worktree={makeWorktree({
+          displayName: 'feature/local-branch',
+          linkedPR: 456
+        })}
+        repo={makeRepo()}
+        isActive={false}
+      />
+    )
+
+    expect(markup).toContain('data-worktree-title-inline-rename=""')
+    expect(markup).toContain('>Fix stale GH PR</span>')
+    expect(markup).not.toContain('>feature/local-branch</span>')
+  })
+
   it('shows task, PR, and notes metadata in detailed cards', async () => {
     worktreeCardProperties = ['issue', 'linear-issue', 'pr', 'comment']
     const { default: WorktreeCard } = await import('./WorktreeCard')
