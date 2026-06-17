@@ -147,7 +147,23 @@ function makeExecResponses(opts: {
   // Override probe stdout for shell-noise pressure tests. If set, replaces
   // the load-test stdout entirely (useful for testing pollution prefixes).
   probeStdoutOverride?: string
+  // Raw stdout for the build-toolchain probe that runs in installNativeDeps'
+  // catch when `npm install` rejects on Linux. Defaults to a fully-present
+  // toolchain so the original npm error propagates unchanged.
+  toolchainProbe?: string
 }): ExecResponse[] {
+  // npm install failure aborts the deploy after the catch probes the remote's
+  // build toolchain — no chmod/probe/launch slots are reached.
+  if (opts.npmInstall !== 'ok') {
+    return [
+      'Linux x86_64',
+      '/home/u',
+      '', // mkdir remoteDir (uploadRelay)
+      '', // chmod +x node
+      opts.npmInstall, // npm install rejects
+      opts.toolchainProbe ?? 'HAVE make\nHAVE g++\nHAVE cc\nHAVE python3\nPKG apt-get'
+    ]
+  }
   const probeSlot: ExecResponse =
     opts.probeStdoutOverride !== undefined
       ? opts.probeStdoutOverride
@@ -275,6 +291,47 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
 
     const warnMessages = warnSpy.mock.calls.map((args) => String(args[0] ?? ''))
     expect(warnMessages.some((m) => m.includes('[ssh-relay][NATIVE-DEPS-INSTALL-FAIL]'))).toBe(true)
+  })
+
+  it('rewrites the npm failure into an actionable build-tools message when the remote toolchain is missing', async () => {
+    const conn = makeMockConnection(sftpCapture)
+    feed(
+      makeExecResponses({
+        npmInstall: { reject: 'gyp ERR! stack Error: not found: make' },
+        probe: 'ok',
+        // No HAVE lines → make/g++ absent; apt-get present → tailored hint.
+        toolchainProbe: 'PKG apt-get'
+      })
+    )
+
+    const error = await deployAndLaunchRelay(conn).catch((e: Error) => e)
+    expect(error).toBeInstanceOf(Error)
+    const message = (error as Error).message
+    // Actionable: names the missing tools and the exact install command.
+    expect(message).toContain('build tools')
+    expect(message).toContain('make')
+    expect(message).toContain('sudo apt-get install -y build-essential')
+    // The raw npm/node-gyp output is preserved for triage, not discarded.
+    expect(message).toContain('not found: make')
+
+    expect(vi.mocked(finalizeInstall)).not.toHaveBeenCalled()
+  })
+
+  it('preserves the original npm error when the remote toolchain is present', async () => {
+    const conn = makeMockConnection(sftpCapture)
+    feed(
+      makeExecResponses({
+        npmInstall: { reject: 'npm ERR! network ETIMEDOUT' },
+        probe: 'ok',
+        toolchainProbe: 'HAVE make\nHAVE g++\nHAVE python3\nPKG apt-get'
+      })
+    )
+
+    // A present toolchain means the failure is something else (network, registry)
+    // — surface the real error rather than a misleading "install build tools".
+    const error = await deployAndLaunchRelay(conn).catch((e: Error) => e)
+    expect((error as Error).message).toContain('npm ERR! network ETIMEDOUT')
+    expect((error as Error).message).not.toContain('build tools')
   })
 
   it('warns clearly when node-pty installs but require() fails (built-but-unloadable)', async () => {
