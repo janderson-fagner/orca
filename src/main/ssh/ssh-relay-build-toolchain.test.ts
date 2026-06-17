@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildToolchainProbeCommand,
   parseBuildToolchainProbe,
-  formatMissingToolchainError
+  formatMissingToolchainError,
+  shouldProbeBuildToolchainAfterNativeDepsFailure
 } from './ssh-relay-build-toolchain'
 
 describe('buildToolchainProbeCommand', () => {
@@ -42,16 +43,38 @@ describe('parseBuildToolchainProbe', () => {
   })
 
   it('accepts clang++ as the C++ compiler', () => {
-    const status = parseBuildToolchainProbe('HAVE make\nHAVE clang\nHAVE clang++')
+    const status = parseBuildToolchainProbe('HAVE make\nHAVE clang\nHAVE clang++\nHAVE python3')
     expect(status.toolchainMissing).toBe(false)
   })
 
   it('ignores shell noise around the markers', () => {
     const status = parseBuildToolchainProbe(
-      'Welcome to Acme\nHAVE make\nHAVE g++\nMOTD line\nPKG apk'
+      'Welcome to Acme\nHAVE make\nHAVE g++\nHAVE python3\nMOTD line\nPKG apk'
     )
     expect(status.toolchainMissing).toBe(false)
     expect(status.packageManager).toBe('apk')
+  })
+})
+
+describe('shouldProbeBuildToolchainAfterNativeDepsFailure', () => {
+  it('matches node-gyp missing build-tool output', () => {
+    expect(
+      shouldProbeBuildToolchainAfterNativeDepsFailure('gyp ERR! stack Error: not found: make')
+    ).toBe(true)
+    expect(
+      shouldProbeBuildToolchainAfterNativeDepsFailure(
+        'node-gyp ERR! Could not find any Python installation'
+      )
+    ).toBe(true)
+  })
+
+  it('does not match unrelated npm failures', () => {
+    expect(shouldProbeBuildToolchainAfterNativeDepsFailure('npm ERR! network ETIMEDOUT')).toBe(
+      false
+    )
+    expect(
+      shouldProbeBuildToolchainAfterNativeDepsFailure('npm ERR! E404 Not Found node-pty')
+    ).toBe(false)
   })
 })
 

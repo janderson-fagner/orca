@@ -20,7 +20,11 @@ import {
   gcOldRelayVersions
 } from './ssh-relay-versioned-install'
 import { shellEscape } from './ssh-connection-utils'
-import { probeBuildToolchain, formatMissingToolchainError } from './ssh-relay-build-toolchain'
+import {
+  probeBuildToolchain,
+  formatMissingToolchainError,
+  shouldProbeBuildToolchainAfterNativeDepsFailure
+} from './ssh-relay-build-toolchain'
 import {
   commandWithNodePath,
   makeRemoteDirectoryCommand,
@@ -456,7 +460,7 @@ async function installNativeDeps(
     // C/C++ toolchain is the dominant first-connect failure (#1693). Probe the
     // remote and replace node-gyp's opaque `not found: make` with an actionable
     // install hint instead of leaking the raw npm output to the user.
-    if (platform.startsWith('linux')) {
+    if (platform.startsWith('linux') && shouldProbeBuildToolchainAfterNativeDepsFailure(msg)) {
       const toolchain = await probeBuildToolchain(conn, hostPlatform)
       if (toolchain?.toolchainMissing) {
         throw new Error(formatMissingToolchainError(toolchain, msg))

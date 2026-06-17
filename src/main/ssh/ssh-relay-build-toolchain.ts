@@ -33,8 +33,9 @@ const PACKAGE_MANAGER_HINTS: readonly { bin: string; install: string }[] = [
 export type BuildToolchainStatus = {
   present: string[]
   packageManager: string | null
-  // node-gyp needs `make` plus a C++ compiler; python is reported but not part
-  // of this verdict because node-gyp can find it under several names/paths.
+  // node-gyp needs make, Python, and a C++ compiler. The caller only uses this
+  // verdict after npm/node-gyp output already points at a native-build failure,
+  // so custom Python paths do not make unrelated npm failures look toolchainy.
   toolchainMissing: boolean
 }
 
@@ -75,8 +76,25 @@ export function parseBuildToolchainProbe(output: string): BuildToolchainStatus {
   return {
     present: PROBED_TOOLS.filter((tool) => present.has(tool)),
     packageManager,
-    toolchainMissing: !present.has('make') || !hasCxxCompiler(present)
+    toolchainMissing: !present.has('make') || !hasCxxCompiler(present) || !hasPython(present)
   }
+}
+
+export function shouldProbeBuildToolchainAfterNativeDepsFailure(message: string): boolean {
+  const lower = message.toLowerCase()
+  if (!lower.includes('gyp') && !lower.includes('node-gyp')) {
+    return false
+  }
+  return (
+    /\bnot found:\s*(make|gmake|gcc|g\+\+|cc|c\+\+|clang|clang\+\+|python|python3)\b/i.test(
+      message
+    ) ||
+    /\b(make|gmake|gcc|g\+\+|cc|c\+\+|clang|clang\+\+|python|python3)\b.*\bnot found\b/i.test(
+      message
+    ) ||
+    lower.includes('could not find any python installation') ||
+    lower.includes('no xcode or clt version detected')
+  )
 }
 
 export function formatMissingToolchainError(
