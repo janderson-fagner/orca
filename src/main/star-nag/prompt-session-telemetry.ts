@@ -4,7 +4,7 @@ import { track } from '../telemetry/client'
 
 export type StarNagPromptContext = Omit<
   EventProps<'star_nag_outcome'>,
-  'outcome' | 'next_threshold'
+  'outcome' | 'next_threshold' | 'cooldown_days'
 >
 
 export type StarNagPromptSession = StarNagPromptContext & {

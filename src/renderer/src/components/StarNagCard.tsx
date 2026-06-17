@@ -48,6 +48,9 @@ export function StarNagCard(): React.JSX.Element | null {
   }
 
   const handleLater = (): void => {
+    if (busy) {
+      return
+    }
     setVisible(false)
     void window.api.starNag.later()
   }
@@ -94,9 +97,15 @@ export function StarNagCard(): React.JSX.Element | null {
       return
     }
     setBusy(true)
-    const ok = await window.api.starNag.starOrca()
-    if (mountedRef.current) {
-      setBusy(false)
+    let ok = false
+    try {
+      ok = await window.api.starNag.starOrca()
+    } catch {
+      ok = false
+    } finally {
+      if (mountedRef.current) {
+        setBusy(false)
+      }
     }
     if (!ok) {
       if (mountedRef.current) {
@@ -162,7 +171,13 @@ export function StarNagCard(): React.JSX.Element | null {
                 ? translate('auto.components.StarNagCard.157bb5ecbb', 'Open GitHub')
                 : translate('auto.components.StarNagCard.2d67b6c849', 'Star on GitHub')}
           </Button>
-          <Button variant="secondary" size="sm" className="h-7 w-full" onClick={handleLater}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 w-full"
+            onClick={handleLater}
+            disabled={busy}
+          >
             {translate('auto.components.StarNagCard.8c967b4d15', 'Later')}
           </Button>
         </div>
