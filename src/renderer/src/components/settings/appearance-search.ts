@@ -2,6 +2,7 @@ import type { SettingsSearchEntry } from './settings-search'
 import { getTerminalAppearanceSearchEntries } from './terminal-search'
 import { getLeftSidebarAppearanceEntry, getSidebarEntries } from './appearance-sidebar-search'
 import { createLocalizedCatalog } from '@/i18n/localized-catalog'
+import { getRendererAppPlatform } from '@/lib/renderer-app-platform'
 import { translate } from '@/i18n/i18n'
 import { translateSearchKeyword } from './settings-search-keywords'
 import { SHOW_UI_LANGUAGE_SETTING } from '@/i18n/supported-languages'
@@ -184,6 +185,63 @@ export const getAppIconEntries = createLocalizedCatalog((): SettingsSearchEntry[
   }
 ])
 
+// Why: Windows-only. Returns no entries off win32 so the tray setting never
+// surfaces in search (or renders) on platforms where the feature is hidden.
+export const getSystemTrayEntries = createLocalizedCatalog((): SettingsSearchEntry[] =>
+  getRendererAppPlatform() === 'win32'
+    ? [
+        {
+          title: translate(
+            'auto.components.settings.appearance.search.9a115966d3',
+            'Minimize to Tray on Close'
+          ),
+          description: translate(
+            'auto.components.settings.appearance.search.4d5b9427b5',
+            'When enabled, closing the window keeps Orca running in the system tray instead of quitting.'
+          ),
+          keywords: [
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.tray',
+              'tray',
+              {
+                englishOnly: true
+              }
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.system',
+              'system tray',
+              { englishOnly: true }
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.minimize',
+              'minimize',
+              { englishOnly: true }
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.close',
+              'close',
+              { englishOnly: true }
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.e5bc35d59e',
+              'window'
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.notification',
+              'notification area',
+              { englishOnly: true }
+            ),
+            ...translateSearchKeyword(
+              'auto.components.settings.appearance.search.tray.background',
+              'background',
+              { englishOnly: true }
+            )
+          ]
+        }
+      ]
+    : []
+)
+
 type AppearancePaneSearchOptions = {
   showWarpImport?: boolean
 }
@@ -201,7 +259,8 @@ function buildAppearancePaneSearchEntries(
     ...getTitlebarEntries(),
     ...getStatusBarEntries(),
     ...getSidebarEntries(),
-    ...getAppIconEntries()
+    ...getAppIconEntries(),
+    ...getSystemTrayEntries()
   ]
 }
 

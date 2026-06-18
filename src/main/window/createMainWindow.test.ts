@@ -2683,5 +2683,45 @@ describe('createMainWindow', () => {
         isQuitting: false
       })
     })
+
+    // Why: on Windows the renderer-drawn X routes through window:request-close,
+    // not the native close event — regression guard for the bug where the app
+    // quit instead of hiding because the guard only covered the native event.
+    function captureIpcHandlers(): Record<string, (...args: any[]) => void> {
+      const ipcHandlers: Record<string, (...args: any[]) => void> = {}
+      vi.mocked(ipcMain.on).mockImplementation((channel, handler) => {
+        ipcHandlers[channel] = handler as (...args: any[]) => void
+        return ipcMain
+      })
+      return ipcHandlers
+    }
+
+    it('hides to the tray when the renderer-drawn X requests close', () => {
+      setPlatform('win32')
+      const ipcHandlers = captureIpcHandlers()
+      const { webContents, instance } = setupCloseWindow()
+      const store = makeStore(true, true)
+
+      createMainWindow(store as never, { getIsQuitting: () => false })
+      ipcHandlers['window:request-close']?.()
+
+      expect(instance.hide).toHaveBeenCalledTimes(1)
+      expect(webContents.send).not.toHaveBeenCalledWith('window:close-requested', expect.anything())
+    })
+
+    it('forwards window:request-close to the renderer when the setting is off', () => {
+      setPlatform('win32')
+      const ipcHandlers = captureIpcHandlers()
+      const { webContents, instance } = setupCloseWindow()
+      const store = makeStore(false, true)
+
+      createMainWindow(store as never, { getIsQuitting: () => false })
+      ipcHandlers['window:request-close']?.()
+
+      expect(instance.hide).not.toHaveBeenCalled()
+      expect(webContents.send).toHaveBeenCalledWith('window:close-requested', {
+        isQuitting: false
+      })
+    })
   })
 })

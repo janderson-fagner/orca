@@ -4380,6 +4380,9 @@
           "5f5142a62a": "Previous icon"
         },
         "AppearancePane": {
+          "872af9556e": "System Tray",
+          "2edf606c46": "Minimize to Tray on Close",
+          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting.",
           "3057983501": "Unassigned",
           "0cd9b8228f": "Choose the app icon shown in the Dock and window switcher.",
           "ca1590d42f": "App Icon",
@@ -4863,8 +4866,6 @@
           "7173352632": "idle"
         },
         "GeneralWorkspaceSettingsSection": {
-          "b70c61e81a": "Minimize to Tray on Close",
-          "5fe4a603e4": "When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only.",
           "3d538a98f7": "Choose apps available from a workspace's Open in menu.",
           "008f92085f": "Open In Apps",
           "824b98a0d9": "Show a confirmation before deleting automations and their run history.",
@@ -6462,6 +6463,8 @@
         },
         "appearance": {
           "search": {
+            "9a115966d3": "Minimize to Tray on Close",
+            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting.",
             "468448bba4": "watercolor",
             "f586abfa35": "blue",
             "651f35b2c6": "switcher",

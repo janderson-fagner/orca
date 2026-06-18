@@ -4423,7 +4423,10 @@
             "tintOpacity": "Intensidad del tinte",
             "tintOpacityDescription": "Controla con qué fuerza se mezcla el tinte en la barra lateral."
           },
-          "workspaceCardLayoutGuidance": "Usa el menú de opciones de la barra lateral de espacios de trabajo > Diseño de tarjeta > Compacto."
+          "workspaceCardLayoutGuidance": "Usa el menú de opciones de la barra lateral de espacios de trabajo > Diseño de tarjeta > Compacto.",
+          "872af9556e": "System Tray",
+          "2edf606c46": "Minimize to Tray on Close",
+          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -4877,9 +4880,7 @@
           "5567191a6e": "Navegar",
           "0e9fc0eadc": "Directorio de espacio de trabajo",
           "e2955d9ccb": "Configure dónde se crean nuevos espacios de trabajo.",
-          "7511097c5d": "Espacio de trabajo",
-          "b70c61e81a": "Minimize to Tray on Close",
-          "5fe4a603e4": "When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only."
+          "7511097c5d": "Espacio de trabajo"
         },
         "GhosttyImportModal": {
           "9d3e56ca36": "Aplicar cambios",
@@ -6548,7 +6549,9 @@
               "cardLayout": "diseño de tarjeta",
               "workspaceOptions": "opciones de espacios de trabajo",
               "detailed": "detallado"
-            }
+            },
+            "9a115966d3": "Minimize to Tray on Close",
+            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
           }
         },
         "auto": {

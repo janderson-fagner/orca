@@ -4,7 +4,6 @@ import { OpenInMenuSetting } from './OpenInMenuSetting'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader, SettingsSwitchRow } from './SettingsFormControls'
 import { WorkspaceDirectorySetting } from './WorkspaceDirectorySetting'
-import { getRendererAppPlatform } from '@/lib/renderer-app-platform'
 import { translate } from '@/i18n/i18n'
 
 type GeneralWorkspaceSettingsSectionProps = {
@@ -16,9 +15,6 @@ export function GeneralWorkspaceSettingsSection({
   settings,
   updateSettings
 }: GeneralWorkspaceSettingsSectionProps): React.JSX.Element {
-  // Why: minimize-to-tray is a Windows-only behavior, so hide the toggle on
-  // macOS/Linux where the close button always quits.
-  const isWindows = getRendererAppPlatform() === 'win32'
   return (
     <section key="workspace" className="space-y-4">
       <SettingsSubsectionHeader
@@ -158,43 +154,6 @@ export function GeneralWorkspaceSettingsSection({
           />
         </SearchableSetting>
       </div>
-
-      {isWindows ? (
-        <SearchableSetting
-          title={translate(
-            'auto.components.settings.GeneralWorkspaceSettingsSection.b70c61e81a',
-            'Minimize to Tray on Close'
-          )}
-          description={translate(
-            'auto.components.settings.GeneralWorkspaceSettingsSection.5fe4a603e4',
-            'When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only.'
-          )}
-          keywords={[
-            'tray',
-            'system tray',
-            'minimize',
-            'close',
-            'window',
-            'notification area',
-            'background'
-          ]}
-        >
-          <SettingsSwitchRow
-            label={translate(
-              'auto.components.settings.GeneralWorkspaceSettingsSection.b70c61e81a',
-              'Minimize to Tray on Close'
-            )}
-            description={translate(
-              'auto.components.settings.GeneralWorkspaceSettingsSection.5fe4a603e4',
-              'When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only.'
-            )}
-            checked={settings.minimizeToTrayOnClose === true}
-            onChange={() =>
-              updateSettings({ minimizeToTrayOnClose: !settings.minimizeToTrayOnClose })
-            }
-          />
-        </SearchableSetting>
-      ) : null}
     </section>
   )
 }

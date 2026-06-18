@@ -31,6 +31,7 @@ import {
   getSidebarEntries,
   getStatusBarEntries,
   getStatusBarToggles,
+  getSystemTrayEntries,
   getThemeEntries,
   getTitlebarEntries,
   getTypographyEntries,
@@ -42,6 +43,7 @@ import type { UseGhosttyImportReturn } from './useGhosttyImport'
 import type { UseWarpThemeImportReturn } from './useWarpThemeImport'
 import { AppIconSelector } from './AppIconSelector'
 import { isWebClientLocation } from '@/hooks/useSettingsNavigationMetadata'
+import { getRendererAppPlatform } from '@/lib/renderer-app-platform'
 import {
   getUiLanguageChoiceLabel,
   SHOW_UI_LANGUAGE_SETTING,
@@ -99,6 +101,8 @@ export function AppearancePane({
   warpThemes
 }: AppearancePaneProps): React.JSX.Element {
   const searchQuery = useAppStore((state) => state.settingsSearchQuery)
+  // Why: the system tray behavior is Windows-only, so gate the section here.
+  const isWindows = getRendererAppPlatform() === 'win32'
   const zoomInKeyCombos = useShortcutKeyComboDetails('zoom.in')
   const zoomOutKeyCombos = useShortcutKeyComboDetails('zoom.out')
   const statusBarItems = useAppStore((state) => state.statusBarItems)
@@ -356,6 +360,42 @@ export function AppearancePane({
               checked={settings.showTitlebarAppName}
               onChange={() =>
                 updateSettings({ showTitlebarAppName: !settings.showTitlebarAppName })
+              }
+            />
+          </SearchableSetting>
+        </div>
+      </section>
+    ) : null,
+    isWindows && matchesSettingsSearch(searchQuery, getSystemTrayEntries()) ? (
+      <section key="system-tray" className="space-y-3">
+        <SettingsSubsectionHeader
+          title={translate('auto.components.settings.AppearancePane.872af9556e', 'System Tray')}
+        />
+
+        <div className="divide-y divide-border/40">
+          <SearchableSetting
+            title={translate(
+              'auto.components.settings.AppearancePane.2edf606c46',
+              'Minimize to Tray on Close'
+            )}
+            description={translate(
+              'auto.components.settings.AppearancePane.b707773a0d',
+              'When enabled, closing the window keeps Orca running in the system tray instead of quitting.'
+            )}
+            keywords={getSystemTrayEntries()[0]?.keywords ?? ['tray', 'minimize', 'close']}
+          >
+            <SettingsSwitchRow
+              label={translate(
+                'auto.components.settings.AppearancePane.2edf606c46',
+                'Minimize to Tray on Close'
+              )}
+              description={translate(
+                'auto.components.settings.AppearancePane.b707773a0d',
+                'When enabled, closing the window keeps Orca running in the system tray instead of quitting.'
+              )}
+              checked={settings.minimizeToTrayOnClose === true}
+              onChange={() =>
+                updateSettings({ minimizeToTrayOnClose: !settings.minimizeToTrayOnClose })
               }
             />
           </SearchableSetting>
