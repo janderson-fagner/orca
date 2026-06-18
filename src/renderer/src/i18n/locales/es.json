@@ -4877,7 +4877,9 @@
           "5567191a6e": "Navegar",
           "0e9fc0eadc": "Directorio de espacio de trabajo",
           "e2955d9ccb": "Configure dónde se crean nuevos espacios de trabajo.",
-          "7511097c5d": "Espacio de trabajo"
+          "7511097c5d": "Espacio de trabajo",
+          "b70c61e81a": "Minimize to Tray on Close",
+          "5fe4a603e4": "When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only."
         },
         "GhosttyImportModal": {
           "9d3e56ca36": "Aplicar cambios",

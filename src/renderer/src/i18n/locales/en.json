@@ -4863,6 +4863,8 @@
           "7173352632": "idle"
         },
         "GeneralWorkspaceSettingsSection": {
+          "b70c61e81a": "Minimize to Tray on Close",
+          "5fe4a603e4": "When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only.",
           "3d538a98f7": "Choose apps available from a workspace's Open in menu.",
           "008f92085f": "Open In Apps",
           "824b98a0d9": "Show a confirmation before deleting automations and their run history.",

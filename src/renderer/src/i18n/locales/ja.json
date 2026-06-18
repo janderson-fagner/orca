@@ -4861,7 +4861,9 @@
           "5567191a6e": "ブラウズ",
           "0e9fc0eadc": "ワークスペースディレクトリ",
           "e2955d9ccb": "新規ワークスペースを作成する場所を構成します。",
-          "7511097c5d": "ワークスペース"
+          "7511097c5d": "ワークスペース",
+          "b70c61e81a": "Minimize to Tray on Close",
+          "5fe4a603e4": "When enabled, closing the window keeps Orca running in the system tray instead of quitting. Windows only."
         },
         "GhosttyImportModal": {
           "9d3e56ca36": "変更を適用する",
