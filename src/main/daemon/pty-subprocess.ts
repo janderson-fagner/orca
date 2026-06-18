@@ -662,6 +662,37 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     }
   })
 
+  // Why: a single large write to Windows ConPTY can overflow conhost's input
+  // buffer and silently drop the excess, truncating large pastes. Chunk + pace
+  // writes so conhost drains between them; win32-only to keep Unix writes direct.
+  const conptyWriteChunkBytes = 256
+  const conptyWriteIntervalMs = 4
+  const isWindowsConpty = process.platform === 'win32'
+  let pacedWriteQueue: string[] = []
+  let pacedWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+  const flushPacedWrite = (): void => {
+    pacedWriteTimer = null
+    if (dead) {
+      pacedWriteQueue = []
+      return
+    }
+    const chunk = pacedWriteQueue.shift()
+    if (chunk === undefined) {
+      return
+    }
+    try {
+      proc.write(chunk)
+    } catch {
+      dead = true
+      pacedWriteQueue = []
+      return
+    }
+    if (pacedWriteQueue.length > 0) {
+      pacedWriteTimer = setTimeout(flushPacedWrite, conptyWriteIntervalMs)
+    }
+  }
+
   return {
     pid: proc.pid,
     getForegroundProcess: () => {
@@ -698,6 +729,17 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     },
     write: (data) => {
       if (dead) {
+        return
+      }
+      // Why: pace large writes — and any write while a drain is in flight, to keep
+      // byte order — through the queue; small writes on a quiet queue go direct.
+      if (isWindowsConpty && (data.length > conptyWriteChunkBytes || pacedWriteQueue.length > 0)) {
+        for (let i = 0; i < data.length; i += conptyWriteChunkBytes) {
+          pacedWriteQueue.push(data.slice(i, i + conptyWriteChunkBytes))
+        }
+        if (!pacedWriteTimer) {
+          flushPacedWrite()
+        }
         return
       }
       try {
