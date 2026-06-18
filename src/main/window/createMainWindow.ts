@@ -1,5 +1,14 @@
 /* oxlint-disable max-lines */
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, screen, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  Notification,
+  screen,
+  shell
+} from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { Store } from '../persistence'
@@ -933,6 +942,36 @@ export function createMainWindow(
   const confirmCloseChannel = 'window:confirm-close'
 
   mainWindow.on('close', (e) => {
+    const isRendererCrashed = mainWindow.webContents.isCrashed?.() ?? false
+    // Why: Windows minimize-to-tray. When the setting is on and this isn't a
+    // real quit (Ctrl+Q / tray "Quit" set getIsQuitting) and the renderer is
+    // alive, hide to the tray instead of closing. Any failed condition falls
+    // through to the unchanged close flow, so quit/crash teardown is intact.
+    if (
+      process.platform === 'win32' &&
+      !windowCloseConfirmed &&
+      !rendererProcessGone &&
+      !isRendererCrashed &&
+      opts?.getIsQuitting?.() !== true &&
+      store?.getSettings().minimizeToTrayOnClose === true
+    ) {
+      e.preventDefault()
+      mainWindow.hide()
+      // Why: tell the user once that closing only hid the window; the persisted
+      // flag stops the notice from repeating on every later minimize.
+      if (store.getUI().trayMinimizeNoticeShown !== true) {
+        try {
+          new Notification({
+            title: 'Orca',
+            body: 'Orca is still running in the system tray'
+          }).show()
+        } catch {
+          // Notification is best-effort — never block hiding the window.
+        }
+        store.updateUI({ trayMinimizeNoticeShown: true })
+      }
+      return
+    }
     if (windowCloseConfirmed) {
       windowCloseConfirmed = false
       // Why: past this point Electron/OS may emit resize/move/unmaximize as
@@ -947,7 +986,6 @@ export function createMainWindow(
       }
       return
     }
-    const isRendererCrashed = mainWindow.webContents.isCrashed?.() ?? false
     if (rendererProcessGone || isRendererCrashed) {
       // Why: after a native renderer crash the renderer cannot answer
       // window:close-requested. Let Cmd+Q / OS close complete instead of

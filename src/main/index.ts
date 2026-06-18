@@ -78,6 +78,7 @@ import { getInitialClaudeRateLimitTarget } from './rate-limits/claude-rate-limit
 import { getInitialCodexRateLimitTarget } from './rate-limits/codex-rate-limit-target'
 import { attachMainWindowServices } from './window/attach-main-window-services'
 import { createMainWindow, loadMainWindow } from './window/createMainWindow'
+import { createSystemTray, destroySystemTray } from './tray/system-tray'
 import { focusExistingMainWindow } from './window/focus-existing-window'
 import { CodexAccountService } from './codex-accounts/service'
 import { CodexRuntimeHomeService } from './codex-accounts/runtime-home-service'
@@ -554,6 +555,23 @@ function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget):
   return runtimeHomePath
 }
 
+// Why: tray "Open Orca" / left-click restores the window the close handler may
+// have hidden to the tray; if the window was fully torn down, reopen it the
+// same way macOS dock re-activation does (guarded against update relaunch).
+function showMainWindowFromTray(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.show()
+    mainWindow.focus()
+    return
+  }
+  if (!isQuittingForUpdate()) {
+    openMainWindow()
+  }
+}
+
 function openMainWindow(): BrowserWindow {
   logStartupMilestone('open-main-window-start')
   if (!store) {
@@ -757,6 +775,18 @@ function openMainWindow(): BrowserWindow {
     stopAllSyntheticTitleSpinners()
   })
   mainWindow = window
+  // Why: Windows-only system tray. createSystemTray is idempotent and a no-op
+  // off win32, so calling it on each window open keeps exactly one live icon.
+  createSystemTray({
+    appIcon: store.getSettings().appIcon,
+    onOpen: showMainWindowFromTray,
+    onQuit: () => {
+      // Why: set the quit latch before app.quit() so the window 'close' handler
+      // proceeds to teardown instead of re-hiding the window to the tray.
+      isQuitting = true
+      app.quit()
+    }
+  })
   window.on('show', resumeSyntheticTitleSpinnerTimer)
   window.on('restore', resumeSyntheticTitleSpinnerTimer)
   window.on('hide', stopSyntheticTitleSpinnerTimer)
@@ -1645,6 +1675,9 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  // Why: remove the tray icon as the app quits so it doesn't linger as an
+  // orphan glyph in the Windows notification area after the process exits.
+  destroySystemTray()
   unsubscribeAgentAwakeStatusChanges?.()
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()
