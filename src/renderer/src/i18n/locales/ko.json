@@ -58,6 +58,13 @@
     "window": "창",
     "help": "도움말"
   },
+  "tray": {
+    "openOrca": "Orca 열기",
+    "quit": "종료",
+    "minimizeNotice": {
+      "body": "Orca가 시스템 트레이에서 계속 실행 중입니다"
+    }
+  },
   "worktreeJumpPalette": {
     "matchLabel": {
       "comment": "댓글",
@@ -4407,10 +4414,10 @@
             "tintOpacity": "색조 강도",
             "tintOpacityDescription": "사이드바에 색조를 얼마나 강하게 섞을지 조절합니다."
           },
-          "workspaceCardLayoutGuidance": "작업 공간 사이드바 옵션 메뉴 > 카드 레이아웃 > 컴팩트를 사용하세요.",
-          "872af9556e": "System Tray",
-          "2edf606c46": "Minimize to Tray on Close",
-          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+          "872af9556e": "시스템 트레이",
+          "2edf606c46": "닫을 때 트레이로 최소화",
+          "b707773a0d": "활성화하면 창을 닫아도 Orca가 종료되지 않고 시스템 트레이에서 계속 실행됩니다.",
+          "workspaceCardLayoutGuidance": "워크스페이스 사이드바 옵션 메뉴 > 카드 레이아웃 > 컴팩트를 사용하세요."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -6523,6 +6530,8 @@
               "title": "왼쪽 사이드바 모양",
               "description": "왼쪽 사이드바를 터미널에 맞추거나 기본값을 유지하거나 은은한 색조를 적용합니다."
             },
+            "9a115966d3": "닫을 때 트레이로 최소화",
+            "4d5b9427b5": "활성화하면 창을 닫아도 Orca가 종료되지 않고 시스템 트레이에서 계속 실행됩니다.",
             "workspaceCardLayout": {
               "title": "작업 공간 카드 레이아웃",
               "description": "작업 공간 사이드바 옵션 메뉴에서 작업 공간 카드를 컴팩트 또는 상세 보기로 전환합니다.",
@@ -6531,11 +6540,9 @@
               "workspaceCards": "작업 공간 카드",
               "worktreeCards": "워크트리 카드",
               "cardLayout": "카드 레이아웃",
-              "workspaceOptions": "작업 공간 옵션",
+              "workspaceOptions": "워크스페이스 옵션",
               "detailed": "상세"
-            },
-            "9a115966d3": "Minimize to Tray on Close",
-            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+            }
           }
         },
         "auto": {

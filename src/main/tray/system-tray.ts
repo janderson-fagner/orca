@@ -1,5 +1,6 @@
 import { Menu, Tray } from 'electron'
 import { createAppIconImage } from '../app-icon'
+import { translateMain } from '../i18n/main-i18n'
 
 type SystemTrayOptions = {
   /** App icon id from settings; the tray reuses the app icon image. */
@@ -37,9 +38,9 @@ export function createSystemTray(opts: SystemTrayOptions): Tray | null {
   tray = new Tray(image)
   tray.setToolTip('Orca')
   const menu = Menu.buildFromTemplate([
-    { label: 'Open Orca', click: () => opts.onOpen() },
+    { label: translateMain('tray.openOrca', 'Open Orca'), click: () => opts.onOpen() },
     { type: 'separator' },
-    { label: 'Quit', click: () => opts.onQuit() }
+    { label: translateMain('tray.quit', 'Quit'), click: () => opts.onQuit() }
   ])
   tray.setContextMenu(menu)
   // Why: a left-click on the tray icon is the conventional Windows gesture to

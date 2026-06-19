@@ -58,6 +58,13 @@
     "window": "ウィンドウ",
     "help": "ヘルプ"
   },
+  "tray": {
+    "openOrca": "Orcaを開く",
+    "quit": "終了",
+    "minimizeNotice": {
+      "body": "Orcaはシステムトレイで実行中です"
+    }
+  },
   "worktreeJumpPalette": {
     "matchLabel": {
       "comment": "コメント",
@@ -4408,9 +4415,9 @@
             "tintOpacityDescription": "サイドバーに色合いをどの程度強く混ぜるかを調整します。"
           },
           "workspaceCardLayoutGuidance": "ワークスペースサイドバーのオプションメニュー > カードレイアウト > コンパクト を使用します。",
-          "872af9556e": "System Tray",
-          "2edf606c46": "Minimize to Tray on Close",
-          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+          "872af9556e": "システムトレイ",
+          "2edf606c46": "閉じるときにトレイへ最小化",
+          "b707773a0d": "有効にすると、ウィンドウを閉じてもOrcaは終了せず、システムトレイで実行を続けます。"
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -6571,8 +6578,8 @@
               "workspaceOptions": "ワークスペースオプション",
               "detailed": "詳細"
             },
-            "9a115966d3": "Minimize to Tray on Close",
-            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+            "9a115966d3": "閉じるときにトレイへ最小化",
+            "4d5b9427b5": "有効にすると、ウィンドウを閉じてもOrcaは終了せず、システムトレイで実行を続けます。"
           }
         },
         "auto": {

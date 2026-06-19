@@ -781,6 +781,11 @@ function openMainWindow(): BrowserWindow {
     appIcon: store.getSettings().appIcon,
     onOpen: showMainWindowFromTray,
     onQuit: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        // Why: a real quit can still surface renderer save/discard prompts; the
+        // window must be visible if a hidden-to-tray session vetoes shutdown.
+        showMainWindowFromTray()
+      }
       // Why: set the quit latch before app.quit() so the window 'close' handler
       // proceeds to teardown instead of re-hiding the window to the tray.
       isQuitting = true
@@ -1675,9 +1680,6 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
-  // Why: remove the tray icon as the app quits so it doesn't linger as an
-  // orphan glyph in the Windows notification area after the process exits.
-  destroySystemTray()
   unsubscribeAgentAwakeStatusChanges?.()
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()
@@ -1696,6 +1698,9 @@ app.on('before-quit', () => {
 // async work and let Electron exit.
 let daemonDisconnectDone = false
 app.on('will-quit', (e) => {
+  // Why: before-quit can still be aborted by renderer beforeunload; wait until
+  // the committed quit path before removing the Windows notification icon.
+  destroySystemTray()
   // Why: stats.flush() must run before killAllPty() so it can read the
   // live agent state and emit synthetic agent_stop events for agents that
   // are still running. killAllPty() does not call runtime.onPtyExit(),

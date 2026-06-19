@@ -58,6 +58,13 @@
     "window": "Ventana",
     "help": "Ayuda"
   },
+  "tray": {
+    "openOrca": "Abrir Orca",
+    "quit": "Salir",
+    "minimizeNotice": {
+      "body": "Orca sigue ejecutándose en la bandeja del sistema"
+    }
+  },
   "worktreeJumpPalette": {
     "matchLabel": {
       "comment": "Comentario",
@@ -4424,9 +4431,9 @@
             "tintOpacityDescription": "Controla con qué fuerza se mezcla el tinte en la barra lateral."
           },
           "workspaceCardLayoutGuidance": "Usa el menú de opciones de la barra lateral de espacios de trabajo > Diseño de tarjeta > Compacto.",
-          "872af9556e": "System Tray",
-          "2edf606c46": "Minimize to Tray on Close",
-          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+          "872af9556e": "Bandeja del sistema",
+          "2edf606c46": "Minimizar a la bandeja al cerrar",
+          "b707773a0d": "Cuando está activado, cerrar la ventana mantiene Orca en ejecución en la bandeja del sistema en lugar de salir."
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -6550,8 +6557,8 @@
               "workspaceOptions": "opciones de espacios de trabajo",
               "detailed": "detallado"
             },
-            "9a115966d3": "Minimize to Tray on Close",
-            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+            "9a115966d3": "Minimizar a la bandeja al cerrar",
+            "4d5b9427b5": "Cuando está activado, cerrar la ventana mantiene Orca en ejecución en la bandeja del sistema en lugar de salir."
           }
         },
         "auto": {

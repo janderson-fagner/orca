@@ -58,6 +58,13 @@
     "window": "窗口",
     "help": "帮助"
   },
+  "tray": {
+    "openOrca": "打开 Orca",
+    "quit": "退出",
+    "minimizeNotice": {
+      "body": "Orca 仍在系统托盘中运行"
+    }
+  },
   "worktreeJumpPalette": {
     "matchLabel": {
       "comment": "评论",
@@ -4408,9 +4415,9 @@
             "tintOpacityDescription": "控制色调混入边栏的强度。"
           },
           "workspaceCardLayoutGuidance": "使用工作区侧边栏选项菜单 > 卡片布局 > 紧凑。",
-          "872af9556e": "System Tray",
-          "2edf606c46": "Minimize to Tray on Close",
-          "b707773a0d": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+          "872af9556e": "系统托盘",
+          "2edf606c46": "关闭时最小化到托盘",
+          "b707773a0d": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。"
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -6534,8 +6541,8 @@
               "workspaceOptions": "工作区选项",
               "detailed": "详细"
             },
-            "9a115966d3": "Minimize to Tray on Close",
-            "4d5b9427b5": "When enabled, closing the window keeps Orca running in the system tray instead of quitting."
+            "9a115966d3": "关闭时最小化到托盘",
+            "4d5b9427b5": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。"
           }
         },
         "auto": {

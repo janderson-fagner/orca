@@ -58,6 +58,13 @@
     "window": "Window",
     "help": "Help"
   },
+  "tray": {
+    "openOrca": "Open Orca",
+    "quit": "Quit",
+    "minimizeNotice": {
+      "body": "Orca is still running in the system tray"
+    }
+  },
   "worktreeJumpPalette": {
     "matchLabel": {
       "comment": "Comment",

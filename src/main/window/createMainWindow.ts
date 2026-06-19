@@ -15,6 +15,7 @@ import type { Store } from '../persistence'
 import { getAppIconPath } from '../app-icon'
 import { browserManager } from '../browser/browser-manager'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
+import { translateMain } from '../i18n/main-i18n'
 import {
   normalizeBrowserNavigationUrl,
   normalizeExternalBrowserUrl
@@ -964,7 +965,10 @@ export function createMainWindow(
       try {
         new Notification({
           title: 'Orca',
-          body: 'Orca is still running in the system tray'
+          body: translateMain(
+            'tray.minimizeNotice.body',
+            'Orca is still running in the system tray'
+          )
         }).show()
       } catch {
         // Notification is best-effort — never block hiding the window.
