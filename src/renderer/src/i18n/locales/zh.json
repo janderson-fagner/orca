@@ -8945,6 +8945,7 @@
               },
               "empty": {
                 "state": {
+                  "3322603418": "Pull request status unavailable",
                   "5b0cfae9a5": "创建 {{value0}} 以开始检查和评审。",
                   "13e1c7d5ed": "未找到 {{value0}}",
                   "d372072df1": "GitHub 刷新因当前速率限制预算而暂停",
@@ -8959,7 +8960,8 @@
                   "f8543140cc": "在创建 {{value0}} 之前发布此分支。",
                   "41252bc53f": "分支未发布",
                   "05e4aec17b": "{{value0}} 检查将在操作完成后可用",
-                  "d77c513c1e": "{{value0}} 正在进行中"
+                  "d77c513c1e": "{{value0}} 正在进行中",
+                  "b597440265": "Refresh GitHub status for this branch to load checks and review."
                 }
               }
             }

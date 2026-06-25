@@ -8945,6 +8945,7 @@
               },
               "empty": {
                 "state": {
+                  "3322603418": "Pull request status unavailable",
                   "5b0cfae9a5": "Create a {{value0}} to start checks and review.",
                   "13e1c7d5ed": "No {{value0}} found",
                   "d372072df1": "GitHub refresh is paused by the current rate-limit budget",
@@ -8959,7 +8960,8 @@
                   "f8543140cc": "Publish this branch before creating a {{value0}}.",
                   "41252bc53f": "Branch not published",
                   "05e4aec17b": "{{value0}} checks will be available after the operation completes",
-                  "d77c513c1e": "{{value0}} in progress"
+                  "d77c513c1e": "{{value0}} in progress",
+                  "b597440265": "Refresh GitHub status for this branch to load checks and review."
                 }
               }
             }

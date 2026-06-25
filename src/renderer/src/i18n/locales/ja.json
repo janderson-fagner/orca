@@ -8945,6 +8945,7 @@
               },
               "empty": {
                 "state": {
+                  "3322603418": "Pull request status unavailable",
                   "5b0cfae9a5": "{{value0}} を作成してチェックとレビューを開始します。",
                   "13e1c7d5ed": "{{value0}} が見つかりませんでした",
                   "d372072df1": "現在のレート制限予算により GitHub の更新が一時停止されています",
@@ -8959,7 +8960,8 @@
                   "f8543140cc": "{{value0}} を作成する前に、このブランチを公開してください。",
                   "41252bc53f": "ブランチは公開されていません",
                   "05e4aec17b": "{{value0}} チェックは操作の完了後に利用可能になります",
-                  "d77c513c1e": "{{value0}} が進行中です"
+                  "d77c513c1e": "{{value0}} が進行中です",
+                  "b597440265": "Refresh GitHub status for this branch to load checks and review."
                 }
               }
             }

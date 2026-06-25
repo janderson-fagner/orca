@@ -8945,6 +8945,7 @@
               },
               "empty": {
                 "state": {
+                  "3322603418": "Pull request status unavailable",
                   "5b0cfae9a5": "Cree un {{value0}} para iniciar comprobaciones y revisiones.",
                   "13e1c7d5ed": "No se encontró {{value0}}",
                   "d372072df1": "La actualización de GitHub está pausada por el presupuesto de límite de velocidad actual",
@@ -8959,7 +8960,8 @@
                   "f8543140cc": "Publique esta rama antes de crear un {{value0}}.",
                   "41252bc53f": "Sucursal no publicada",
                   "05e4aec17b": "{{value0}} cheques estarán disponibles una vez completada la operación.",
-                  "d77c513c1e": "{{value0}} en progreso"
+                  "d77c513c1e": "{{value0}} en progreso",
+                  "b597440265": "Refresh GitHub status for this branch to load checks and review."
                 }
               }
             }

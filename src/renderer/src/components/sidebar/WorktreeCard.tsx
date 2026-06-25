@@ -3,6 +3,7 @@ import React, { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/store'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { issueCacheKey as getIssueCacheKey } from '@/store/slices/github'
+import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -29,6 +30,7 @@ import { cn } from '@/lib/utils'
 import { activateWorktreeFromSidebar } from '@/lib/sidebar-worktree-activation'
 import { isFolderRepo } from '../../../../shared/repo-kind'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
+import { hostedReviewInfoFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
 import type {
   GitHubWorkItem,
   Worktree,
@@ -398,6 +400,17 @@ const WorktreeCard = React.memo(function WorktreeCard({
           repo.executionHostId
         )
       : ''
+  const prCacheKey =
+    repo && branch
+      ? getGitHubPRCacheKey(
+          repo.path,
+          repo.id,
+          branch,
+          settings,
+          repo.connectionId,
+          repo.executionHostId
+        )
+      : ''
   const issueCacheKey =
     repo && worktree.linkedIssue
       ? getIssueCacheKey(
@@ -417,6 +430,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hostedReviewEntry = useAppStore((s) =>
     hostedReviewCacheKey ? s.hostedReviewCache[hostedReviewCacheKey] : undefined
   )
+  const prCacheEntry = useAppStore((s) => (prCacheKey ? s.prCache?.[prCacheKey] : undefined))
   const issueEntry = useAppStore((s) => (issueCacheKey ? s.issueCache[issueCacheKey] : undefined))
   const linearIssueEntry = useAppStore((s) =>
     linearIssueCacheKey ? s.linearIssueCache[linearIssueCacheKey] : undefined
@@ -427,19 +441,26 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
   const hostedReview: HostedReviewInfo | null | undefined =
     hostedReviewEntry !== undefined ? hostedReviewEntry.data : undefined
+  // Why: ChecksPanel can discover a branch PR before hosted-review metadata
+  // warms. The sidebar status slot should not fall back to "branch" while
+  // the branch PR cache already knows the review state.
+  const cachedBranchReview =
+    hostedReview === undefined && prCacheEntry?.data
+      ? hostedReviewInfoFromGitHubPRInfo(prCacheEntry.data)
+      : hostedReview
   const linkedGitLabMR = worktree.linkedGitLabMR ?? null
   const linkedBitbucketPR = worktree.linkedBitbucketPR ?? null
   const linkedAzureDevOpsPR = worktree.linkedAzureDevOpsPR ?? null
   const linkedGiteaPR = worktree.linkedGiteaPR ?? null
   const prDisplay = getWorktreeCardPrDisplay(
-    hostedReview,
+    cachedBranchReview,
     worktree.linkedPR,
     linkedGitLabMR,
     linkedBitbucketPR,
     linkedAzureDevOpsPR,
     linkedGiteaPR,
     {
-      reviewHintKey: hostedReviewEntry?.linkedReviewHintKey
+      reviewHintKey: hostedReviewEntry?.linkedReviewHintKey ?? (prCacheEntry?.data ? '' : undefined)
     }
   )
   const issue: IssueInfo | null | undefined = worktree.linkedIssue

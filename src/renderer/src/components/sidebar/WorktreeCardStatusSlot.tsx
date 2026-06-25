@@ -65,15 +65,6 @@ function overlayNewCardUnreadStatus(
 
 function getReviewStatusTooltip(review: WorktreeCardPrDisplay): string {
   const label = getReviewLabel(review)
-  if (review.status === 'failure') {
-    return `${label} checks: Failed`
-  }
-  if (review.status === 'pending') {
-    return `${label} checks: Pending`
-  }
-  if (review.status === 'success') {
-    return `${label} checks: Passing`
-  }
   if (review.state === 'merged') {
     return `${label}: Merged`
   }
@@ -82,6 +73,15 @@ function getReviewStatusTooltip(review: WorktreeCardPrDisplay): string {
   }
   if (review.state === 'draft') {
     return `${label}: Draft`
+  }
+  if (review.status === 'failure') {
+    return `${label} checks: Failed`
+  }
+  if (review.status === 'pending') {
+    return `${label} checks: Pending`
+  }
+  if (review.status === 'success') {
+    return `${label} checks: Passing`
   }
   return `${label}: Open`
 }

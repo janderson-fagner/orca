@@ -8945,6 +8945,7 @@
               },
               "empty": {
                 "state": {
+                  "3322603418": "Pull request status unavailable",
                   "5b0cfae9a5": "체크와 리뷰를 시작하려면 {{value0}}을(를) 만드세요.",
                   "13e1c7d5ed": "{{value0}}을(를) 찾을 수 없습니다.",
                   "d372072df1": "현재 속도 제한 예산으로 인해 GitHub 새로 고침이 일시 중지되었습니다.",
@@ -8959,7 +8960,8 @@
                   "f8543140cc": "{{value0}}을 만들기 전에 이 브랜치를 게시하세요.",
                   "41252bc53f": "게시되지 않은 브랜치",
                   "05e4aec17b": "{{value0}} 검사는 작업이 완료된 후에 사용할 수 있습니다.",
-                  "d77c513c1e": "{{value0}} 진행 중"
+                  "d77c513c1e": "{{value0}} 진행 중",
+                  "b597440265": "Refresh GitHub status for this branch to load checks and review."
                 }
               }
             }
