@@ -1839,6 +1839,7 @@ export type PreloadApi = {
   agentHooks: {
     claudeStatus: () => Promise<AgentHookInstallStatus>
     openClaudeStatus: () => Promise<AgentHookInstallStatus>
+    verbooStatus: () => Promise<AgentHookInstallStatus>
     codexStatus: () => Promise<AgentHookInstallStatus>
     geminiStatus: () => Promise<AgentHookInstallStatus>
     antigravityStatus: () => Promise<AgentHookInstallStatus>

@@ -2235,6 +2235,7 @@ function createAgentHooksApi(): NonNullable<Partial<PreloadApi>['agentHooks']> {
     agent:
       | 'claude'
       | 'openclaude'
+      | 'verboo'
       | 'codex'
       | 'gemini'
       | 'antigravity'
@@ -2257,6 +2258,7 @@ function createAgentHooksApi(): NonNullable<Partial<PreloadApi>['agentHooks']> {
   return {
     claudeStatus: () => status('claude'),
     openClaudeStatus: () => status('openclaude'),
+    verbooStatus: () => status('verboo'),
     codexStatus: () => status('codex'),
     geminiStatus: () => status('gemini'),
     antigravityStatus: () => status('antigravity'),
