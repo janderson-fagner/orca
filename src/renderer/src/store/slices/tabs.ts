@@ -221,7 +221,11 @@ function mirrorTabPinnedToHost(state: AppState, tabId: string, isPinned: boolean
 // the host or it's lost on reconnect/restart and never reaches paired clients.
 // Only the user/RPC-set action path mirrors — never the reconcile that applies a
 // host value — so the echoed snapshot can't re-trigger an outbound RPC (no loop).
-function mirrorTabViewModeToHost(state: AppState, tabId: string, viewMode: 'terminal' | 'chat'): void {
+function mirrorTabViewModeToHost(
+  state: AppState,
+  tabId: string,
+  viewMode: 'terminal' | 'chat'
+): void {
   const found = findTabAndWorktree(state.unifiedTabsByWorktree, tabId)
   // Why: only terminal tab viewMode is persisted host-side; skip the RPC for other
   // types instead of a no-op round trip.

@@ -34,9 +34,7 @@ export function NativeChatInteractiveCard({
   )
   // Thread the sibling `toolName` from the same status entry so the question
   // parser can dispatch through the tool's registered parser (mobile parity).
-  const interactiveToolName = useAppStore(
-    (s) => s.agentStatusByPaneKey[paneKey]?.toolName ?? null
-  )
+  const interactiveToolName = useAppStore((s) => s.agentStatusByPaneKey[paneKey]?.toolName ?? null)
   const { sendAnswer, sendRaw, cancel } = send
 
   const card = useMemo(

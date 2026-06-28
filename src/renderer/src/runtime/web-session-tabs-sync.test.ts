@@ -788,7 +788,7 @@ describe('applyWebSessionTabsSnapshot', () => {
     ) as Partial<WebSessionTabsSyncState>
 
     const mirroredId = patch.tabsByWorktree?.[WT]?.[0]?.id
-    console.error("PATCH tabs", JSON.stringify(patch.tabsByWorktree?.[WT]))
+    console.error('PATCH tabs', JSON.stringify(patch.tabsByWorktree?.[WT]))
     expect(patch.tabsByWorktree?.[WT]?.[0]?.viewMode).toBe('chat')
     expect(
       patch.unifiedTabsByWorktree?.[WT]?.find((tab) => tab.entityId === mirroredId)?.viewMode

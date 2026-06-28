@@ -538,9 +538,7 @@ function buildMirroredTerminalTabs(
     // the client's own record during the optimistic echo window and adopt the host
     // value only when this client has no prior tab (first reconcile / other client).
     const hostViewModeSurface = surfaces.find((surface) => surface.viewMode)
-    const viewMode = existing
-      ? existing.viewMode
-      : hostViewModeSurface?.viewMode
+    const viewMode = existing ? existing.viewMode : hostViewModeSurface?.viewMode
     return {
       tab: {
         id: localTabId,

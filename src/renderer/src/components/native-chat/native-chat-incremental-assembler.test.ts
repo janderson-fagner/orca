@@ -58,12 +58,27 @@ describe('incremental assembler — oracle differential', () => {
     // empty batch
     [],
     // re-emit id 'b' from transcript — supersedes the hook copy in place
-    [msg({ id: 'b', timestamp: 20, source: 'transcript', blocks: [{ type: 'text', text: 'final' }] })],
+    [
+      msg({
+        id: 'b',
+        timestamp: 20,
+        source: 'transcript',
+        blocks: [{ type: 'text', text: 'final' }]
+      })
+    ],
     // out-of-order timestamp: sorts BEFORE the current tail → forces re-sort
     [msg({ id: 'd', timestamp: 5, blocks: [{ type: 'text', text: 'early' }] })],
     // turnKey collision with 'a': same role+text+timestamp, DIFFERENT source
     // (scrape) — lower priority, must be dropped by the cross-source gate
-    [msg({ id: 'a-scrape', timestamp: 10, role: 'user', source: 'scrape', blocks: [{ type: 'text', text: 'hello' }] })],
+    [
+      msg({
+        id: 'a-scrape',
+        timestamp: 10,
+        role: 'user',
+        source: 'scrape',
+        blocks: [{ type: 'text', text: 'hello' }]
+      })
+    ],
     // same-source identical prompt (distinct id) — must NOT collapse (#10)
     [msg({ id: 'e', timestamp: 40, role: 'user', blocks: [{ type: 'text', text: 'hello' }] })],
     // null timestamp append → forces re-sort, sorts to the front

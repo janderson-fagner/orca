@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { NATIVE_CHAT_SOURCE_PRIORITY, type NativeChatMessage } from '../../../../shared/native-chat-types'
+import {
+  NATIVE_CHAT_SOURCE_PRIORITY,
+  type NativeChatMessage
+} from '../../../../shared/native-chat-types'
 import { mergeNativeChatMessagesWith } from '../../../../shared/native-chat-merge'
 import { assembleNativeChatSession } from './native-chat-session-assembler'
 
