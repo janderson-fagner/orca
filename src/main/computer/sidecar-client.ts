@@ -49,16 +49,6 @@ let sidecar: ComputerSidecarProcess | null = null
 // stale children keep a no-op listener that does not retain the sidecar owner.
 function ignoreStaleChildError(): void {}
 
-export function shouldUseComputerSidecar(): boolean {
-  return (
-    (process.platform === 'darwin' ||
-      process.platform === 'linux' ||
-      process.platform === 'win32') &&
-    typeof process.versions.electron === 'string' &&
-    process.env.ORCA_COMPUTER_SIDECAR !== '1'
-  )
-}
-
 export async function callComputerSidecarListApps(): Promise<ComputerListAppsResult> {
   return (await getComputerSidecar().call('listApps', {})) as ComputerListAppsResult
 }
